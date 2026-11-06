@@ -52,18 +52,6 @@ let browserPromise: Promise<Browser> | null = null
    relaunched by the next getBrowser(). Every open page holds a lease from
    before the launch until its close, which is what keeps the idle close from
    ever landing under a page or a launch still in flight. */
-const DEFAULT_IDLE_CLOSE_MS = 120_000
-
-/** How long the browser may sit unused before it is closed. CHROME_IDLE_CLOSE_MS
- *  overrides the default; 0 keeps the browser for the life of the process. Read
- *  on use, so a change takes effect on the next idle period. */
-function idleCloseMs(): number {
-  // eslint-disable-next-line no-restricted-syntax -- an optional tuning knob read where it is used, like env.ts's own reads at call time
-  const raw = process.env.CHROME_IDLE_CLOSE_MS
-  if (raw === undefined || raw.trim() === '') return DEFAULT_IDLE_CLOSE_MS
-  const ms = Number(raw)
-  return Number.isFinite(ms) && ms >= 0 ? ms : DEFAULT_IDLE_CLOSE_MS
-}
 
 let openPages = 0
 let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -75,7 +63,8 @@ function cancelIdleClose(): void {
 
 function scheduleIdleClose(): void {
   cancelIdleClose()
-  const ms = idleCloseMs()
+  /* read on use, so a change takes effect on the next idle period */
+  const ms = env.CHROME_IDLE_CLOSE_MS
   if (ms === 0 || !browserPromise) return
   idleTimer = setTimeout(() => {
     idleTimer = null
@@ -93,28 +82,26 @@ async function closeIdleBrowser(): Promise<void> {
   await browser?.close().catch(() => {})
 }
 
-export async function getBrowser(): Promise<Browser> {
-  cancelIdleClose()
-  if (browserPromise) {
-    const b = await browserPromise
-    if (b.connected) {
-      if (openPages === 0) scheduleIdleClose()
-      return b
+/** The shared browser, launched if there is none or it has died. Only call it
+ *  holding a lease (openIsolatedPage): the lease's release schedules the idle close. */
+async function getBrowser(): Promise<Browser> {
+  for (let current = browserPromise; current; current = browserPromise) {
+    const browser = await current
+    if (browser.connected) return browser
+    /* a crashed Chrome seen by several callers at once is relaunched by the
+       first; the rest wait on that launch rather than starting their own */
+    if (browserPromise === current) {
+      browserPromise = null
+      break
     }
-    browserPromise = null
   }
   const launching = launchBrowser()
   browserPromise = launching
   /* a launch that failed (a slow cold start past puppeteer's timeout) must not
      be handed to every later caller: the next one tries again */
-  launching.then(
-    () => {
-      if (openPages === 0 && browserPromise === launching) scheduleIdleClose()
-    },
-    () => {
-      if (browserPromise === launching) browserPromise = null
-    },
-  )
+  launching.catch(() => {
+    if (browserPromise === launching) browserPromise = null
+  })
   return launching
 }
 
@@ -125,6 +112,11 @@ export function launchBrowser(timeout?: number): Promise<Browser> {
     executablePath: findBrowser(),
     headless: true,
     timeout,
+    /* puppeteer's own handlers exit the process at once, cutting short the
+       server's shutdown save (server/index.ts); its 'exit' hook still kills Chrome */
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
     args: [
       '--no-first-run',
       '--disable-extensions',

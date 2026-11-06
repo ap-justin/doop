@@ -12,6 +12,7 @@
   },
   "ignorePatterns": [
     "dist/",
+    "dist-server/",
     "node_modules/",
     "desktop/src-tauri/target/",
     "public/figma-plugin/",
