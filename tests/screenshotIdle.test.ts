@@ -54,6 +54,12 @@ beforeEach(async () => {
   screenshot = await import('../server/screenshot.ts')
 })
 
+/** screenshot.ts holds the env.ts instance this file's resetModules gave it, so reload that one. */
+async function setIdleCloseMs(value: string): Promise<void> {
+  vi.stubEnv('CHROME_IDLE_CLOSE_MS', value)
+  ;(await import('../server/env.ts')).reloadEnv()
+}
+
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
@@ -136,12 +142,6 @@ describe('closing the browser when idle', () => {
     expect(browser.close).toHaveBeenCalledOnce()
   })
 
-  it('closes a browser nobody opened a page on, once its launch has settled', async () => {
-    await screenshot.getBrowser()
-    await vi.advanceTimersByTimeAsync(IDLE_MS)
-    expect(browsers[0]?.close).toHaveBeenCalledOnce()
-  })
-
   it('releases the lease when the page cannot be opened', async () => {
     const browser = fakeBrowser()
     browser.createBrowserContext.mockRejectedValueOnce(new Error('context refused'))
@@ -189,23 +189,134 @@ describe('closing the browser when idle', () => {
     await vi.advanceTimersByTimeAsync(IDLE_MS - 1)
     expect(browsers[1]?.close).not.toHaveBeenCalled()
     await second.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS - 1)
+    expect(browsers[1]?.close).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(browsers[1]?.close).toHaveBeenCalledOnce()
+    expect(old.close).toHaveBeenCalledOnce()
   })
 
   it('keeps the browser for good when the idle time is 0', async () => {
-    vi.stubEnv('CHROME_IDLE_CLOSE_MS', '0')
+    await setIdleCloseMs('0')
     const isolated = await screenshot.openIsolatedPage()
     await isolated.close()
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     expect(browsers[0]?.close).not.toHaveBeenCalled()
   })
 
-  it('falls back to two minutes when the setting is not a number', async () => {
-    vi.stubEnv('CHROME_IDLE_CLOSE_MS', 'soon')
+  it.each(['', '  ', '-5', '0.5', 'Infinity', 'soon'])(
+    'falls back to two minutes when the setting is %j',
+    async (value) => {
+      await setIdleCloseMs(value)
+      const isolated = await screenshot.openIsolatedPage()
+      await isolated.close()
+      await vi.advanceTimersByTimeAsync(119_999)
+      expect(browsers[0]?.close).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(browsers[0]?.close).toHaveBeenCalledOnce()
+    },
+  )
+})
+
+describe('failures and concurrency', () => {
+  it('launches again after a failed launch, and the new browser still idle-closes', async () => {
+    puppeteerMocks.launch.mockRejectedValueOnce(new Error('cold start timed out'))
+    await expect(screenshot.openIsolatedPage()).rejects.toThrow('cold start timed out')
+
+    const isolated = await screenshot.openIsolatedPage()
+    expect(puppeteerMocks.launch).toHaveBeenCalledTimes(2)
+    await isolated.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers).toHaveLength(1)
+    expect(browsers[0]?.close).toHaveBeenCalledOnce()
+  })
+
+  it('shares one launch between concurrent cold-start opens and counts both leases', async () => {
+    const [first, second] = await Promise.all([screenshot.openIsolatedPage(), screenshot.openIsolatedPage()])
+    expect(puppeteerMocks.launch).toHaveBeenCalledOnce()
+    expect(browsers[0]?.contexts).toHaveLength(2)
+
+    await first.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 5)
+    expect(browsers[0]?.close).not.toHaveBeenCalled()
+    await second.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers[0]?.close).toHaveBeenCalledOnce()
+  })
+
+  it('relaunches a browser that disconnected between requests, and closes the new one when idle', async () => {
+    const first = await screenshot.openIsolatedPage()
+    await first.close()
+    browsers[0]!.connected = false
+
+    const second = await screenshot.openIsolatedPage()
+    expect(puppeteerMocks.launch).toHaveBeenCalledTimes(2)
+    expect(browsers[1]?.contexts).toHaveLength(1)
+    await second.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers[1]?.close).toHaveBeenCalledOnce()
+  })
+
+  it('shares one relaunch between concurrent opens that find the browser dead', async () => {
+    const held = await screenshot.openIsolatedPage()
+    browsers[0]!.connected = false
+
+    const [first, second] = await Promise.all([screenshot.openIsolatedPage(), screenshot.openIsolatedPage()])
+    expect(puppeteerMocks.launch).toHaveBeenCalledTimes(2)
+    expect(browsers[1]?.contexts).toHaveLength(2)
+
+    await Promise.all([held.close(), first.close()])
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 5)
+    expect(browsers[1]?.close).not.toHaveBeenCalled()
+    await second.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers[1]?.close).toHaveBeenCalledOnce()
+  })
+
+  it('survives browser.close() rejecting and launches fresh on the next open', async () => {
+    const first = await screenshot.openIsolatedPage()
+    await first.close()
+    browsers[0]!.close.mockRejectedValueOnce(new Error('chrome already gone'))
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers[0]?.close).toHaveBeenCalledOnce()
+
+    const second = await screenshot.openIsolatedPage()
+    expect(puppeteerMocks.launch).toHaveBeenCalledTimes(2)
+    await second.close()
+  })
+
+  it('closes the context and releases the lease when newPage rejects', async () => {
+    const browser = fakeBrowser()
+    const context = { close: vi.fn(async () => {}), newPage: vi.fn().mockRejectedValue(new Error('no page')) }
+    browser.createBrowserContext.mockResolvedValueOnce(context)
+    browsers.push(browser)
+    puppeteerMocks.launch.mockResolvedValueOnce(browser)
+
+    await expect(screenshot.openIsolatedPage()).rejects.toThrow('no page')
+    expect(context.close).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browser.close).toHaveBeenCalledOnce()
+  })
+
+  it('releases the lease even when closing the page context rejects', async () => {
+    const isolated = await screenshot.openIsolatedPage()
+    browsers[0]!.contexts[0]!.close.mockRejectedValueOnce(new Error('context already gone'))
+
+    await isolated.close()
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    expect(browsers[0]?.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('launch options', () => {
+  it('leaves SIGINT, SIGTERM and SIGHUP to the server', async () => {
     const isolated = await screenshot.openIsolatedPage()
     await isolated.close()
-    await vi.advanceTimersByTimeAsync(119_999)
-    expect(browsers[0]?.close).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1)
-    expect(browsers[0]?.close).toHaveBeenCalledOnce()
+
+    expect(puppeteerMocks.launch.mock.calls[0]?.[0]).toMatchObject({
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
+    })
   })
 })
