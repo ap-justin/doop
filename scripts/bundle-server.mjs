@@ -11,11 +11,34 @@ const root = path.resolve(import.meta.dirname, '..')
 /* under node_modules/.cache so git, prettier, the linters and docker already ignore it */
 const out = path.join(root, 'node_modules/.cache/server-bundle')
 
+/* `--without=<package>` leaves a package out of the output; the bundle still imports it by name,
+   so use it only for one that is loaded on a path the target never takes */
+const without = process.argv.filter((arg) => arg.startsWith('--without=')).map((arg) => arg.slice('--without='.length))
+/* the pglite import in server/db/index.ts only runs when DATABASE_URL is unset */
+const needsDatabaseUrl = without.includes('@electric-sql/pglite')
+
 const EXTERNAL = ['sharp', '@electric-sql/pglite', 'mupdf', 'puppeteer-core', 'pg-native']
 
 fs.rmSync(out, { recursive: true, force: true })
 const result = await build({
-  entryPoints: [path.join(root, 'server/index.ts')],
+  /* a bundle without the embedded database starts through a check that says so, rather than
+     failing later on the missing package */
+  ...(needsDatabaseUrl
+    ? {
+        stdin: {
+          contents: `
+            if (!process.env.DATABASE_URL) {
+              console.error('DATABASE_URL is not set. This image has no embedded database: set DATABASE_URL to a Postgres connection string.')
+              process.exit(1)
+            }
+            await import('./server/index.ts')
+          `,
+          resolveDir: root,
+          sourcefile: 'server-entry.ts',
+          loader: 'ts',
+        },
+      }
+    : { entryPoints: [path.join(root, 'server/index.ts')] }),
   outfile: path.join(out, 'server.mjs'),
   bundle: true,
   platform: 'node',
@@ -52,11 +75,18 @@ function packageDir(name, from) {
     dir = parent
   }
 }
+/* a build for another platform never loads here; the image's libc is glibc (Debian) */
+function fitsTarget(manifest) {
+  const listed = (field, value) => !manifest[field] || manifest[field].includes(value)
+  return listed('os', process.platform) && listed('cpu', process.arch) && listed('libc', 'glibc')
+}
 function collect(name, from) {
+  if (without.includes(name)) return true
   const dir = packageDir(name, from)
   if (!dir) return false
   if (copied.has(dir)) return true
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  if (!fitsTarget(manifest)) return true
   copied.set(dir, name)
   for (const dep of Object.keys(manifest.dependencies ?? {})) collect(dep, dir)
   for (const dep of Object.keys(manifest.optionalDependencies ?? {})) collect(dep, dir)

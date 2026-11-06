@@ -17,8 +17,10 @@ ARG VITE_POSTHOG_INTERNAL_DOMAINS
 
 RUN bun run build
 # The bundle directory holds server.mjs, the migrations and background seed it reads from its own
-# directory, and node_modules with just the external packages and their dependencies
-RUN bun scripts/bundle-server.mjs
+# directory, and node_modules with just the external packages and their dependencies. The
+# embedded database (pglite) is left out: this image needs DATABASE_URL, and the bundle
+# says so at startup when it is unset.
+RUN bun scripts/bundle-server.mjs --without=@electric-sql/pglite
 
 # ---- runtime ----
 FROM node:22-slim
