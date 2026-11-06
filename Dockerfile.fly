@@ -16,9 +16,8 @@ ARG VITE_POSTHOG_HOST
 ARG VITE_POSTHOG_INTERNAL_DOMAINS
 
 RUN bun run build
-# node_modules/.cache/server-bundle: server.mjs, the migrations and background seed it reads from its own
-# directory, and node_modules holding just the external packages (sharp, pglite,
-# puppeteer-core) with their dependencies
+# The bundle directory holds server.mjs, the migrations and background seed it reads from its own
+# directory, and node_modules with just the external packages and their dependencies
 RUN bun scripts/bundle-server.mjs
 
 # ---- runtime ----
