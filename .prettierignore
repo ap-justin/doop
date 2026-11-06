@@ -1,5 +1,4 @@
 dist/
-dist-server/
 public/claude-extension/
 node_modules/
 package-lock.json

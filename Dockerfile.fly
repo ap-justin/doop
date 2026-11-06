@@ -16,7 +16,7 @@ ARG VITE_POSTHOG_HOST
 ARG VITE_POSTHOG_INTERNAL_DOMAINS
 
 RUN bun run build
-# dist-server/: server.mjs, the migrations and background seed it reads from its own
+# node_modules/.cache/server-bundle: server.mjs, the migrations and background seed it reads from its own
 # directory, and node_modules holding just the external packages (sharp, pglite,
 # puppeteer-core) with their dependencies
 RUN bun scripts/bundle-server.mjs
@@ -42,7 +42,7 @@ ENV NODE_ENV=production \
     PORT=4400
 
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/dist-server ./
+COPY --from=build /app/node_modules/.cache/server-bundle ./
 
 EXPOSE 4400
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

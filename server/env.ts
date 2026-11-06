@@ -92,14 +92,6 @@ const int = (minimum: number) =>
 const perMinute = int(1)
 const nonNegativeInt = int(0)
 
-/** A non-negative integer whose bad value falls back to `fallback` instead of
- *  failing boot, for a tuning knob not worth refusing to start over. */
-const lenientNonNegativeInt = (fallback: number) =>
-  makeExactValidator<number>((input) => {
-    const n = Number(input)
-    return Number.isInteger(n) && n >= 0 ? n : fallback
-  })
-
 /* ------------------------------------------------------------------ */
 /* schema                                                              */
 /* ------------------------------------------------------------------ */
@@ -240,8 +232,6 @@ const schema = {
   /* ---------------------------------------------------- screenshots */
   CHROME_PATH: str({ default: undefined }),
   CHROME_NO_SANDBOX: bool({ default: false }),
-  /* how long Chrome may sit unused before it is closed; 0 keeps it for good */
-  CHROME_IDLE_CLOSE_MS: lenientNonNegativeInt(120_000)({ default: 120_000 }),
 
   /* ------------------------------------------------------ analytics */
   POSTHOG_KEY: str({ default: undefined }),

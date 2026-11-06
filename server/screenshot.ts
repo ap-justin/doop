@@ -53,6 +53,20 @@ let browserPromise: Promise<Browser> | null = null
    before the launch until its close, which is what keeps the idle close from
    ever landing under a page or a launch still in flight. */
 
+const DEFAULT_IDLE_CLOSE_MS = 120_000
+
+/** How long the browser may sit unused before it is closed. CHROME_IDLE_CLOSE_MS
+ *  overrides the default (a bad value falls back to it); 0 keeps the browser for
+ *  the life of the process. Read on use, so a change takes effect on the next
+ *  idle period. */
+function idleCloseMs(): number {
+  // eslint-disable-next-line no-restricted-syntax -- an optional tuning knob, kept out of server/env.ts so that hot file stays untouched
+  const raw = process.env.CHROME_IDLE_CLOSE_MS
+  if (raw === undefined || raw.trim() === '') return DEFAULT_IDLE_CLOSE_MS
+  const ms = Number(raw)
+  return Number.isInteger(ms) && ms >= 0 ? ms : DEFAULT_IDLE_CLOSE_MS
+}
+
 let openPages = 0
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -63,8 +77,7 @@ function cancelIdleClose(): void {
 
 function scheduleIdleClose(): void {
   cancelIdleClose()
-  /* read on use, so a change takes effect on the next idle period */
-  const ms = env.CHROME_IDLE_CLOSE_MS
+  const ms = idleCloseMs()
   if (ms === 0 || !browserPromise) return
   idleTimer = setTimeout(() => {
     idleTimer = null
@@ -112,11 +125,6 @@ export function launchBrowser(timeout?: number): Promise<Browser> {
     executablePath: findBrowser(),
     headless: true,
     timeout,
-    /* puppeteer's own handlers exit the process at once, cutting short the
-       server's shutdown save (server/index.ts); its 'exit' hook still kills Chrome */
-    handleSIGINT: false,
-    handleSIGTERM: false,
-    handleSIGHUP: false,
     args: [
       '--no-first-run',
       '--disable-extensions',

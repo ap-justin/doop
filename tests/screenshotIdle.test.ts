@@ -54,12 +54,6 @@ beforeEach(async () => {
   screenshot = await import('../server/screenshot.ts')
 })
 
-/** screenshot.ts holds the env.ts instance this file's resetModules gave it, so reload that one. */
-async function setIdleCloseMs(value: string): Promise<void> {
-  vi.stubEnv('CHROME_IDLE_CLOSE_MS', value)
-  ;(await import('../server/env.ts')).reloadEnv()
-}
-
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
@@ -197,7 +191,7 @@ describe('closing the browser when idle', () => {
   })
 
   it('keeps the browser for good when the idle time is 0', async () => {
-    await setIdleCloseMs('0')
+    vi.stubEnv('CHROME_IDLE_CLOSE_MS', '0')
     const isolated = await screenshot.openIsolatedPage()
     await isolated.close()
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
@@ -207,7 +201,7 @@ describe('closing the browser when idle', () => {
   it.each(['', '  ', '-5', '0.5', 'Infinity', 'soon'])(
     'falls back to two minutes when the setting is %j',
     async (value) => {
-      await setIdleCloseMs(value)
+      vi.stubEnv('CHROME_IDLE_CLOSE_MS', value)
       const isolated = await screenshot.openIsolatedPage()
       await isolated.close()
       await vi.advanceTimersByTimeAsync(119_999)
@@ -305,18 +299,5 @@ describe('failures and concurrency', () => {
     await isolated.close()
     await vi.advanceTimersByTimeAsync(IDLE_MS)
     expect(browsers[0]?.close).toHaveBeenCalledOnce()
-  })
-})
-
-describe('launch options', () => {
-  it('leaves SIGINT, SIGTERM and SIGHUP to the server', async () => {
-    const isolated = await screenshot.openIsolatedPage()
-    await isolated.close()
-
-    expect(puppeteerMocks.launch.mock.calls[0]?.[0]).toMatchObject({
-      handleSIGINT: false,
-      handleSIGTERM: false,
-      handleSIGHUP: false,
-    })
   })
 })

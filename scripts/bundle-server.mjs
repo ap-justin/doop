@@ -1,6 +1,6 @@
-// Bundles server/index.ts into dist-server/ so the image runs `node dist-server/server.mjs`
+// Bundles server/index.ts into <out>/ so the image runs `node <out>/server.mjs`
 // without tsx or esbuild's service. Packages with native or wasm parts stay external and are
-// copied, with their own dependencies, into dist-server/node_modules; the files the server
+// copied, with their own dependencies, into <out>/node_modules; the files the server
 // resolves next to itself (migrations, the background seed) are copied beside the bundle.
 import { build } from 'esbuild'
 import fs from 'node:fs'
@@ -8,7 +8,8 @@ import { builtinModules } from 'node:module'
 import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
-const out = path.join(root, 'dist-server')
+/* under node_modules/.cache so git, prettier, the linters and docker already ignore it */
+const out = path.join(root, 'node_modules/.cache/server-bundle')
 
 const EXTERNAL = ['sharp', '@electric-sql/pglite', 'mupdf', 'puppeteer-core', 'pg-native']
 

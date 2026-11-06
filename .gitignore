@@ -1,6 +1,5 @@
 node_modules
 dist
-dist-server
 public/claude-extension
 data
 data.*/
