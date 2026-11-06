@@ -1,7 +1,7 @@
 import { env, windowsBrowserDirectories } from './env.ts'
 import fs from 'node:fs'
 import path from 'node:path'
-import puppeteer, { type Browser, type Page } from 'puppeteer-core'
+import puppeteer, { type Browser, type BrowserContext, type Page } from 'puppeteer-core'
 import type { Frame } from '../shared/types.ts'
 import { guardPublicPageRequests } from './publicUrl.ts'
 
@@ -47,19 +47,74 @@ function findBrowser(): string {
 
 let browserPromise: Promise<Browser> | null = null
 
+/* Chrome is the heaviest thing the server runs (nine or ten processes once a
+   page has rendered), so it is closed when nothing has used it for a while and
+   relaunched by the next getBrowser(). Every open page holds a lease from
+   before the launch until its close, which is what keeps the idle close from
+   ever landing under a page or a launch still in flight. */
+const DEFAULT_IDLE_CLOSE_MS = 120_000
+
+/** How long the browser may sit unused before it is closed. CHROME_IDLE_CLOSE_MS
+ *  overrides the default; 0 keeps the browser for the life of the process. Read
+ *  on use, so a change takes effect on the next idle period. */
+function idleCloseMs(): number {
+  // eslint-disable-next-line no-restricted-syntax -- an optional tuning knob read where it is used, like env.ts's own reads at call time
+  const raw = process.env.CHROME_IDLE_CLOSE_MS
+  if (raw === undefined || raw.trim() === '') return DEFAULT_IDLE_CLOSE_MS
+  const ms = Number(raw)
+  return Number.isFinite(ms) && ms >= 0 ? ms : DEFAULT_IDLE_CLOSE_MS
+}
+
+let openPages = 0
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelIdleClose(): void {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = null
+}
+
+function scheduleIdleClose(): void {
+  cancelIdleClose()
+  const ms = idleCloseMs()
+  if (ms === 0 || !browserPromise) return
+  idleTimer = setTimeout(() => {
+    idleTimer = null
+    void closeIdleBrowser()
+  }, ms)
+  idleTimer.unref()
+}
+
+async function closeIdleBrowser(): Promise<void> {
+  const closing = browserPromise
+  if (openPages > 0 || !closing) return
+  /* detach first: a request arriving while Chrome shuts down launches a fresh one */
+  browserPromise = null
+  const browser = await closing.catch(() => null)
+  await browser?.close().catch(() => {})
+}
+
 export async function getBrowser(): Promise<Browser> {
+  cancelIdleClose()
   if (browserPromise) {
     const b = await browserPromise
-    if (b.connected) return b
+    if (b.connected) {
+      if (openPages === 0) scheduleIdleClose()
+      return b
+    }
     browserPromise = null
   }
   const launching = launchBrowser()
   browserPromise = launching
   /* a launch that failed (a slow cold start past puppeteer's timeout) must not
      be handed to every later caller: the next one tries again */
-  launching.catch(() => {
-    if (browserPromise === launching) browserPromise = null
-  })
+  launching.then(
+    () => {
+      if (openPages === 0 && browserPromise === launching) scheduleIdleClose()
+    },
+    () => {
+      if (browserPromise === launching) browserPromise = null
+    },
+  )
   return launching
 }
 
@@ -91,21 +146,33 @@ export interface IsolatedPage {
 /** External pages never share cookies, cache or service workers across users
  *  or imports. Closing the wrapper tears down the entire browser context. */
 export async function openIsolatedPage(): Promise<IsolatedPage> {
-  const browser = await getBrowser()
-  const context = await browser.createBrowserContext()
+  openPages++
+  cancelIdleClose()
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    if (--openPages === 0) scheduleIdleClose()
+  }
+  let context: BrowserContext | undefined
   try {
+    const browser = await getBrowser()
+    context = await browser.createBrowserContext()
     const page = await context.newPage()
     let closed = false
+    const owned = context
     return {
       page,
       close: async () => {
         if (closed) return
         closed = true
-        await context.close().catch(() => {})
+        await owned.close().catch(() => {})
+        release()
       },
     }
   } catch (error) {
-    await context.close().catch(() => {})
+    await context?.close().catch(() => {})
+    release()
     throw error
   }
 }
