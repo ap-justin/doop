@@ -1,0 +1,49 @@
+# Runtime image for Fly: the same contract as the Dockerfile (PORT 4400, the /healthz
+# HEALTHCHECK, CHROME_PATH, CHROME_NO_SANDBOX) with a smaller footprint. The server is
+# bundled ahead of time and started with plain node: no tsx process, no esbuild service,
+# and only the packages the bundle still imports at run time.
+
+# ---- build the client and bundle the server ----
+FROM oven/bun:1 AS build
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+COPY . .
+
+# Vite inlines these at build time (see the Dockerfile).
+ARG VITE_POSTHOG_KEY
+ARG VITE_POSTHOG_HOST
+ARG VITE_POSTHOG_INTERNAL_DOMAINS
+
+RUN bun run build
+# dist-server/: server.mjs, the migrations and background seed it reads from its own
+# directory, and node_modules holding just the external packages (sharp, pglite,
+# puppeteer-core) with their dependencies
+RUN bun scripts/bundle-server.mjs
+
+# ---- runtime ----
+FROM node:22-slim
+WORKDIR /app
+
+# Chromium for get_frame_screenshot (puppeteer-core drives the system browser). The
+# Vulkan validation layer and mock driver are development tooling that headless
+# rendering never loads (it renders through SwiftShader), so they are dropped, along
+# with docs. The last command fails the build if the trimmed browser cannot start.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc /usr/share/man /usr/share/info \
+  && rm -f /usr/lib/chromium/libVkLayer_khronos_validation.so /usr/lib/chromium/VkLayer_khronos_validation.json \
+    /usr/lib/chromium/libVkICD_mock_icd.so /usr/lib/chromium/VkICD_mock_icd.json \
+  && timeout 60 chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --dump-dom about:blank > /dev/null
+
+ENV NODE_ENV=production \
+    CHROME_PATH=/usr/bin/chromium \
+    CHROME_NO_SANDBOX=1 \
+    PORT=4400
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/dist-server ./
+
+EXPOSE 4400
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "server.mjs"]
