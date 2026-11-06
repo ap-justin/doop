@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.14.0](https://github.com/kgoedecke/doop/compare/v0.13.0...v0.14.0) (2026-11-06)
+
+
+### Features
+
+* add Doop Cature extension and canvas paste import ([#454](https://github.com/kgoedecke/doop/issues/454)) ([#405](https://github.com/kgoedecke/doop/issues/405)) ([f404915](https://github.com/kgoedecke/doop/commit/f404915523a1142fd7d41f16579980bd5285f8a1))
+* **agent:** connect every model provider at once and pick one per task ([#413](https://github.com/kgoedecke/doop/issues/413)) ([62ee341](https://github.com/kgoedecke/doop/commit/62ee341b2404f07066818c1cf8c6f242f30a8f36))
+* **brand:** use Adobe's 2025 Photoshop app icon ([#407](https://github.com/kgoedecke/doop/issues/407)) ([58ce5cd](https://github.com/kgoedecke/doop/commit/58ce5cdec13b8b6c6ded6042eaaef0eaed93879e))
+* **share:** let signed-out visitors view link-shared canvases ([#416](https://github.com/kgoedecke/doop/issues/416)) ([5bc5b75](https://github.com/kgoedecke/doop/commit/5bc5b75cdee536b1c179d839ea6779d023a546ac))
+* **ui:** redesign import, export and Connect AI modals as app-icon lists ([#417](https://github.com/kgoedecke/doop/issues/417)) ([d9e6ee0](https://github.com/kgoedecke/doop/commit/d9e6ee00b5d6db04e0d6ad2dc5fbe2268ab7d803))
+
+
+### Bug Fixes
+
+* **canvas:** drop the frame border, soft hover ring and canvas grey ([#415](https://github.com/kgoedecke/doop/issues/415)) ([86d12a7](https://github.com/kgoedecke/doop/commit/86d12a7b62215c1d6673a5163464a94709a9a30f))
+* **canvas:** pan without selecting or pressing panel UI, and an open lock on unlocked layers ([#411](https://github.com/kgoedecke/doop/issues/411)) ([5b55c12](https://github.com/kgoedecke/doop/commit/5b55c12954526e0fa95060f833e4cab512320f1f))
+* **mcp:** let Claude pick the preview card's sandbox origin ([#419](https://github.com/kgoedecke/doop/issues/419)) ([8ceb812](https://github.com/kgoedecke/doop/commit/8ceb81216ba7c8ae694767861e59fc4911dd0655))
+* **pdf:** print each frame in a frame-sized iframe so no content is dropped ([#409](https://github.com/kgoedecke/doop/issues/409)) ([4358fb6](https://github.com/kgoedecke/doop/commit/4358fb66a9445422e17f154b99366f0617b9e087))
+
 ## [0.13.0](https://github.com/kgoedecke/doop/compare/v0.12.0...v0.13.0) (2026-11-04)
 
 
