@@ -126,8 +126,12 @@
   every frame's `pageId`, and narrows to one page with `page_id`; `create_canvas_page` adds an
   empty page at the end (`actions.createCanvasPage`, a server-minted id, `MAX_PAGES` enforced)
   and returns it for `create_frame`'s `pageId`; `set_canvas_pages` stays the whole-list call for
-  rename, reorder and delete; `update_frame` moves a frame between pages. The guide's "Frames
-  and HTML" section says when a page beats a frame. Tests: the page cases in `mcp-tools.test.ts`.
+  rename, reorder and delete; `update_frame` moves a frame between pages (it keeps its x/y; an
+  unknown `pageId` is refused with the canvas's page list). The guide's "Frames and HTML" section says when a page beats a
+  frame. The resident agent has the same three tools under the same names; both surfaces run
+  `server/pageTools.ts`, its kickoff lists the pages and each frame's page and position, and a
+  run whose only work was arranging counts as delivered (`arrangeWrites`). Tests: the page cases
+  in `mcp-tools.test.ts`, `residentPageTools.test.ts`.
 - `ws` 8.18.0 - WebSocket server for realtime multiplayer (cursors, presence, frame edits,
   activity feed) over one room per canvas.
 - Custom fonts (`shared/fonts.ts`, `server/fonts.ts`, `server/fontFile.ts`): font libraries, one
@@ -220,13 +224,29 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Chromium) and encoded. A resource the browser cannot fetch (an image host without CORS)
   rejects the whole render and the export falls back to `/i/<id>.<ext>` as before, so what the
   person sees on the canvas is never the export's blocker. An element inside a frame exports
-  too (the element menu's Export as PNG / JPG and Copy as PNG, `downloadElementExport` /
+  too (the element menu's Export… dialog and Copy as PNG, `downloadElementExport` /
   `copyElementPng`): the frame is rendered whole and cut to the element's live box
   (`doop:inspect` rect, `clipToFrame`, the raster's `clip` option), so every style it inherits
   and whatever paints behind it stay in the picture; a server render is cropped here the same
   way (`cropRaster`), and a frame off screen says so. Tests: `frameRaster.test.ts`,
   `frameRasterBrowser.test.ts` (pixels in Chromium, the live runtime included),
-  `frameExport.test.ts`.
+  `frameExport.test.ts`. Scale and format (`shared/exportScale.ts`, `src/lib/exportSettings.ts`,
+  `ExportOptions.tsx`): the Inspector's Export group and the Export… dialog (frames, and elements
+  from their menu) pick 0.5x / 1x / 2x / 3x / 4x or a typed multiplier (0.1-4, two decimals) and
+  PNG / JPG / SVG, remembered per browser under `doop:export-settings` (2x PNG by default) and
+  named `Name@2x.png` as Figma does. Up to 2x a scale is honoured as before; above it,
+  `fitExportScale` brings a huge frame down to 16,384 px a side and 64 MP, the same limit
+  for the browser render, `/i/<id>.png?scale=` (any parsed scale, 1x when unreadable) and MCP
+  `export_frame`'s `scale`, and the toast says so. SVG is `frameSvg`: the inlined document
+  `inlineDocument` already builds, cropped by `viewBox` for an element, on white, settled for
+  a file opened as a page, where the viewer's window would be the viewport (`standalone`,
+  `FrameViewport`): viewport units become the frame's px, `@media` rules and `<style media>` are
+  kept or dropped by a hidden iframe of the frame's size, imported sheets included, and inline
+  handlers and `javascript:` URLs are stripped; HTML in a
+  `foreignObject`, so it opens in browsers but is not editable vector art, and it has no server
+  fallback. Tests: `exportScale.test.ts`, the scale and SVG cases in `frameExport.test.ts`,
+  `frameRasterBrowser.test.ts` (the SVG opened as a page in a wide window), `exportOptions.test.tsx`
+  and `mcpPdfExport.test.ts`.
 - `pdf-lib` 1.17.1 - joins the vector PDF export (`server/pdfExport.ts`): headless Chrome prints
   each frame onto a page of its own size (inside an iframe of the frame's size, as the canvas shows
   it, so content taller than the frame is clipped rather than paginated: bare, Chrome moved a block
@@ -279,6 +299,11 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   fly-tos fit into the stage area the top bar and floating panels leave open: `CanvasPage` passes
   `Stage` the `insets` its chrome covers and `fitBox` (`src/lib/viewFit.ts`) centres there.
   Tests: `viewFit.test.ts`, `fitSelectionBrowser.test.ts`.
+- View options (`src/lib/viewOptions.ts`, per browser under `doop:view-options`): the zoom pill's
+  menu opens on a field for a typed level (`150`, `150%`; `parseZoomPercent`) and switches the
+  pixel grid (⇧'), other people's cursors (⌘⌥\ / Ctrl+Alt+\) and the comment pins (⇧C), each read
+  by `code` (`viewOptionForKey`). Hidden pins still show under the Comment tool and for a thread
+  that is open. Tests: `viewOptions.test.ts`, `zoomMenu.test.tsx`.
 - Canvas panel layout (Settings → Appearance → Canvas panels, `src/lib/panelLayout.ts`, per
   browser under `doop:panel-layout`): `floating` (the default) keeps the islands over a
   full-window stage; `docked` makes Layers, the tool rail, the icon islands, the Inspector /
@@ -327,6 +352,11 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 - `src/lib/tools.ts` defines bottom-toolbar tools and shortcuts. `Stage.tsx` delegates drawing
   gestures and world-space previews to `CanvasDrawing.tsx`; Space/middle-button panning takes
   precedence over drawing.
+- Zoom tool (Z, keyboard only; math in `src/lib/zoomTool.ts`): a click doubles the
+  zoom about the pointer, ⌥-click halves it (the cursor turns to zoom-out while ⌥ is down), and a
+  drag zooms onto the box it draws, filling the stage's open area. Z is the tool only while held:
+  letting go returns to the previous tool, and the tool rail has no button for it.
+  Tests: `zoomTool.test.ts`, the Zoom cases in `tools.test.ts`.
 - `src/lib/drawing.ts` creates rectangles, circles, straight and cubic Bézier SVG paths, text and empty
   frames through the existing frame API. Drawing inside a frame appends a positioned HTML/SVG
   layer. Standalone elements use frame persistence with a `data-doop-canvas-element` body marker
@@ -369,7 +399,12 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Completed saves survive navigation; unfinished drafts are cancelled. Drawing shortcuts leave
   native fields and rich-text editors alone, except for the drawing textarea's keys: ⌘/Ctrl+Enter,
   Esc and a blur all commit the typed text (an empty draft is dropped).
-- `ElementMove.tsx` renders an unclipped drawing preview and highlights the destination frame.
+- `ElementMove.tsx` moves a drawing as an unclipped copy under the pointer and highlights the
+  destination frame; the original is hidden in its frame (`doop:drawing-moving`) once the copy
+  paints, and the copy stays until the frames show the save, so the shape itself follows the drag.
+  While anything moves (a drawing, a layer, a standalone shape) its outline, grips and size badge
+  stay hidden. Drawings and layers snap to their frame's edges and centre, their parent box and
+  their siblings (`snapRects` on the runtime's hit replies) as well as the ruler guides.
   Ordinary HTML/SVG layers move in place through the runtime's geometry/style gesture bridge,
   preserving layout and transforms and committing one undo step per drag.
   The iframe runtime hit-tests the pointer in browser paint order and measures CSS layout
@@ -405,6 +440,39 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `patchFrameLocal` and, through `PropertyScrubContext`, commits once on release as one discrete
   undo step and one PATCH; Esc puts the frame's box back and saves nothing. Tests:
   `inspectorScrub.test.tsx`.
+- Frame rotation (`shared/frameRotation.ts`, `src/lib/frameRotate.ts`): a selected frame wears a
+  zone just outside each corner (`data-frame-rotate-handle`, 18 screen px, clear of the corner
+  grip) that shows Figma's curved double-arrow cursor, turned to curve around its corner and with
+  the frame's own rotation (`rotateCursor`, tagged `data-cursor="rotate"`). A drag there turns the
+  frame about its centre with the pointer (`startRotate` in `FrameView.tsx`; Shift snaps to 15°,
+  Esc puts it back), broadcast live as `frame:drag`'s `rotation` and saved once on release as one
+  discrete undo step. `Frame.rotation` is degrees clockwise about the centre, stored in
+  `frames.rotation` (migration `0048_frame_rotation`) normalised to (-180, 180] with 0 unset;
+  `x`/`y`/`width`/`height` stay the unrotated box and the wrapper carries `rotate()`, so the
+  frame's name, grips and pins turn with it. The Inspector's Layout group has the `∠` field, the
+  size badge sits under the turned bounds, and a press inside a turned frame
+  is turned back into design px (`unrotatePoint`, `frameDesignPoint` for the element move hook and the
+  path editor's `frameTurnMatrix`) before the runtime is probed; the frame's own grips pull along
+  its axes with the far corner held still (`keepAnchorTurned`) and do not snap while turned. MCP `update_frame`
+  takes `rotation` through `server/pageTools.ts` (normalisation and page validation), and
+  `get_canvas` lists it when set; copy, paste and duplicate
+  (`frameClipboard.ts`) carry it. Not yet turned: marquee selection,
+  snapping and exports read the unrotated box. Tests: `frameRotation.test.ts`,
+  `frameRotationHttp.test.ts`, `frameRotateBrowser.test.ts`.
+- Element rotation (`src/lib/elementRotate.ts`): an element inside a frame wears the same rotate
+  zones (`data-rotate-handle` in `ElementResizeHandles.tsx`); a drag there turns it about its centre
+  through the runtime's `rotate` geometry edit inside a style gesture (preview per move, one
+  discrete save on release, Shift snaps to 15°, Esc cancels), the same way the Design panel's
+  Rotation field sets it. The runtime reports an element's own turn (`ownRotation`: its `rotate`
+  plus a plain 2D `transform` angle; skew, flip and 3D stay out) and its box before that turn
+  (`box`, via a uniform render scale read off the turned bounds) in hit info, `inspect` and
+  `doop:locate`; `selectionBox` draws the outline, grips and zones on that box, centred on the
+  bounds and turned with it, so a turned layer keeps its grips and resizes along its own axes
+  (`derotateDelta`; no guide snapping while turned). `sizable` now admits the element's own turn
+  and still refuses a turned, skewed, 3D or nonuniformly scaled ancestor; unsupported transforms
+  use the axis-aligned rendered bounds for the selection outline. The element toolbar lifts to 30px above a
+  selection wearing furniture, clear of the top zones. Tests: `elementRotate.test.ts`,
+  `elementRotateBrowser.test.ts`, the turned cases in `elementResizeBrowser.test.ts`.
 - Rulers and guides (`src/components/Rulers.tsx`, math in `src/lib/rulers.ts`): ⇧R or the zoom menu
   toggles `<canvas>` rulers docked on the stage's top and left edges (the top bar and the floating
   chrome step in by `RULER_PX`) (remembered under
@@ -614,12 +682,22 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 - Tailwind CSS 4.3.3 (`@tailwindcss/vite` 4.3.3) - styling; `tw-animate-css` 1.4.0 for animation
   utilities. Design tokens in `src/styles.css` (see `.context/DESIGN.md`).
 - Tauri 2.9.0 (`@tauri-apps/cli`, `desktop/src-tauri`) - desktop app wrapper around the web build.
+- Chromium shell (the macOS app): `desktop/src-tauri-chromium` builds the same sources (its
+  `[[bin]]` and build script point into `desktop/src-tauri`) on Tauri 3.0.0-alpha.5 with
+  `tauri-runtime-cef` 3.0.0-alpha.6 (CEF 154, Chromium 154), so frame iframes render out of the
+  editor's process. Same name, bundle id and executable as the WebKit app it replaces, so the
+  WebKit app updates into it. Linking the CEF runtime makes `build.rs` set `cfg(chromium)`, which
+  selects the runtime in `main()`, keeps the profile in `Application Support/design.doop.desktop/cef`
+  (`cef-dev` for debug builds) and, on the first launch, moves the WebKit app's cookies and
+  localStorage over (`src/webkit_migration.rs`, read in-process through WebKit's own API); menu
+  types go through `ShellRuntime`. Run it with `bun run dev:chromium` or `build:chromium` in
+  `desktop/` (Tauri 3 CLI, needs cmake + ninja); see `desktop/README.md`.
 - Interface language (`src/lib/i18n/`, no library): English (`en/`, the source catalog, one
   `as const` namespace per area) and Brazilian Portuguese (`pt-BR/`, typed `Catalog`, so a missing
   key fails typecheck). Components call `useT()` and `t('namespace.key', vars)`; `{name}`
   placeholders are type-checked, `{ one, other }` values pick a plural by `{count}`, and a key kept
   in a table is a `PlainMessageKey` translated at render. The active language is this browser's pick
-  (`doop-locale` in `localStorage`, Settings -> Appearance or the account menu), else the server's
+  (`doop-locale` in `localStorage`, Settings -> General), else the server's
   `DEFAULT_LOCALE` (`GET /api/locale-config`, asked once before React mounts), else `en`; the list
   lives in `shared/locales.ts`. `tests/i18n.test.ts` checks every catalog against English. Screens
   not yet converted still render English.
@@ -635,12 +713,18 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Import makes a canvas and opens it with `?import=1`, which `CanvasPage` turns into the import
   picker. `GET /api/canvases` adds `people` (owner, then members) for the tiles' avatar stacks.
   The rail is `src/components/AppRail.tsx`, mounted by Home, Automations, Integrations, Community,
-  Workspace and Admin alike (a page's own group, such as a workspace's panes, goes in as children;
+  Workspace and Admin alike (a page's own group, such as the admin indexes, goes in as children;
   Settings draws its own rail from the same `ui/dash.tsx` parts); it owns
   the ⌘K search palette (`CanvasSearchModal.tsx`), the connect-an-agent modal, the collapsed
   narrow state (remembered in `localStorage` under `doop-rail`) and the account face at the bottom.
   From another page the rail sends scope picks home as `/?scope=` and new workspaces as
-  `/?workspace=new`.
+  `/?workspace=new`. The workspace in view opens under its row: All canvases, People, Fonts, and
+  for its owner and admins Plan & billing and Settings (`workspacePanesFor`); on the Workspace page
+  they switch its pane in place, elsewhere they go to `/w/<id>?pane=…`, and the page keeps the
+  pane in its URL. The rail keeps the last lists it drew (`lastLists`), so a page change does not
+  blink its rows out, and fades only when collapsed or expanded. Home warms the Workspace page's
+  detail while a workspace's canvases are in view (`src/lib/workspaceCache.ts`), so its panes draw on
+  the first frame instead of a skeleton; the page refetches on arrival.
 
 ## 11. Developer Experience Tooling
 

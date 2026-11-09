@@ -43,9 +43,11 @@ import { CodeIcon, CommentIcon, EditIcon, EyeClosedIcon, GithubIcon, LockIcon, S
 import { isSyncedFrame } from '../lib/sync'
 import { isGithubFrame, isGithubPlaceholder } from '../lib/github'
 import { AgentIcon } from './AgentIcon'
-import { ElementResizeHandles } from './ElementResizeHandles'
+import { ElementResizeHandles, type ElementGeometry } from './ElementResizeHandles'
+import { selectionBox } from '../lib/elementRotate'
 import { FrameResizeHandles } from './FrameResizeHandles'
-import { keepRatioAfterSnap, resizeFrameRect } from '../lib/frameResize'
+import { keepAnchorTurned, keepRatioAfterSnap, resizeFrameRect } from '../lib/frameResize'
+import { pointerAngle, rotateVector, rotatedBounds, rotatedBy, unrotatePoint } from '../../shared/frameRotation'
 import { sizeLabel, type ResizeHandle } from '../lib/elementResize'
 import { withFontFaces } from '../../shared/fonts'
 import { withWebFontLinks } from '../../shared/webFonts'
@@ -63,16 +65,24 @@ function deepLinkedThread(): string | null {
 
 /** Where a pointer event landed relative to an element, in design px (screen
  *  px over the camera zoom: the frame lives inside the zoomed stage). */
-function designPoint(e: React.MouseEvent, el: Element): { x: number; y: number } {
+function designPoint(e: React.MouseEvent, el: Element, rotation = 0): { x: number; y: number } {
   const box = el.getBoundingClientRect()
   const zoom = useStore.getState().viewport.zoom
-  return { x: (e.clientX - box.left) / zoom, y: (e.clientY - box.top) / zoom }
+  if (!rotation) return { x: (e.clientX - box.left) / zoom, y: (e.clientY - box.top) / zoom }
+  /* a turned frame's box is the axis-aligned bounds of the turned element:
+     the press is turned back about its centre to land in the design */
+  const size =
+    el instanceof HTMLElement
+      ? { width: el.offsetWidth * zoom, height: el.offsetHeight * zoom }
+      : { width: box.width, height: box.height }
+  const at = unrotatePoint({ x: e.clientX, y: e.clientY }, box, size, rotation)
+  return { x: at.x / zoom, y: at.y / zoom }
 }
 
 /** Where a press landed on its target, as `offsetX` measured it; `offsetX`
  *  itself counts zoomed px in Chromium under the world's CSS zoom. */
-function designOffset(e: React.PointerEvent<HTMLElement>): { x: number; y: number } {
-  return designPoint(e, e.target instanceof HTMLElement ? e.target : e.currentTarget)
+function designOffset(e: React.PointerEvent<HTMLElement>, rotation = 0): { x: number; y: number } {
+  return designPoint(e, e.target instanceof HTMLElement ? e.target : e.currentTarget, rotation)
 }
 
 /* Counter-scale contract: chrome that keeps constant on-screen size divides
@@ -84,9 +94,18 @@ const COUNTER_SCALE = '[transform:scale(min(calc(1/var(--zoom,1)),2.4))]'
    comment UI (CommentPopovers): screen UI the user reads and types in keeps
    its size at every zoom, the way Figma's comment pins do. */
 const POPOVER_SCALE = '[transform:scale(calc(1/var(--zoom,1)))_translateY(calc(-100%_-_8px))]'
+/* the same popover over a selection wearing its grips: it sits clear of
+   the rotate zones outside the top corners, which reach 25px above */
+const POPOVER_SCALE_CLEAR = '[transform:scale(calc(1/var(--zoom,1)))_translateY(calc(-100%_-_30px))]'
 
 /* screen px between a frame's name and its top edge, at every zoom */
 const LABEL_GAP = 6
+
+/** The world y of the lowest point a frame reaches, turned or not. */
+function badgeBottom(frame: Frame): number {
+  const b = rotatedBounds(frame, frame.rotation ?? 0)
+  return b.y + b.height
+}
 /* a selected frame's outline, grips and toolbar paint above every frame on
    the page (whose z-indexes are their ranks in the paint order), so a layer
    in front never covers the selection being worked on */
@@ -177,6 +196,10 @@ interface ProbeHit {
   rect: { x: number; y: number; width: number; height: number }
   /** whether a width/height applies to the box (not an inline text run) */
   sizable?: boolean
+  /** the element's own turn, degrees clockwise, and its box before it:
+   *  the selection furniture is drawn on the box and turned with it */
+  rotation?: number
+  box?: { width: number; height: number }
   /** inside a locked layer: selectable, but it takes no edits */
   locked?: boolean
 }
@@ -192,7 +215,7 @@ function frameCommentHit(x: number, y: number): ProbeHit {
 /* `doop:locate` request ids for the outlines of a multi-element pick */
 const PICK_REQ = '__pick__:'
 
-type DragRect = { id: string; x: number; y: number; width: number; height: number }
+type DragRect = { id: string; x: number; y: number; width: number; height: number; rotation?: number }
 
 interface HoverHit {
   tag: string
@@ -252,6 +275,9 @@ export const FrameView = memo(function FrameView({
   const me = getIdentity().clientId
   const editors = Object.values(presences).filter((p) => p.activeFrameId === frame.id && p.clientId !== me)
   const [dragging, setDragging] = useState(false)
+  /* a standalone shape on its way across the canvas shows as itself alone:
+     no ring, grips or size badge until it is let go */
+  const [shapeMoving, setShapeMoving] = useState(false)
   /* a standalone element dragged over a frame: the frame it would go into,
      highlighted in the world the way a drawing's drop target is */
   const [dropTarget, setDropTarget] = useState<{ frame: Frame; world: Element } | null>(null)
@@ -274,7 +300,15 @@ export const FrameView = memo(function FrameView({
     let send = dragSenders.get(id)
     if (!send) {
       send = throttle((r: DragRect) => {
-        sendWs({ type: 'frame:drag', frameId: r.id, x: r.x, y: r.y, width: r.width, height: r.height })
+        sendWs({
+          type: 'frame:drag',
+          frameId: r.id,
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          ...(r.rotation !== undefined ? { rotation: r.rotation } : {}),
+        })
       }, 50)
       dragSenders.set(id, send)
     }
@@ -309,7 +343,7 @@ export const FrameView = memo(function FrameView({
       e.preventDefault()
       if (!s.selectedIds.includes(frame.id)) select(frame.id)
       if (probeOnClick) {
-        const at = designOffset(e)
+        const at = designOffset(e, frame.rotation)
         probeAt(at.x, at.y, 'comment')
       }
       return
@@ -382,7 +416,7 @@ export const FrameView = memo(function FrameView({
     setDragging(true)
     clearHover()
     const start = { x: e.clientX, y: e.clientY }
-    const off = designOffset(e)
+    const off = designOffset(e, frame.rotation)
     const orig = { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
     /* the drag's baseline: finger position and frame rect the deltas are
        measured from. Starts at pointer-down, and re-anchors while a pinch
@@ -441,6 +475,7 @@ export const FrameView = memo(function FrameView({
         void api.deleteFrame(copy.id).catch(console.error)
       }
       setDragging(false)
+      setShapeMoving(false)
       if (duplicating) setDuping(false)
       useStore.getState().setSnapGuides([])
       setDropTarget(null)
@@ -465,6 +500,7 @@ export const FrameView = memo(function FrameView({
         return
       }
       if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 4) moved = true
+      if (standaloneMove && moved) setShapeMoving(true)
       last = { x: ev.clientX, y: ev.clientY }
       if (duplicating && moved && !dupDropped) {
         dupDropped = true
@@ -472,7 +508,7 @@ export const FrameView = memo(function FrameView({
           const src = frames.find((f) => f.id === g.id)
           if (!src) continue
           api
-            .createFrame(src.canvasId, { name: src.name, html: src.html, ...g.orig })
+            .createFrame(src.canvasId, { name: src.name, html: src.html, rotation: src.rotation, ...g.orig })
             .then((f) => {
               /* a gesture called off takes its copy back, however late the
                  copy arrives; one that finished keeps it, as an undo step */
@@ -491,10 +527,19 @@ export const FrameView = memo(function FrameView({
       const dx = (ev.clientX - base.x) / zoom
       const dy = (ev.clientY - base.y) / zoom
       const from = base.rect
+      /* a turned frame's grips pull along its own axes: the travel is turned
+         back by its rotation, and the far corner stays where it was */
+      const turn = mode === 'resize' ? (frame.rotation ?? 0) : 0
+      const pull = rotateVector({ x: dx, y: dy }, -turn)
       const raw =
         mode === 'move'
           ? { ...from, x: Math.round(from.x + dx), y: Math.round(from.y + dy) }
-          : resizeFrameRect(handle, from, { dx, dy }, { keepRatio: ev.shiftKey })
+          : keepAnchorTurned(
+              handle,
+              from,
+              resizeFrameRect(handle, from, { dx: pull.x, dy: pull.y }, { keepRatio: ev.shiftKey }),
+              turn,
+            )
       /* edges pull onto neighbouring frames' edges/centers and the page's
          ruler guides; ⌥ drags free —
          except that a ⌥⇧ duplicate-drag holds ⌥ for the whole gesture, and
@@ -502,7 +547,8 @@ export const FrameView = memo(function FrameView({
          riding along in the group are not neighbours, and neither is a
          hidden frame — there is nothing on the stage to line up with. */
       const others = currentPageCanvas()?.frames.filter((f) => !f.hidden && !groupIds.has(f.id)) ?? []
-      const free = ev.altKey && !duplicating
+      /* a turned frame's edges lie along nothing: no snapping while resizing it */
+      const free = (ev.altKey && !duplicating) || !!turn
       let snapped = free ? { ...raw, guides: [] } : snapFrame(mode, raw, others, zoom, visibleGuides(), handle)
       /* with Shift the ratio wins: the snapped axis leads, the other follows */
       if (mode === 'resize' && ev.shiftKey && !free) snapped = keepRatioAfterSnap(handle, from, raw, snapped)
@@ -540,6 +586,7 @@ export const FrameView = memo(function FrameView({
       unsubscribe()
       setDropTarget(null)
       setDragging(false)
+      setShapeMoving(false)
       if (duplicating) setDuping(false)
       useStore.getState().setSnapGuides([])
       const live = useStore.getState().canvas?.frames ?? []
@@ -609,6 +656,82 @@ export const FrameView = memo(function FrameView({
     return { move: onMove, up: onUp }
   }
 
+  /** A press on a rotate zone outside a corner: the frame turns about its
+   *  centre with the pointer, Shift snapping to 15°, and the turn is saved
+   *  once on release as one undo step. Esc puts the frame back. */
+  function startRotate(e: React.PointerEvent<HTMLDivElement>) {
+    const s = useStore.getState()
+    const action = resolvePointerAction({
+      tool: s.tool,
+      target: 'frame',
+      button: e.button,
+      pointerType: e.pointerType,
+      spaceHeld: s.panMode,
+    })
+    if (action !== 'frame-drag' || frame.locked || !canEditOpenCanvas(s)) return
+    e.stopPropagation()
+    e.preventDefault()
+    if (!s.selectedIds.includes(frame.id)) select(frame.id)
+    const surface = surfaceRef.current
+    if (!surface) return
+    /* the rotation's centre is the frame's centre, which the turned box's
+       bounds share whatever the rotation */
+    const box = surface.getBoundingClientRect()
+    const center = { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+    const startRotation = frame.rotation ?? 0
+    const startAngle = pointerAngle(center, { x: e.clientX, y: e.clientY })
+    setDragging(true)
+    clearHover()
+    let cancelled = false
+    const stop = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', onKey, true)
+      setDragging(false)
+    }
+    const cancel = () => {
+      if (cancelled) return
+      cancelled = true
+      stop()
+      useStore.getState().patchFrameLocal(frame.id, { rotation: startRotation })
+      sendDrag(frame.id, {
+        id: frame.id,
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+        rotation: startRotation,
+      })
+    }
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') cancel()
+    }
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== e.pointerId) return
+      const angle = pointerAngle(center, { x: ev.clientX, y: ev.clientY })
+      const rotation = rotatedBy(startRotation, startAngle, angle, { snap: ev.shiftKey })
+      useStore.getState().patchFrameLocal(frame.id, { rotation })
+      const f = useStore.getState().canvas?.frames.find((x) => x.id === frame.id)
+      if (f) sendDrag(f.id, { id: f.id, x: f.x, y: f.y, width: f.width, height: f.height, rotation })
+    }
+    function onUp() {
+      if (cancelled) return
+      stop()
+      const live = useStore.getState().canvas?.frames.find((x) => x.id === frame.id)
+      const rotation = live?.rotation ?? 0
+      /* a click leaves the frame as it was: nothing to save */
+      if (rotation === startRotation) return
+      trackSave(api.updateFrame(frame.id, { rotation }).catch(console.error))
+      recordUpdate(frame.id, { rotation: startRotation }, { rotation }, true)
+      closePopovers()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', onKey, true)
+  }
+
   const html = useThrottledValue(frame.html, 150)
   const remoteEditor = editors[0]
 
@@ -662,6 +785,10 @@ export const FrameView = memo(function FrameView({
   const frameComments = useStore((s) => s.comments).filter((c) => c.frameId === frame.id)
   /* only thread roots get a pin; replies live inside the root's popover */
   const comments = frameComments.filter((c) => !c.parentId && !c.resolvedAt)
+  /* ⇧C hides the pins (an open thread stays); the Comment tool shows them */
+  const pinsShown = useStore((s) => s.viewOptions.comments || s.tool === 'comment')
+  /* a pin being dragged stays mounted: its release listeners live on it */
+  const draggedPin = useStore((s) => s.commentDrag?.id)
   const [probe, setProbe] = useState<ProbeHit | null>(null)
   useEffect(() => {
     // The request also distinguishes a return to previously rendered HTML
@@ -750,7 +877,16 @@ export const FrameView = memo(function FrameView({
     /* the old outline's key must match no answer, not even "nothing here",
        so the reply always redraws */
     hoverKey.current = 'stale'
-    if (editing || pathEdit || dragging || elementMove.moving || resizing || frame.locked || tool === 'hand') {
+    if (
+      editing ||
+      pathEdit ||
+      dragging ||
+      elementMove.moving ||
+      resizing ||
+      frame.locked ||
+      tool === 'hand' ||
+      tool === 'zoom'
+    ) {
       clearHover()
       return
     }
@@ -945,6 +1081,24 @@ export const FrameView = memo(function FrameView({
   )
   const picked = JSON.parse(pickedKey) as string[]
   const multiPick = picked.length > 1
+  /* the picked element's grips and rotate zones: only where a drag can
+     change the box, and never on a locked layer or frame, or under the
+     Comment tool — nor on a multi-element pick, where a drag would size
+     only one */
+  const furnitureShown =
+    !!probe &&
+    probe.selector !== shellSel &&
+    !multiPick &&
+    selected &&
+    !editing &&
+    !pathEdit &&
+    !dragging &&
+    !elementMove.moving &&
+    tool === 'select' &&
+    !!probe.sizable &&
+    !probe.locked &&
+    !frame.locked &&
+    !readOnly
   /* the hover outline is for what the pointer could pick: an element already
      picked wears its selection hairline, and the hover's blue wash on top of
      it would tint a picked root wrapper's whole frame. A standalone element's
@@ -1092,7 +1246,15 @@ export const FrameView = memo(function FrameView({
           const rect = ev.data.rect as ProbeHit['rect'] | null
           setProbe((p) => {
             if (!p || p.selector !== ev.data.selector) return p
-            return rect ? { ...p, rect, sizable: ev.data.sizable === true } : null
+            if (!rect) return null
+            const box = ev.data.box as ProbeHit['box'] | null
+            return {
+              ...p,
+              rect,
+              sizable: ev.data.sizable === true,
+              rotation: typeof ev.data.rotation === 'number' ? ev.data.rotation : 0,
+              ...(box ? { box } : {}),
+            }
           })
           return
         }
@@ -1313,6 +1475,8 @@ export const FrameView = memo(function FrameView({
               top: frame.y,
               width: frame.width,
               height: frame.height,
+              /* the whole frame turns about its centre: surface, name, grips */
+              transform: frame.rotation ? `rotate(${frame.rotation}deg)` : undefined,
               /* selected, the frame's parts take its place in the stack one by
                  one, so its selection chrome can rise above the whole page */
               zIndex: selected ? undefined : stack,
@@ -1356,6 +1520,7 @@ export const FrameView = memo(function FrameView({
         >
           {labelLayer &&
             selected &&
+            !shapeMoving &&
             !editing &&
             !pathEdit &&
             (!wantedSel || shellPicked) &&
@@ -1367,7 +1532,9 @@ export const FrameView = memo(function FrameView({
                 className="pointer-events-none absolute whitespace-nowrap rounded-tag bg-[rgb(60,130,246)] px-2 py-1 text-label font-medium text-white tabular-nums"
                 style={{
                   left: `calc(var(--vx, 0px) + ${frame.x + frame.width / 2}px * var(--zoom, 1))`,
-                  top: `calc(var(--vy, 0px) + ${frame.y + frame.height}px * var(--zoom, 1))`,
+                  /* under the box the turned frame covers, so a turn never
+                     leaves the badge across the frame */
+                  top: `calc(var(--vy, 0px) + ${badgeBottom(frame)}px * var(--zoom, 1))`,
                   transform: `translate(-50%, ${LABEL_GAP + 4}px)`,
                 }}
               >
@@ -1514,15 +1681,15 @@ export const FrameView = memo(function FrameView({
             }}
             onPointerDown={(e) => startDrag(e, 'move', true)}
             onDoubleClick={(e) => {
-              void enterElementEdit(designPoint(e, e.currentTarget))
+              void enterElementEdit(designPoint(e, e.currentTarget, frame.rotation))
             }}
             onPointerMove={(e) => {
               /* where the pointer is stays current through a drag or a resize
                  too: once the gesture's save lands, the hover is probed again
                  at the pointer's spot, which the gesture has moved */
-              const at = designPoint(e, e.currentTarget)
+              const at = designPoint(e, e.currentTarget, frame.rotation)
               hoverAt.current = at
-              /* the Hand only pans, and a locked frame has nothing to pick: no
+              /* the Hand only pans, the Zoom only zooms, and a locked frame has nothing to pick: no
                  element outlines in either case */
               if (
                 editing ||
@@ -1533,7 +1700,8 @@ export const FrameView = memo(function FrameView({
                 frame.locked ||
                 !frame.html ||
                 !runtimeReady ||
-                tool === 'hand'
+                tool === 'hand' ||
+                tool === 'zoom'
               )
                 return
               sendHover(at.x, at.y)
@@ -1592,7 +1760,9 @@ export const FrameView = memo(function FrameView({
             {/* the frame's selection ring (not over an agent's stream, which has
               its own): two screen pixels straddling its edge, so on the pixel
               grid it runs down the middle of the edge's line */}
-            {selected && !pathEdit && !stream && (
+            {/* a picked element inside the frame is the selection: the frame
+              keeps no ring of its own then, as its grips go too */}
+            {selected && (!wantedSel || shellPicked) && !pathEdit && !stream && !shapeMoving && (
               <div
                 data-frame-selection=""
                 className="pointer-events-none absolute inset-0 outline-solid outline-brand"
@@ -1656,17 +1826,14 @@ export const FrameView = memo(function FrameView({
                 selected &&
                 !editing &&
                 !pathEdit &&
-                !dragging && (
+                !dragging &&
+                !elementMove.moving && (
                   <div
                     data-element-outline=""
                     /* a one-pixel hairline, the way Paper outlines a selection */
                     className="pointer-events-none absolute z-[3] shadow-[inset_0_0_0_calc(1px/var(--zoom,1))_#3c82f6]"
-                    style={{
-                      left: probe.rect.x,
-                      top: probe.rect.y,
-                      width: probe.rect.width,
-                      height: probe.rect.height,
-                    }}
+                    /* on the element's own box, turned with it */
+                    style={selectionBox(probe.rect, probe.rotation, probe.box)}
                   />
                 )}
               {/* the text being edited wears the same hairline, grips aside: one
@@ -1687,6 +1854,7 @@ export const FrameView = memo(function FrameView({
                 !editing &&
                 !pathEdit &&
                 !dragging &&
+                !elementMove.moving &&
                 picked
                   .filter((selector) => selector !== probe?.selector)
                   .map((selector) => {
@@ -1705,30 +1873,20 @@ export const FrameView = memo(function FrameView({
               {/* the grips: only where a drag can change the box, and never on
               a locked layer or frame, or under the Comment tool — nor on a
               multi-element pick, where a drag would size only one */}
-              {probe &&
-                probe.selector !== shellSel &&
-                !multiPick &&
-                selected &&
-                !editing &&
-                !pathEdit &&
-                !dragging &&
-                !elementMove.moving &&
-                tool === 'select' &&
-                probe.sizable &&
-                !probe.locked &&
-                !frame.locked &&
-                !readOnly && (
-                  <ElementResizeHandles
-                    frame={frame}
-                    selector={probe.selector}
-                    rect={probe.rect}
-                    onRect={(rect) => setProbe((p) => (p && p.selector === probe.selector ? { ...p, rect } : p))}
-                    onResizing={(on) => {
-                      if (on) clearHover()
-                      setResizing(on)
-                    }}
-                  />
-                )}
+              {furnitureShown && probe && (
+                <ElementResizeHandles
+                  frame={frame}
+                  selector={probe.selector}
+                  geometry={{ rect: probe.rect, rotation: probe.rotation ?? 0, box: probe.box ?? probe.rect }}
+                  onGeometry={(g: ElementGeometry) =>
+                    setProbe((p) => (p && p.selector === probe.selector ? { ...p, ...g } : p))
+                  }
+                  onResizing={(on) => {
+                    if (on) clearHover()
+                    setResizing(on)
+                  }}
+                />
+              )}
             </div>
             {/* someone else just changed this frame: their highlight, the remote
               editor's outline in their colour, fading out. Outside the body,
@@ -1758,8 +1916,8 @@ export const FrameView = memo(function FrameView({
                 <div data-comment-ui className="pointer-events-none absolute inset-0">
                   {comments.map((c) => {
                     const pos = isFrameComment(c) ? { x: c.x, y: c.y } : elementCommentPosition(c, pinPos[c.id])
-                    if (!pos) return null
                     const open = openThread === c.id
+                    if (!pos || (!pinsShown && !open && draggedPin !== c.id)) return null
                     const replies = frameComments.filter((r) => r.parentId === c.id).reverse() // store is newest-first
                     const thread: [ElementComment, ...ElementComment[]] = [c, ...replies.sort((a, b) => a.at - b.at)]
                     return (
@@ -1808,7 +1966,10 @@ export const FrameView = memo(function FrameView({
 
                   {anchor && (editing || !multiPick) && selected && !contextMenuOpen && !elementMove.moving && (
                     <div
-                      className={cn('pointer-events-auto absolute z-[7] origin-top-left', POPOVER_SCALE)}
+                      className={cn(
+                        'pointer-events-auto absolute z-[7] origin-top-left',
+                        furnitureShown && !composing ? POPOVER_SCALE_CLEAR : POPOVER_SCALE,
+                      )}
                       style={{
                         left: Math.min(
                           Math.max(composing ? (anchor.point?.x ?? anchor.rect.x) : anchor.rect.x, 4),
@@ -1931,12 +2092,17 @@ export const FrameView = memo(function FrameView({
               tool === 'select' &&
               (!wantedSel || shellPicked) &&
               !elementMove.moving &&
+              !shapeMoving &&
               !frame.locked &&
               !shellLocked &&
               !readOnly &&
               !pathEdit &&
               !editing && (
-                <FrameResizeHandles onStart={(e, handle) => startDrag(e, 'resize', false, false, false, handle)} />
+                <FrameResizeHandles
+                  rotation={frame.rotation ?? 0}
+                  onStart={(e, handle) => startDrag(e, 'resize', false, false, false, handle)}
+                  onRotateStart={startRotate}
+                />
               )}
             {elementMove.preview}
             {pathEdit && <PathEditor frame={frame} initial={pathEdit} onClose={closePathEdit} />}
