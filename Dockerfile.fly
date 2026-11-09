@@ -31,8 +31,11 @@ WORKDIR /app
 # Vulkan validation layer and mock driver are development tooling that headless
 # rendering never loads (it renders through SwiftShader), so they are dropped, along
 # with docs. The last command fails the build if the trimmed browser cannot start.
+# Fonts match upstream's Dockerfile: DejaVu covers symbols (arrows, shapes,
+# dingbats) that would otherwise render as empty boxes in screenshots.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-noto-color-emoji \
+  && apt-get install -y --no-install-recommends chromium \
+    fonts-liberation fonts-dejavu-core fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /usr/share/doc /usr/share/man /usr/share/info \
   && rm -f /usr/lib/chromium/libVkLayer_khronos_validation.so /usr/lib/chromium/VkLayer_khronos_validation.json \
     /usr/lib/chromium/libVkICD_mock_icd.so /usr/lib/chromium/VkICD_mock_icd.json \
