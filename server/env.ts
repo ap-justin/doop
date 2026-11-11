@@ -116,6 +116,11 @@ const schema = {
   /* unset in production = user credentials stored unencrypted (boot warns) */
   SECRETS_ENCRYPTION_KEYS: secretKeys({ default: [], devDefault: DEV_SECRET_KEYS }),
   TRUSTED_ORIGINS: list({ default: [] }),
+  /* headers holding the client IP for rate limiting, first match wins;
+     unset = Fly-Client-IP on Fly, better-auth's default elsewhere */
+  AUTH_IP_HEADERS: list({ default: [] }),
+  /* set by Fly on every Machine; picks the Fly-Client-IP default above */
+  FLY_APP_NAME: str({ default: undefined }),
   SIGNUP_EMAIL_DOMAINS: list({ default: [] }),
   ADMIN_EMAILS: list({ default: [] }),
   REQUIRE_EMAIL_VERIFICATION: bool({ default: true }),
