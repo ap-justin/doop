@@ -362,10 +362,11 @@ function buildAuth() {
   /* BETTER_AUTH_SECRET and BETTER_AUTH_URL are required in production; a
      missing one fails at boot in server/env.ts */
   const prod = env.isProduction
-  /* the header rate limiting reads the client address from. better-auth's
-     default, X-Forwarded-For, resolves only when it holds a single address;
-     Fly's proxy appends to whatever the client sent, so on Fly it never
-     does and every sign-in shares one bucket. Fly-Client-IP is set by the
+  /* the headers better-auth reads the client IP from, for rate limiting and
+     the IP stored on sessions. better-auth's default, X-Forwarded-For,
+     resolves only when it holds a single address; Fly's proxy appends to
+     whatever the client sent, so on Fly it never does and every sign-in
+     shares one bucket. Fly-Client-IP is set by the
      proxy, which overwrites a client-sent copy. AUTH_IP_HEADERS overrides
      the choice on any host. */
   const ipAddressHeaders = env.AUTH_IP_HEADERS.length

@@ -45,7 +45,6 @@ describe('server/env.ts', () => {
   })
 
   it('parses AUTH_IP_HEADERS as lowercased header names and refuses anything else', () => {
-    /* better-auth hands each entry to Headers.get, which throws on every auth request */
     expect(() => stubEnv('AUTH_IP_HEADERS', 'fly-client-ip x-real-ip')).toThrow(
       /AUTH_IP_HEADERS: Invalid header name: "fly-client-ip x-real-ip"/,
     )

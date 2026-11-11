@@ -130,8 +130,8 @@ const schema = {
   /* unset in production = user credentials stored unencrypted (boot warns) */
   SECRETS_ENCRYPTION_KEYS: secretKeys({ default: [], devDefault: DEV_SECRET_KEYS }),
   TRUSTED_ORIGINS: list({ default: [] }),
-  /* headers holding the client IP for rate limiting, the first that holds one
-     valid address wins; unset = Fly-Client-IP on Fly, better-auth's default elsewhere */
+  /* headers holding the client IP, tried in order until one holds a single
+     valid address; unset = Fly-Client-IP on Fly, better-auth's default elsewhere */
   AUTH_IP_HEADERS: headerNames({ default: [] }),
   /* set by Fly on every Machine; picks the Fly-Client-IP default above */
   FLY_APP_NAME: str({ default: undefined }),
