@@ -44,6 +44,17 @@ describe('server/env.ts', () => {
     expect(() => stubEnv('DOOP_AGENT_PROVIDER', 'openai')).toThrow(/DOOP_AGENT_PROVIDER/)
   })
 
+  it('parses AUTH_IP_HEADERS as lowercased header names and refuses anything else', () => {
+    /* better-auth hands each entry to Headers.get, which throws on every auth request */
+    expect(() => stubEnv('AUTH_IP_HEADERS', 'fly-client-ip x-real-ip')).toThrow(
+      /AUTH_IP_HEADERS: Invalid header name: "fly-client-ip x-real-ip"/,
+    )
+    stubEnv('AUTH_IP_HEADERS', ' CF-Connecting-IP, X-Real-IP ,')
+    expect(env.AUTH_IP_HEADERS).toEqual(['cf-connecting-ip', 'x-real-ip'])
+    stubEnv('AUTH_IP_HEADERS', '  ')
+    expect(env.AUTH_IP_HEADERS).toEqual([])
+  })
+
   it('reports every bad variable in one error', () => {
     vi.stubEnv('PORT', 'eighty')
     vi.stubEnv('CHROME_NO_SANDBOX', 'yes please')

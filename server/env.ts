@@ -50,6 +50,20 @@ const list = makeExactValidator<string[]>((input) =>
     .filter(Boolean),
 )
 
+/** A `list` of HTTP header names (RFC 9110 tokens), lowercased. Checked here
+ *  because better-auth passes each one to `Headers.get`, which throws on an
+ *  invalid name on every auth request rather than once at boot. */
+const headerNames = makeExactValidator<string[]>((input) =>
+  input
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .map((name) => {
+      if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name)) throw new TypeError(`Invalid header name: "${name}"`)
+      return name
+    }),
+)
+
 export interface SecretKey {
   id: string
   key: Buffer
@@ -116,9 +130,9 @@ const schema = {
   /* unset in production = user credentials stored unencrypted (boot warns) */
   SECRETS_ENCRYPTION_KEYS: secretKeys({ default: [], devDefault: DEV_SECRET_KEYS }),
   TRUSTED_ORIGINS: list({ default: [] }),
-  /* headers holding the client IP for rate limiting, first match wins;
-     unset = Fly-Client-IP on Fly, better-auth's default elsewhere */
-  AUTH_IP_HEADERS: list({ default: [] }),
+  /* headers holding the client IP for rate limiting, the first that holds one
+     valid address wins; unset = Fly-Client-IP on Fly, better-auth's default elsewhere */
+  AUTH_IP_HEADERS: headerNames({ default: [] }),
   /* set by Fly on every Machine; picks the Fly-Client-IP default above */
   FLY_APP_NAME: str({ default: undefined }),
   SIGNUP_EMAIL_DOMAINS: list({ default: [] }),
