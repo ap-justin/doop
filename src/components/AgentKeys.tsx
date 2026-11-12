@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage, type AgentKeyInfo } from '../lib/api'
+import { api, errorMessage, type AgentKeyInfo, type AgentKeyScope } from '../lib/api'
 import { posthog } from '../lib/posthog'
 import { timeAgo } from '../lib/time'
 import { t as translate, useT } from '../lib/i18n'
@@ -7,6 +7,7 @@ import { ConfirmDialog } from './ui/alert-dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Note } from './ui/note'
+import { Segmented, SegmentedItem } from './ui/segmented'
 import { CodeBlock } from './ui/code-block'
 import { CardDescription, CardHeader, CardRow, CardTitle, SettingsCard } from './ui/card'
 import { TrashIcon } from './ui/icons'
@@ -35,6 +36,7 @@ export function AgentKeys() {
   const t = useT()
   const [keys, setKeys] = useState<AgentKeyInfo[] | null>(null)
   const [name, setName] = useState('')
+  const [scope, setScope] = useState<AgentKeyScope>('full')
   const [minting, setMinting] = useState(false)
   const [error, setError] = useState('')
   /* the one moment the full secret exists client-side */
@@ -60,7 +62,7 @@ export function AgentKeys() {
     setMinting(true)
     setError('')
     try {
-      const { secret, ...info } = await api.createAgentKey(name)
+      const { secret, ...info } = await api.createAgentKey(name, scope)
       posthog.capture('agent_key_created')
       setName('')
       setMinted({ id: info.id, secret })
@@ -113,6 +115,18 @@ export function AgentKeys() {
         {error && <Note tone="error">{error}</Note>}
       </CardRow>
 
+      <CardRow label={t('agentKeys.accessRow')}>
+        <Segmented
+          value={scope}
+          onValueChange={(next) => setScope(next === 'comment' ? 'comment' : 'full')}
+          aria-label={t('agentKeys.accessAria')}
+        >
+          <SegmentedItem value="full">{t('agentKeys.scopeFull')}</SegmentedItem>
+          <SegmentedItem value="comment">{t('agentKeys.scopeComment')}</SegmentedItem>
+        </Segmented>
+        <Note>{t(scope === 'comment' ? 'agentKeys.scopeCommentHint' : 'agentKeys.scopeFullHint')}</Note>
+      </CardRow>
+
       {minted && (
         <CardRow label={t('agentKeys.yourNewKey')}>
           <div className="min-w-0 flex-1">
@@ -140,6 +154,7 @@ export function AgentKeys() {
           }
         >
           <span className="font-mono text-body text-ink-soft">{key.start}…</span>
+          <Note>{t(key.scope === 'comment' ? 'agentKeys.scopeComment' : 'agentKeys.scopeFull')}</Note>
           <Note>
             {key.lastUsedAt
               ? t('agentKeys.createdLastUsed', { created: timeAgo(key.createdAt), used: timeAgo(key.lastUsedAt) })

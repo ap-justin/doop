@@ -288,6 +288,8 @@ export const agentKeys = pgTable(
     userId: text('user_id').notNull(),
     name: text('name').notNull(),
     start: text('start').notNull(),
+    /** 'full' (every MCP tool) or 'comment' (read and comment threads only) */
+    scope: text('scope').notNull().default('full'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     lastUsedAt: bigint('last_used_at', { mode: 'number' }),
   },

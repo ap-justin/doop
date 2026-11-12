@@ -77,7 +77,14 @@ async function mount(node: ReactNode) {
   await act(async () => root.render(node))
 }
 
-const key = (id: string, name: string): AgentKeyInfo => ({ id, name, start: 'dpk_abc', createdAt: 0, lastUsedAt: null })
+const key = (id: string, name: string): AgentKeyInfo => ({
+  id,
+  name,
+  start: 'dpk_abc',
+  scope: 'full',
+  createdAt: 0,
+  lastUsedAt: null,
+})
 const hook = (id: string, url: string): WebhookInfo => ({
   id,
   url,

@@ -54,12 +54,16 @@ export interface SyncKeyInfo {
   frames: number
 }
 
+export type AgentKeyScope = 'full' | 'comment'
+
 /** An account-scoped bearer credential for /mcp (headless agents). The
  *  secret exists only on the create response — the list shows `start`. */
 export interface AgentKeyInfo {
   id: string
   name: string
   start: string
+  /** `comment` keys can read canvases and take part in comment threads only */
+  scope: AgentKeyScope
   createdAt: number
   lastUsedAt: number | null
 }
@@ -380,8 +384,11 @@ export const api = {
   syncFlow: (canvasId: string) => req<SyncFlow>(`/api/canvases/${canvasId}/sync-flow`),
   /* agent keys: bearer credentials for headless MCP clients */
   listAgentKeys: () => req<AgentKeyInfo[]>('/api/agent-keys'),
-  createAgentKey: (name: string) =>
-    req<AgentKeyInfo & { secret: string }>('/api/agent-keys', { method: 'POST', body: JSON.stringify({ name }) }),
+  createAgentKey: (name: string, scope: AgentKeyScope = 'full') =>
+    req<AgentKeyInfo & { secret: string }>('/api/agent-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, scope }),
+    }),
   deleteAgentKey: (keyId: string) => req(`/api/agent-keys/${keyId}`, { method: 'DELETE' }),
   /* GitHub repos connected as import sources */
   listGithubConnections: (canvasId: string) => req<GithubConnectionInfo[]>(`/api/canvases/${canvasId}/github`),

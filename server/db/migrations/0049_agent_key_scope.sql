@@ -1,0 +1,1 @@
+ALTER TABLE "agent_keys" ADD COLUMN "scope" text DEFAULT 'full' NOT NULL;

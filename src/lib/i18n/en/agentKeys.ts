@@ -12,6 +12,12 @@ export const agentKeys = {
   createKey: 'Create key',
   namePlaceholder: 'What will use it, e.g. mastra-prod',
   nameAria: 'Agent key name',
+  accessRow: 'Access',
+  accessAria: 'Agent key access',
+  scopeFull: 'Full access',
+  scopeComment: 'Read and comment',
+  scopeFullHint: 'Can use every tool: draw, edit and delete as well as read and comment.',
+  scopeCommentHint: 'Can read canvases and reply to or resolve comments. Cannot create or change anything else.',
 
   yourNewKey: 'Your new key',
   copyNow: 'Copy it now — it is shown once and stored hashed.',

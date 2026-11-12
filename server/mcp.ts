@@ -28,7 +28,7 @@ import { webFontFamilies, webFontsBrief } from '../shared/webFonts.ts'
 import * as actions from './actions.ts'
 import { canvasRole } from './access.ts'
 import { roleAllows, type CanvasRole } from '../shared/canvasRole.ts'
-import { isAgentKeySecret, verifyAgentKey } from './agentKeys.ts'
+import { isAgentKeySecret, verifyAgentKey, type AgentKeyScope } from './agentKeys.ts'
 import * as workspaces from './workspaces.ts'
 import { auth, getUserName, isBanned } from './auth.ts'
 import { capture, captureThrottled } from './analytics.ts'
@@ -166,6 +166,33 @@ function err(message: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true }
 }
 
+/** The only tools a `comment`-scoped agent key may call: read a canvas, the
+ *  style guides, tokens and references a review is judged against, and take
+ *  part in its comment threads. Everything else is refused before it runs. */
+export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
+  'list_canvases',
+  'get_canvas',
+  'get_comments',
+  'get_frame',
+  'get_frame_screenshot',
+  'list_frame_versions',
+  'get_prototype',
+  'list_guidelines',
+  'get_guidelines',
+  'get_tokens',
+  'get_reference',
+  'get_profile',
+  'get_guide',
+  'reply_to_comment',
+  'resolve_comment',
+])
+
+/** Leads get_guide for a `comment` key, whose guide otherwise describes a
+ *  design workflow it cannot carry out. */
+const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, screenshots, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
+
+`
+
 /** Reaches agents that start designing without having read the canvas's style guides. */
 function withGuidelinesNudge<T extends { content: { type: 'text' | 'image'; [k: string]: unknown }[] }>(
   result: T,
@@ -294,6 +321,24 @@ function frameSummary(f: {
   }
 }
 
+/** Wraps server.registerTool so every tool registered after this call and
+ *  outside COMMENT_SCOPE_TOOLS gets a handler that refuses; call it before the
+ *  first registration. The SDK's own enable/disable would hide a tool but
+ *  answer a call with a protocol error that says nothing about why, so the
+ *  tool stays listed and the refusal explains the key's limit. */
+function limitToComments(server: McpServer) {
+  const register = server.registerTool.bind(server) as (name: string, config: unknown, cb: unknown) => unknown
+  const limited = (name: string, config: unknown, cb: unknown) =>
+    register(
+      name,
+      config,
+      COMMENT_SCOPE_TOOLS.has(name)
+        ? cb
+        : () => err(`this agent key is limited to reading and comments, so ${name} is not available to it`),
+    )
+  server.registerTool = limited as unknown as typeof server.registerTool
+}
+
 /** owner is the connecting user's display name (for attribution); ownerId is
  *  their user id — canvases the agent creates or lists are scoped to it, the
  *  same isolation the web UI gets. clientName names the connecting client
@@ -303,6 +348,7 @@ export function buildMcpServer(
   owner?: string,
   ownerId?: string,
   clientName?: () => Promise<string | undefined>,
+  scope: AgentKeyScope = 'full',
 ): McpServer {
   const actorFrom = (agent_name?: string) => actions.resolveActor({ name: agent_name, kind: 'agent', owner })
   /* Canvas access for agents mirrors the web UI: the OAuth user's id runs
@@ -332,13 +378,14 @@ export function buildMcpServer(
     err(`no frame with id ${id} accessible to this account${readOnlyNote(store.getFrame(id)?.canvasId)}`)
   /* Feedback is claimed, and set_status nudged, only for agents that may
      act on it: claiming assigns a human's request to this agent, which a
-     read-only agent could never carry out. */
+     read-only agent or a `comment` key could never carry out. */
+  const mayAct = (canvasId: string) => scope === 'full' && roleAllows(roleOn(canvasId), 'edit')
   const withFeedback = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendFeedback(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendFeedback(result, canvasId, actor) : result
   const withFeedbackNotice = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendFeedbackNotice(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendFeedbackNotice(result, canvasId, actor) : result
   const withStatusNudge = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendStatusNudge(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendStatusNudge(result, canvasId, actor) : result
   const noComment = (id: string) => err(`no comment with id ${id} on this canvas`)
   /* export_frame's PDF: the file travels inside the tool result, not as a
      public URL, so it stays behind the same canvas gate as the frames */
@@ -386,6 +433,7 @@ export function buildMcpServer(
     if (agent_name) actions.heartbeatAgent(canvasId, actorFrom(agent_name))
   }
   const server = new McpServer({ name: 'doop-canvas', version: '0.1.0' }, { instructions: INSTRUCTIONS })
+  if (scope === 'comment') limitToComments(server)
   registerFramePreview(server)
 
   server.registerTool(
@@ -399,7 +447,7 @@ export function buildMcpServer(
         topic: z.enum(GUIDE_TOPICS).describe('Guide topic to load'),
       },
     },
-    async () => text(DOOP_GUIDE),
+    async () => text(scope === 'comment' ? COMMENT_SCOPE_GUIDE_NOTE + DOOP_GUIDE : DOOP_GUIDE),
   )
 
   server.registerTool(
@@ -2277,7 +2325,7 @@ export async function handleMcpRequest(req: Request, res: Response) {
      sending a headless client into OAuth discovery helps nobody. Everything
      else falls through to the OAuth gate below. */
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1]
-  let session: { userId?: string | null; clientId?: string | null } | null
+  let session: { userId?: string | null; clientId?: string | null; scope?: AgentKeyScope } | null
   if (bearer && isAgentKeySecret(bearer)) {
     session = await verifyAgentKey(bearer)
     if (!session) {
@@ -2355,7 +2403,7 @@ export async function handleMcpRequest(req: Request, res: Response) {
   const clientName = async () =>
     (bearer ? clientNamesByCredential.get(credentialKey(bearer)) : undefined) ??
     (oauthClientId ? await oauthClientName(oauthClientId) : undefined)
-  const server = buildMcpServer(owner, session?.userId ?? undefined, clientName)
+  const server = buildMcpServer(owner, session?.userId ?? undefined, clientName, session?.scope)
   /* Stateless, and plain JSON rather than an SSE stream per response: no
      tool here sends notifications mid-call, so a stream carries nothing a
      JSON body does not, and JSON is what every client — including ChatGPT's
