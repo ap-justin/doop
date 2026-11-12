@@ -301,7 +301,7 @@ it('lifts a stranded webhook limit for someone with no workspaces left', async (
   await mount(<Webhooks />)
 
   await click(editButton('hooks.example.com'))
-  /* every canvas is the one answer left, and Save says so */
+  /* every canvas is the one answer left, so Save is on */
   expect(button('Save').disabled).toBe(false)
   await click(button('Save'))
 

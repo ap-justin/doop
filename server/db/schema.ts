@@ -28,9 +28,9 @@ const sealedText = customType<{ data: string; driverData: string }>({
   fromDriver: (value) => open(value),
 })
 
-/** A jsonb limit list: null (no limit) or a non-empty array. `[]` is refused
- *  as a limit chosen to admit nothing; a stored list still comes to admit
- *  nothing once its owner leaves or deletes every workspace on it. */
+/** A jsonb limit list: null (no limit) or a non-empty array. `[]` is refused:
+ *  nobody chooses a limit that admits nothing. A stored list can still come to
+ *  admit nothing once its owner leaves or deletes every workspace on it. */
 const nonEmptyArrayOrNull = (column: AnyPgColumn) =>
   sql`${column} IS NULL OR (jsonb_typeof(${column}) = 'array' AND jsonb_array_length(${column}) > 0)`
 
