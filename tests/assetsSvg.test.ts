@@ -49,14 +49,44 @@ describe('createAsset with SVG', () => {
     expect(written.rows[0]).toMatchObject({ id: asset.id, ext: 'svg', mime: 'image/svg+xml', uploadedBy: 'u1' })
   })
 
-  it('refuses an SVG with a payload, naming it, and writes nothing', async () => {
-    await expect(createAsset(svg('<script>alert(1)</script>'), meta)).rejects.toThrow(
-      /a <script> element.*put a frame's CSS and JS inline in its HTML/,
+  it('stores an Illustrator export: declaration, generator comment and DOCTYPE ahead of the svg', async () => {
+    const illustrator = Buffer.from(`<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 26.0.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+	<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">
+]>
+<svg version="1.1" id="Layer_1" xmlns:x="&ns_extend;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<style type="text/css">.st0{fill:#fff}</style>
+<path class="st0" d="M0 0h24v24H0z"/>
+</svg>`)
+    const asset = await createAsset(illustrator, meta)
+    expect(asset).toMatchObject({ mime: 'image/svg+xml', ext: 'svg', size: illustrator.length })
+    expect(written.objects).toHaveLength(1)
+    expect(written.objects[0]?.body).toEqual(illustrator)
+  })
+
+  it('stores a draw.io diagram whose label sits in a foreignObject', async () => {
+    const drawio = svg(
+      '<switch><foreignObject pointer-events="none" width="100%" height="100%" style="overflow: visible; text-align: left;">' +
+        '<div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; width: 78px; height: 1px;">' +
+        '<div style="display: inline-block; font-size: 12px; white-space: normal;">Label<br/></div></div></foreignObject>' +
+        '<text x="40" y="34" font-size="12px" text-anchor="middle">Label</text></switch>',
     )
-    await expect(createAsset(svg('<style><![CDATA[.a{fill:red}]]></style>'), meta)).rejects.toThrow(
-      /a CDATA section.*put a frame's CSS and JS inline in its HTML/,
+    const asset = await createAsset(drawio, meta)
+    expect(asset).toMatchObject({ mime: 'image/svg+xml', ext: 'svg', size: drawio.length })
+    expect(written.objects).toHaveLength(1)
+    expect(written.rows).toHaveLength(1)
+  })
+
+  it.each([
+    ['a script element', '<script>alert(1)</script>', 'a <script> element'],
+    ['a CDATA section', '<style><![CDATA[.a{fill:red}]]></style>', 'a CDATA section'],
+    ['an event handler', '<rect onload="x()"/>', 'an event handler attribute (on…=)'],
+    ['a javascript: URL', '<a href="javascript:x()"><rect/></a>', 'a javascript: URL'],
+  ])('refuses an SVG with %s, naming the rule and the way out, and writes nothing', async (_, inner, rule) => {
+    await expect(createAsset(svg(inner), meta)).rejects.toThrow(
+      `this SVG contains ${rule} — upload plain images only, and ${REFUSAL_HINT}`,
     )
-    await expect(createAsset(svg('<rect onload="x()"/>'), meta)).rejects.toThrow(REFUSAL_HINT)
     expect(written.objects).toEqual([])
     expect(written.rows).toEqual([])
   })

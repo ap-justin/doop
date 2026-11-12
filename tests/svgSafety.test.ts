@@ -113,7 +113,6 @@ describe('svgPayloadProblem on real exporter output', () => {
 describe('svgPayloadProblem keeps its patterns tight', () => {
   it('lets near-misses through', () => {
     expect(svgPayloadProblem(wrap('<scripted/>'))).toBeUndefined()
-    expect(svgPayloadProblem(wrap('<foreignObject><div>Label</div></foreignObject>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<rect data-onclick="x"/>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<a href="javascript"><rect/></a>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<a href="javascript is a language"><rect/></a>'))).toBeUndefined()
@@ -127,6 +126,61 @@ describe('svgPayloadProblem keeps its patterns tight', () => {
   it('treats a tab before a handler like a space', () => {
     expect(svgPayloadProblem(wrap('<rect\tonclick="x()"/>'))).toBe('an event handler attribute (on…=)')
   })
+
+  it('reads single-quoted attribute values like double-quoted ones', () => {
+    expect(svgPayloadProblem(wrap("<a href='javascript:x()'><rect/></a>"))).toBe('a javascript: URL')
+    expect(svgPayloadProblem(wrap("<rect aria-label='a>b' onload='x()'/>"))).toBe('an event handler attribute (on…=)')
+    expect(svgPayloadProblem(wrap("<rect aria-label='tap onclick=here'/>"))).toBeUndefined()
+  })
+
+  it('refuses a script element however its name ends', () => {
+    const script = 'a <script> element'
+    expect(svgPayloadProblem(wrap('<script/>'))).toBe(script)
+    expect(svgPayloadProblem(wrap('<script\n>alert(1)</script>'))).toBe(script)
+    expect(svgPayloadProblem(wrap('<script\ttype="text/javascript">alert(1)</script>'))).toBe(script)
+  })
+
+  it('refuses whitespace before the colon of a javascript: URL and an unquoted handler value', () => {
+    expect(svgPayloadProblem(wrap('<a href="javascript :x()"><rect/></a>'))).toBe('a javascript: URL')
+    expect(svgPayloadProblem(wrap('<rect onload=x/>'))).toBe('an event handler attribute (on…=)')
+  })
+})
+
+describe('svgPayloadProblem and foreignObject', () => {
+  /* diagram exporters write labels in foreignObject on purpose */
+  const drawio = wrap(
+    '<switch><foreignObject pointer-events="none" width="100%" height="100%" ' +
+      'requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility" style="overflow: visible; text-align: left;">' +
+      '<div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; ' +
+      'justify-content: unsafe center; width: 78px; height: 1px; padding-top: 30px; margin-left: 1px;">' +
+      '<div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; ' +
+      'pointer-events: all; white-space: normal; overflow-wrap: normal;">Label<br/></div></div></foreignObject>' +
+      '<text x="40" y="34" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">Label</text></switch>',
+  )
+  const mermaid = wrap(
+    '<foreignObject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" ' +
+      'style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Start</span></div></foreignObject>',
+  )
+
+  it('accepts a draw.io label with its text fallback and a Mermaid node label', () => {
+    expect(svgPayloadProblem(drawio)).toBeUndefined()
+    expect(svgPayloadProblem(mermaid)).toBeUndefined()
+  })
+
+  it('accepts a prefixed or upper-case foreignObject', () => {
+    expect(svgPayloadProblem(wrap('<svg:foreignObject><div>Label</div></svg:foreignObject>'))).toBeUndefined()
+    expect(svgPayloadProblem(wrap('<FOREIGNOBJECT><div>Label</div></FOREIGNOBJECT>'))).toBeUndefined()
+  })
+
+  it('still refuses a handler, a script and a javascript: link inside it', () => {
+    const xhtml = 'xmlns="http://www.w3.org/1999/xhtml"'
+    const inside = (html: string) => wrap(`<foreignObject>${html}</foreignObject>`)
+    expect(svgPayloadProblem(inside(`<div ${xhtml} onmouseover="x()">Label</div>`))).toBe(
+      'an event handler attribute (on…=)',
+    )
+    expect(svgPayloadProblem(inside(`<script ${xhtml}>alert(1)</script>`))).toBe('a <script> element')
+    expect(svgPayloadProblem(inside(`<a ${xhtml} href="javascript:x()">Label</a>`))).toBe('a javascript: URL')
+  })
 })
 
 describe('svgPayloadProblem on openers that never close', () => {
@@ -134,16 +188,38 @@ describe('svgPayloadProblem on openers that never close', () => {
    * 15 s (CDATA) to minutes (DOCTYPE); a linear one takes about 100 ms. */
   const size = 1024 * 1024
   const cases = [
-    ['<!DOCTYPE [', undefined],
-    ['<![CDATA[', 'a CDATA section'],
-    ['<!--', undefined],
-    ['<?', undefined],
+    ['<!DOCTYPE [', '', undefined],
+    ['<!DOCTYPE [', ']x', undefined], // a stray ] closes every subset but no `>` follows it
+    ['<!DOCTYPE "', '', undefined],
+    ['<![CDATA[', '', 'a CDATA section'],
+    ['<!--', '', undefined],
+    ['<?', '', undefined],
   ] as const
 
-  it.each(cases)('reads 1 MB of repeated %s in linear time', (opener, problem) => {
-    const svg = `<svg>${opener.repeat(Math.ceil(size / opener.length))}`
+  it.each(cases)('reads 1 MB of repeated %s then %j in linear time', (opener, tail, problem) => {
+    const svg = `<svg>${opener.repeat(Math.ceil(size / opener.length))}${tail}`
     const started = performance.now()
     expect(svgPayloadProblem(svg)).toBe(problem)
     expect(performance.now() - started).toBeLessThan(2000)
+  })
+
+  it('keeps an unclosed comment, so it cannot hide the markup after it', () => {
+    expect(svgPayloadProblem('<svg><!-- <script>alert(1)</script>')).toBe('a <script> element')
+  })
+})
+
+describe('svgPayloadProblem after a DOCTYPE it cannot read', () => {
+  const commented = '<svg><!-- <script>alert(1)</script> --></svg>'
+
+  it('ignores the same commented-out script after a DOCTYPE it can read', () => {
+    expect(svgPayloadProblem(`<!DOCTYPE svg>${commented}`)).toBeUndefined()
+  })
+
+  it.each([
+    ['a quoted literal that never closes', '<!DOCTYPE svg "unterminated'],
+    ['an internal subset that never closes', '<!DOCTYPE svg [ <!ENTITY a "b">'],
+    ['an internal subset closed by ] with no > after it', '<!DOCTYPE svg [ ]x'],
+  ])('refuses commented-out markup after %s', (_, doctype) => {
+    expect(svgPayloadProblem(`${doctype}${commented}`)).toBe('a <script> element')
   })
 })
