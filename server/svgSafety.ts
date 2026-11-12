@@ -2,13 +2,14 @@
  * What an uploaded SVG may not carry. Assets are images: frames reference
  * them with <img> or CSS, where an SVG never runs code. Scripts, event
  * handlers and foreignObject only matter when the file is opened as a
- * document, and CDATA sections are how a file smuggles a stylesheet or a
- * script past the image check for a frame to fetch and evaluate. A frame's
- * own CSS and JS belong inline in its HTML, so none of these has a use here.
+ * document, and a CDATA section lets a file carry a stylesheet or a script
+ * verbatim for a frame to fetch and evaluate. A frame's own CSS and JS
+ * belong inline in its HTML, so none of these has a use here.
  *
- * Text-level checks on purpose: an SVG that hides these from a regex (say,
- * through entities) is still rendered as an image, where they do nothing.
- * Comments are dropped first, so commented-out markup is ignored. The
+ * Text-level checks on purpose: they catch what exporters and agents write,
+ * not a file built to slip past them. Markup hidden through entities still
+ * renders inert as an image, though a frame that reads the file as text
+ * gets it decoded. Comments are dropped first, so commented-out markup is ignored. The
  * <script> and <foreignObject> rules take any namespace prefix
  * (`<svg:script`). Handlers and javascript: URLs count only inside a tag,
  * between its `<` and `>`: an `on…=` attribute outside any quoted value, or
