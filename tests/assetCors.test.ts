@@ -1,0 +1,56 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { Client, startServer, type Server } from './harness.ts'
+import { woff2 } from './fontFiles.ts'
+
+/* /a/ serves uploads to anyone with the URL, but only fonts carry a
+   cross-origin header: @font-face needs it from a sandboxed frame, while
+   images load without it and must not be readable by a frame's fetch(). */
+
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)])
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>')
+
+let server: Server
+let owner: Client
+
+beforeAll(async () => {
+  server = await startServer()
+  owner = await new Client(server).signUp('asset-cors@test.dev', 'Asset Cors')
+}, 60_000)
+
+afterAll(() => server?.stop())
+
+async function servedHeaders(url: string): Promise<Headers> {
+  const res = await fetch(url.replace(/^https?:\/\/[^/]+/, server.base))
+  expect(res.status).toBe(200)
+  return res.headers
+}
+
+describe('GET /a/:id.:ext cross-origin header', () => {
+  it('is sent for a font', async () => {
+    const res = await owner.req('/api/fonts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': 'AssetCors-Regular.woff2' },
+      body: new Uint8Array(woff2({ family: 'Asset Cors' })),
+    })
+    expect(res.status).toBe(200)
+    const headers = await servedHeaders((await res.json()).url)
+    expect(headers.get('content-type')).toBe('font/woff2')
+    expect(headers.get('access-control-allow-origin')).toBe('*')
+  })
+
+  it.each([
+    ['png', PNG, 'image/png'],
+    ['svg', SVG, 'image/svg+xml'],
+  ])('is not sent for a %s', async (_name, bytes, mime) => {
+    const canvas = await (await owner.post('/api/canvases', { name: 'Assets' })).json()
+    const res = await owner.req(`/api/canvases/${canvas.id}/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: new Uint8Array(bytes),
+    })
+    expect(res.status).toBe(200)
+    const headers = await servedHeaders((await res.json()).url)
+    expect(headers.get('content-type')).toBe(mime)
+    expect(headers.get('access-control-allow-origin')).toBeNull()
+  })
+})

@@ -744,7 +744,7 @@ Figma, Canva and PSD are deferred. Migration 0019 is reserved for the deferred F
 the OSS journal skips it while retaining the shared migration tags and timestamps for 0020–0022.
 Gemini cloud workers remain an operator-managed, opt-in pilot; see `docs/gemini-cloud-pilot.md`.
 
-The shared font library serves public font assets with CORS so sandboxed frames can load them.
+The asset route (`/a/`) sends `Access-Control-Allow-Origin: *` for fonts only, so sandboxed frames can load them while a frame cannot `fetch()` any other upload.
 Migrations 0040 (agent feedback) and 0041 (custom fonts) retain their shared timestamps; their OSS
 snapshots omit the deferred Figma `integrations.refresh_token` column, as does the credential
 encryption backfill. Desktop downloads use the platform-neutral `https://doop.design/download` page.
