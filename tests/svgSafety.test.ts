@@ -35,4 +35,31 @@ describe('svgPayloadProblem', () => {
     expect(svgPayloadProblem(wrap('<foreignObject><div/></foreignObject>'))).toBe('a <foreignObject> element')
     expect(svgPayloadProblem(wrap('<a href="javascript:x()"><rect/></a>'))).toBe('a javascript: URL')
   })
+
+  it('accepts text content that only reads like a handler or a javascript: URL', () => {
+    expect(svgPayloadProblem(wrap('<text>one = two</text>'))).toBeUndefined()
+    expect(svgPayloadProblem(wrap('<desc>JavaScript: the logo</desc>'))).toBeUndefined()
+    expect(svgPayloadProblem(wrap('<rect aria-label="tap onclick=here"/>'))).toBeUndefined()
+  })
+
+  it('refuses handlers and javascript: URLs wherever they sit in a start tag', () => {
+    const handler = 'an event handler attribute (on…=)'
+    expect(svgPayloadProblem(wrap('<rect\n  onclick = "x()"/>'))).toBe(handler)
+    expect(svgPayloadProblem(wrap('<rect aria-label="a>b" onload="x()"/>'))).toBe(handler)
+    expect(svgPayloadProblem(wrap('<a href=" JavaScript:x()"><rect/></a>'))).toBe('a javascript: URL')
+  })
+
+  it('refuses namespace-prefixed script and foreignObject elements', () => {
+    const prefixed = '<svg:script xmlns:svg="http://www.w3.org/2000/svg">alert(1)</svg:script>'
+    expect(svgPayloadProblem(wrap(prefixed))).toBe('a <script> element')
+    expect(svgPayloadProblem(wrap('<svg:foreignObject><div/></svg:foreignObject>'))).toBe('a <foreignObject> element')
+  })
+
+  it('ignores commented-out markup without letting a comment hide any', () => {
+    expect(svgPayloadProblem(wrap('<!-- <rect onload="x()"/> <script>alert(1)</script> -->'))).toBeUndefined()
+    expect(svgPayloadProblem(wrap('<scr<!-- -->ipt>alert(1)</script>'))).toBe('a <script> element')
+    expect(svgPayloadProblem(wrap('<?pi <!-- ?><script>alert(1)</script><!-- -->'))).toBe('a <script> element')
+    const entity = `<!DOCTYPE svg [<!ENTITY a "<!--">]>${wrap('<script>alert(1)</script><!-- -->')}`
+    expect(svgPayloadProblem(entity)).toBe('a <script> element')
+  })
 })
