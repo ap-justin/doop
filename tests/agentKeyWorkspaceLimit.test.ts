@@ -535,3 +535,46 @@ describe('a limited key whose owner leaves a listed workspace', () => {
     )
   })
 })
+
+describe('extension tools under a workspace limit', () => {
+  const linearTools = ['list_linear_issues', 'get_linear_issue']
+
+  const rpc = async (secret: string, method: string, params?: Record<string, unknown>) => {
+    const res = await fetch(`${server.base}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    })
+    return (await res.json()) as { result?: { tools?: { name: string }[] } }
+  }
+  const toolNames = async (secret: string) => ((await rpc(secret, 'tools/list')).result?.tools ?? []).map((t) => t.name)
+
+  it('leaves them out of tools/list for a limited key of either scope', async () => {
+    for (const body of [{ workspaceIds: [wsA] }, { scope: 'comment', workspaceIds: [wsA] }]) {
+      const names = await toolNames(await mint({ name: 'limited', ...body }))
+      expect(names).toContain('list_canvases')
+      for (const tool of linearTools) expect(names).not.toContain(tool)
+    }
+  })
+
+  it('answers a call to one exactly as it answers a tool that does not exist', async () => {
+    const limited = await mint({ name: 'limited', workspaceIds: [wsA] })
+    const missing = await callTool(limited, 'no_such_tool', { id: 'ENG-1' })
+    expect(missing.isError).toBe(true)
+    expect(missing.text).toContain('not found')
+    for (const tool of linearTools) {
+      const call = await callTool(limited, tool, { id: 'ENG-1' })
+      expect(call.isError).toBe(true)
+      expect(call.text.replace(tool, '<tool>')).toBe(missing.text.replace('no_such_tool', '<tool>'))
+    }
+  })
+
+  it('keeps them for an unlimited key', async () => {
+    const names = await toolNames(await mint({ name: 'all' }))
+    for (const tool of linearTools) expect(names).toContain(tool)
+  })
+})

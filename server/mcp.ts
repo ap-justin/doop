@@ -2043,7 +2043,11 @@ export function buildMcpServer(
       return true
     },
   }
-  for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
+  /* Extension tools reach accounts outside Doop's canvases (Linear is the
+     account's whole workspace), which a workspace limit cannot bound, so a
+     limited key is never given them: unregistered, they are absent from
+     tools/list and a call gets the SDK's unknown-tool error. */
+  if (!workspaceLimit) for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
 
   server.registerTool(
     'get_frame_screenshot',

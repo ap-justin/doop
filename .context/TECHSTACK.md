@@ -639,7 +639,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   workspace the owner still belongs to, so personal, invited and share-link canvases are outside
   every limit. Over /mcp the gate is `roleOn` in `buildMcpServer`: an out-of-limit canvas has no
   role, so every tool answers it exactly as a made-up id; `list_canvases` lists only in-limit
-  canvases and `create_canvas` defaults to the one workspace a key can still reach. A limited hook
+  canvases and `create_canvas` defaults to the one workspace a key can still reach. A limited key gets no extension tools (the Linear ones read the whole account, which a workspace cannot bound): `buildMcpServer` does not register them, so they are absent from `tools/list` and a call fails like any unknown tool. A limited hook
   hears only its workspaces' canvases, retries included. The API lists the limit as
   `workspaces` (id and name of each workspace the owner can still reach, `[]` when none is left,
   null for no limit); both create routes and the webhook PATCH refuse an unknown body field.
