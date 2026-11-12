@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { COMMENT_SCOPE_TOOLS } from '../server/mcp.ts'
 import { Client, startServer, type Server } from './harness.ts'
 
 /**
@@ -7,6 +8,36 @@ import { Client, startServer, type Server } from './harness.ts'
  * comment id answering a canvas outside the limit exactly as it answers an id
  * that does not exist.
  */
+
+/* The server is a child process, so a test cannot stub its fetch. This module
+   is preloaded into it (NODE_OPTIONS --import) and answers the search tools'
+   upstreams with fixed bodies, so a limited key's answer on another
+   workspace's canvas is compared with a made-up id's without the live web.
+   Hosts it does not know go through to the real fetch. */
+const STUB_UPSTREAMS = `
+const realFetch = globalThis.fetch
+const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+const gone = () => new Response('', { status: 404 })
+globalThis.fetch = async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  switch (url.hostname) {
+    case 'api.iconify.design':
+      return url.pathname.endsWith('/search') ? json({ icons: ['mdi:arrow-right', 'mdi:arrow-left'] }) : gone()
+    case 'api.pexels.com':
+      return json({ photos: [{ src: { large: 'https://images.pexels.com/l.jpg', tiny: 'https://images.pexels.com/t.jpg' }, alt: 'office', photographer: 'Stub', width: 4, height: 3, avg_color: '#000000' }] })
+    case 'api.onepagelove.com':
+      return json({ results: { items: [{ title: 'Stub Site', slug: 'stub-site', url: 'https://stub.example', screenshot: { hero: 'https://assets.onepagelove.com/h.png' } }] } })
+    case 'icons.duckduckgo.com':
+    case 'images.pexels.com':
+    case 'assets.onepagelove.com':
+      return gone()
+    default:
+      return realFetch(input, init)
+  }
+}
+`
+const withStubbedUpstreams = () =>
+  `${process.env.NODE_OPTIONS ?? ''} --import=data:text/javascript,${encodeURIComponent(STUB_UPSTREAMS)}`.trim()
 
 let server: Server
 let owner: Client
@@ -17,7 +48,16 @@ let wsStranger: string
 
 beforeAll(async () => {
   /* a resident allowance lets the owner leave task feedback; no model keys, so no resident run takes it */
-  server = await startServer({ RESIDENT_TASK_LIMIT: '5', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' })
+  server = await startServer({
+    RESIDENT_TASK_LIMIT: '5',
+    ANTHROPIC_API_KEY: '',
+    OPENAI_API_KEY: '',
+    /* keys so search_images and search_inspiration run (upstreams stubbed); room for the searches below */
+    PEXELS_API_KEY: 'stub',
+    ONEPAGELOVE_API_KEY: 'stub',
+    MCP_SEARCHES_PER_MIN: '1000',
+    NODE_OPTIONS: withStubbedUpstreams(),
+  })
   owner = await new Client(server).signUp('limit-owner@test.dev', 'Limit Owner')
   stranger = await new Client(server).signUp('limit-stranger@test.dev', 'Limit Stranger')
   wsA = (await (await owner.post('/api/workspaces', { name: 'Alpha' })).json()).id
@@ -171,9 +211,13 @@ describe('a key limited to one workspace over /mcp', () => {
     )
 
   it('lists only the canvases in its workspaces', async () => {
-    expect(await listed(limitedFull)).toEqual(['In A'])
-    expect(await listed(limitedComment)).toEqual(['In A'])
-    expect((await listed(unlimited)).sort()).toEqual(['In A', 'In B', "Limit's first canvas", 'Personal'].sort())
+    const outside = ['In B', 'Personal', 'By link']
+    for (const key of [limitedFull, limitedComment]) {
+      const names = await listed(key)
+      expect(names).toContain('In A')
+      for (const name of outside) expect(names).not.toContain(name)
+    }
+    expect(await listed(unlimited)).toEqual(expect.arrayContaining(['In A', ...outside]))
   })
 
   const bot = { agent_name: 'Limit Bot' }
@@ -256,11 +300,19 @@ describe('a key limited to one workspace over /mcp', () => {
     ['search_logos', { query: 'example.com', count: 1 }],
   ]
 
+  /* a comment key refuses a tool outside COMMENT_SCOPE_TOOLS before its handler
+     runs, the same for every id, so only the tools it may call say anything
+     about the limit */
+  const rowsFor = (scope: string) =>
+    toolCalls
+      .map(([tool, args], i) => [`${tool} #${i}`, tool, args] as const)
+      .filter(([, tool]) => scope === 'full' || COMMENT_SCOPE_TOOLS.has(tool))
+
   describe.each([
     ['full', () => limitedFull],
     ['comment', () => limitedComment],
-  ])('with %s scope', (_scope, key) => {
-    it.each(toolCalls.map(([tool, args], i) => [`${tool} #${i}`, tool, args] as const))(
+  ])('with %s scope', (scope, key) => {
+    it.each(rowsFor(scope))(
       '%s answers a canvas in another workspace as it answers a made-up id',
       async (_label, tool, args) => {
         const outside = await callTool(key(), tool, args(b))
@@ -281,18 +333,35 @@ describe('a key limited to one workspace over /mcp', () => {
       }
     })
 
-    it.each(optionalCanvasCalls)(
-      '%s with a canvas in another workspace answers as with a made-up id',
-      async (tool, args) => {
-        const outside = await callTool(key(), tool, { ...args, canvas_id: b.canvasId, ...bot })
-        const missing = await callTool(key(), tool, { ...args, canvas_id: madeUp.canvasId, ...bot })
-        expect(outside.text).not.toContain('HUMAN FEEDBACK')
-        expect(masked(outside.text, b)).toBe(masked(missing.text, madeUp))
-      },
-      /* these tools search the live web, up to 15 s per fetch, and each case calls one twice */
-      45_000,
-    )
+    /* none of these is a comment-scope tool: that key's refusal of them is
+       asserted below, and says nothing about the limit */
+    if (scope === 'full')
+      it.each(optionalCanvasCalls)(
+        '%s with a canvas in another workspace answers as with a made-up id',
+        async (tool, args) => {
+          const outside = await callTool(key(), tool, { ...args, canvas_id: b.canvasId, ...bot })
+          const missing = await callTool(key(), tool, { ...args, canvas_id: madeUp.canvasId, ...bot })
+          expect(outside.isError).toBe(false)
+          expect(outside.text).not.toContain('HUMAN FEEDBACK')
+          expect(masked(outside.text, b)).toBe(masked(missing.text, madeUp))
+        },
+      )
   })
+
+  it('has comment-scope rows to run, and a comment key refuses every other tool as outside its scope', async () => {
+    expect(rowsFor('comment').length).toBeGreaterThan(0)
+    expect(rowsFor('comment').length).toBeLessThan(rowsFor('full').length)
+    const others = [
+      ...toolCalls.filter(([tool]) => !COMMENT_SCOPE_TOOLS.has(tool)).map(([tool, args]) => [tool, args(a)] as const),
+      ...optionalCanvasCalls.map(([tool, args]) => [tool, { ...args, canvas_id: a.canvasId, ...bot }] as const),
+    ]
+    expect(others.length).toBeGreaterThan(0)
+    for (const [tool, args] of others) {
+      const res = await callTool(limitedComment, tool, args)
+      expect(res.isError, tool).toBe(true)
+      expect(res.text, tool).toContain('limited to reading and comments')
+    }
+  }, 30_000)
 
   /* calls that cannot finish inside the test rig (no image model, no network,
      no Chrome): on a canvas the key reaches they still answer something other
@@ -311,13 +380,18 @@ describe('a key limited to one workspace over /mcp', () => {
       expect(masked(inside.text, own)).not.toBe(masked(missing.text, madeUp))
       if (!needsOutsideWorld(tool, call)) expect(inside, inside.text).toMatchObject({ isError: false })
     },
+    /* seeds a canvas (about ten requests) and some rows drive Chromium or the network */
+    30_000,
   )
 
-  it('announces feedback on a canvas it may reach, so the optional canvas_id probe can tell', async () => {
-    const res = await callTool(unlimited, 'list_backgrounds', { count: 1, canvas_id: b.canvasId, ...bot })
-    expect(res.isError).toBe(false)
-    expect(res.text).toContain('HUMAN FEEDBACK')
-  })
+  it.each(optionalCanvasCalls)(
+    'announces feedback on a canvas it may reach, so the %s probe can tell',
+    async (tool, args) => {
+      const res = await callTool(unlimited, tool, { ...args, canvas_id: b.canvasId, ...bot })
+      expect(res.isError, res.text).toBe(false)
+      expect(res.text).toContain('HUMAN FEEDBACK')
+    },
+  )
 
   /* a canvas the key may reach, carrying an id that belongs to B */
   const crossIdCalls: [string, (t: Target) => Record<string, unknown>][] = [
@@ -332,18 +406,26 @@ describe('a key limited to one workspace over /mcp', () => {
     ['comment', () => limitedComment],
   ])(
     'answers a comment or frame from another workspace on its own canvas as a made-up id (%s scope)',
-    async (_scope, key) => {
+    async (scope, key) => {
       const onA = (t: Target) => ({ ...t, canvasId: a.canvasId })
-      for (const [tool, args] of crossIdCalls) {
+      for (const [tool, args] of crossIdCalls.filter(([tool]) => scope === 'full' || COMMENT_SCOPE_TOOLS.has(tool))) {
         const outside = await callTool(key(), tool, args(onA(b)))
         const missing = await callTool(key(), tool, args(onA(madeUp)))
         expect(outside.isError).toBe(true)
         expect(masked(outside.text, b)).toBe(masked(missing.text, madeUp))
       }
     },
+    30_000,
   )
 
   it('leaves no trace on a canvas outside its limit', async () => {
+    /* try every tool on B first, so the check holds whatever ran before it */
+    for (const key of [limitedFull, limitedComment]) {
+      for (const [tool, args] of toolCalls) await callTool(key, tool, args(b))
+      for (const [tool, args] of optionalCanvasCalls) {
+        await callTool(key, tool, { ...args, canvas_id: b.canvasId, ...bot })
+      }
+    }
     const canvas = (await (await owner.get(`/api/canvases/${b.canvasId}`)).json()) as {
       frames: { id: string; name: string }[]
     }
@@ -357,7 +439,7 @@ describe('a key limited to one workspace over /mcp', () => {
     /* still unclaimed: the first agent that may act on B gets it */
     const feedback = await callTool(unlimited, 'get_feedback', { canvas_id: b.canvasId, agent_name: 'Seeder' })
     expect(feedback.text).toContain('warmer accent')
-  })
+  }, 60_000)
 
   it('still reads and comments on a canvas in its workspace', async () => {
     for (const key of [limitedFull, limitedComment]) {

@@ -105,6 +105,23 @@ it('hands a workspace limit to the registry, and a null one lifts it', async () 
   expect((await json('PATCH', '/w1', { workspaceIds: 'ws-a' })).status).toBe(400)
 })
 
+it('answers 400 with the registry’s message when it rejects a limit, on create and on patch', async () => {
+  const message = 'that workspace does not exist, or you are not a member of it'
+  mocks.create.mockRejectedValueOnce(new mocks.WebhookInputError(message))
+  const created = await json('POST', '/', {
+    url: 'https://hooks.example.com/',
+    events: ['comment.created'],
+    workspaceIds: ['ws-x'],
+  })
+  expect(created.status).toBe(400)
+  expect(await created.json()).toEqual({ error: message })
+
+  mocks.update.mockRejectedValueOnce(new mocks.WebhookInputError(message))
+  const patched = await json('PATCH', '/w1', { workspaceIds: ['ws-x'] })
+  expect(patched.status).toBe(400)
+  expect(await patched.json()).toEqual({ error: message })
+})
+
 it('refuses a field it does not know, naming it, so a misspelled limit never means no limit', async () => {
   const created = await json('POST', '/', {
     url: 'https://hooks.example.com/',

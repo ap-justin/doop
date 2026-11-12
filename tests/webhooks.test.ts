@@ -369,6 +369,19 @@ describe('delivery', () => {
     )
   })
 
+  it('sends a limited hook nothing for a canvas in a workspace its owner has left', async () => {
+    await register('alice', ['comment.created'], 'https://limited.example.com/', ['ws-b'])
+    const inBeta = { ...COMMENT, canvasId: IN_B.id }
+    webhooks.onCanvasEvent(IN_B.id, { type: 'comment.created', comment: inBeta, frame: FRAME, actorKind: 'user' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+
+    mocks.aliceIn.delete('ws-b')
+    webhooks.onCanvasEvent(IN_B.id, { type: 'comment.created', comment: inBeta, frame: FRAME, actorKind: 'user' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not retry once the limit no longer covers the canvas', async () => {
     const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
     mocks.fetch.mockResolvedValueOnce(ok(503))
