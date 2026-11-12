@@ -3,8 +3,9 @@ import { Client, startServer, type Server } from './harness.ts'
 import { ttf, woff, woff2 } from './fontFiles.ts'
 
 /* /a/ serves uploads to anyone with the URL, but only fonts carry a
-   cross-origin header: @font-face needs it from a sandboxed frame, while
-   images load without it and must not be readable by a frame's fetch(). */
+   cross-origin header: @font-face needs it from a sandboxed frame, while a
+   plain <img> loads an image without it and a frame's fetch() must not
+   read one. */
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)])
 const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)])

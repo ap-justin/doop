@@ -224,7 +224,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Chromium) and encoded. An upload (`/a/<id>.<ext>`) that frame HTML names on another origin
   (the server's `BETTER_AUTH_URL`, while the editor runs on an alias) is read from the page's own
   origin first (`localAssetCopy`), since only fonts are served cross-origin. A resource the browser
-  cannot fetch (an image host without CORS) rejects the whole render and the export falls back to `/i/<id>.<ext>` as before, so what the
+  cannot fetch (an image host without CORS) rejects the whole render and the export falls back to `/i/<id>.<ext>`, so what the
   person sees on the canvas is never the export's blocker. An element inside a frame exports
   too (the element menu's Export… dialog and Copy as PNG, `downloadElementExport` /
   `copyElementPng`): the frame is rendered whole and cut to the element's live box
@@ -746,8 +746,10 @@ Figma, Canva and PSD are deferred. Migration 0019 is reserved for the deferred F
 the OSS journal skips it while retaining the shared migration tags and timestamps for 0020–0022.
 Gemini cloud workers remain an operator-managed, opt-in pilot; see `docs/gemini-cloud-pilot.md`.
 
-The asset route (`/a/`) sends `Access-Control-Allow-Origin: *` for fonts only, so sandboxed frames
-can load them while a frame cannot `fetch()` any other upload.
+The asset route (`/a/`, `server/index.ts`) sends `Access-Control-Allow-Origin: *` for fonts only, so
+sandboxed frames can load them while a frame cannot `fetch()` any other upload. An upload therefore
+renders through a plain `<img>` or `background` url(), not a `crossorigin` `<img>` or a CSS `mask` /
+`shape-outside` url(), which fetch in cors mode. Tests: `assetCors.test.ts`.
 Migrations 0040 (agent feedback) and 0041 (custom fonts) retain their shared timestamps; their OSS
 snapshots omit the deferred Figma `integrations.refresh_token` column, as does the credential
 encryption backfill. Desktop downloads use the platform-neutral `https://doop.design/download` page.
