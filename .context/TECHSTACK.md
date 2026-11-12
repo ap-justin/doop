@@ -221,7 +221,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   scripts and `srcset` are dropped, a link's `media` kept; a nested document (iframe, object, embed) sends
   the frame to the server, since it would be a hole in the picture),
   and the SVG is drawn onto a canvas at 2x from a data: URL (a blob: URL taints the canvas in
-  Chromium) and encoded. A resource the browser cannot fetch (an image host without CORS)
+  Chromium) and encoded. An upload (`/a/<id>.<ext>`) that frame HTML names on another origin
+  (the server's `BETTER_AUTH_URL`, while the editor runs on an alias) is read from the page's own
+  origin first (`localAssetCopy`), since only fonts are served cross-origin. A resource the browser cannot fetch (an image host without CORS)
   rejects the whole render and the export falls back to `/i/<id>.<ext>` as before, so what the
   person sees on the canvas is never the export's blocker. An element inside a frame exports
   too (the element menu's Export… dialog and Copy as PNG, `downloadElementExport` /
