@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options { "happyDOM": { "settings": { "disableCSSFileLoading": true } } }
 import { afterEach, expect, it, vi } from 'vitest'
-import { clipToFrame, inlineDocument, pinViewportUnits } from '../src/lib/frameRaster'
+import { clipToFrame, inlineDocument, localAssetCopy, pinViewportUnits } from '../src/lib/frameRaster'
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
 const PNG_DATA = 'data:image/png;base64,iVBORw=='
@@ -84,6 +84,40 @@ it('inlines images, stylesheets and the fonts they name as data: URLs', async ()
   /* one fetch per URL, however many places name it */
   expect(calls.filter((url) => url.endsWith('/a/bg.png'))).toHaveLength(1)
   expect(calls).not.toContain('http://localhost:3000/a/pic@2x.png')
+})
+
+it('reads an upload named by another origin from this one', () => {
+  const here = 'https://app.example'
+  expect(localAssetCopy('https://old.example/a/abc123.png?v=2', here)).toBe('https://app.example/a/abc123.png?v=2')
+  expect(localAssetCopy('https://app.example/a/abc123.png', here)).toBeNull()
+  expect(localAssetCopy('https://cdn.example/img/abc123.png', here)).toBeNull()
+  expect(localAssetCopy('https://old.example/a/nested/abc123.png', here)).toBeNull()
+  expect(localAssetCopy('/a/abc123.png', here)).toBeNull()
+  expect(localAssetCopy(PNG_DATA, here)).toBeNull()
+})
+
+it('fetches a foreign upload from this origin, and from its own when this one lacks it', async () => {
+  const here = location.origin
+  const calls = serve({
+    [`${here}/a/ours.png`]: { body: PNG, type: 'image/png' },
+    'https://other.example/a/theirs.png': { body: PNG, type: 'image/png' },
+  })
+  const svg = await inlineDocument(
+    '<html><body><img src="https://old.example/a/ours.png"><img src="https://other.example/a/theirs.png"></body></html>',
+    opts(),
+  )
+  expect(svg.match(/src="data:image\/png;base64,/g)).toHaveLength(2)
+  expect(calls).not.toContain('https://old.example/a/ours.png')
+  expect(calls).toEqual(
+    expect.arrayContaining([`${here}/a/ours.png`, `${here}/a/theirs.png`, 'https://other.example/a/theirs.png']),
+  )
+})
+
+it('rejects a foreign upload neither origin serves, as any failed fetch does', async () => {
+  serve({})
+  await expect(
+    inlineDocument('<html><body><img src="https://other.example/a/gone.png"></body></html>', opts()),
+  ).rejects.toThrow('404 fetching https://other.example/a/gone.png')
 })
 
 it('leaves data: and fragment references alone', async () => {

@@ -385,13 +385,17 @@ class ResourceCache {
   private blob(url: string): Promise<Blob> {
     let pending = this.pending.get(url)
     if (!pending) {
-      pending = fetch(url, { signal: this.signal, credentials: 'same-origin' }).then((res) => {
-        if (!res.ok) throw new Error(`${res.status} fetching ${url}`)
-        return res.blob()
-      })
+      const local = localAssetCopy(url, location.origin)
+      pending = local ? this.load(local).catch(() => this.load(url)) : this.load(url)
       this.pending.set(url, pending)
     }
     return pending
+  }
+
+  private async load(url: string): Promise<Blob> {
+    const res = await fetch(url, { signal: this.signal, credentials: 'same-origin' })
+    if (!res.ok) throw new Error(`${res.status} fetching ${url}`)
+    return res.blob()
   }
 
   async text(url: string): Promise<string> {
@@ -411,6 +415,31 @@ class ResourceCache {
     }
     return toDataUrl(blob)
   }
+}
+
+const ASSET_PATH = /^\/a\/[^/]+\.[^/.]+$/
+
+/**
+ * An upload (`/a/<id>.<ext>`) on another origin as the same path and query
+ * on `origin`, else null. Frame HTML names uploads by the server's
+ * `BETTER_AUTH_URL`, and the `/a/` route in `server/index.ts` serves only
+ * fonts cross-origin, so an editor on any other origin cannot read an image
+ * upload from there. Fonts are rewritten too: this origin's copy needs no
+ * CORS header, whatever the upload is. Assets are immutable under an
+ * unguessable id, so this origin's copy is the same bytes. One from another
+ * instance may be missing here; the caller then tries the original URL,
+ * which is readable cross-origin only for fonts, so an image from there
+ * sends a PNG or JPG export to the server and fails an SVG one.
+ */
+export function localAssetCopy(url: string, origin: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (parsed.origin === origin || !ASSET_PATH.test(parsed.pathname)) return null
+  return `${origin}${parsed.pathname}${parsed.search}`
 }
 
 function toDataUrl(blob: Blob): Promise<string> {
