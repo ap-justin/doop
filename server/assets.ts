@@ -112,7 +112,7 @@ export async function createAsset(
     const problem = svgPayloadProblem(buf.toString('utf8'))
     if (problem)
       throw new Error(
-        `this SVG contains ${problem} — upload plain images only, and put a frame's CSS and JS inline in its HTML`,
+        `this SVG contains ${problem}, so it was not uploaded. Upload plain images only, and put a frame's CSS and JS inline in its HTML`,
       )
   }
   return storeAsset(buf, { mime, ext: MIME_EXT[mime] }, meta)

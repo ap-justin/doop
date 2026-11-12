@@ -3,8 +3,8 @@
  * them with <img> or CSS, where an SVG never runs code. Scripts and event
  * handlers only matter when the file is opened as a document, and a CDATA
  * section lets a file carry a stylesheet or a script verbatim for a frame
- * to fetch and evaluate. A frame's own CSS and JS
- * belong inline in its HTML, so none of these has a use here.
+ * to fetch and evaluate. A frame's own CSS and JS belong inline in its
+ * HTML, so none of these has a use here.
  * <foreignObject> stays allowed: diagram exporters (draw.io, Mermaid) use it
  * for labels, and it is as inert as the rest of the file in an <img>.
  *
@@ -13,12 +13,11 @@
  * renders inert as an image, though a frame that parses the file as markup
  * gets it decoded. Comments are dropped first, so commented-out markup is
  * ignored, up to a DOCTYPE the check cannot read: after one, comments stay
- * and commented-out markup is refused like any other. The
- * <script> rule takes any namespace prefix
- * (`<svg:script`). Handlers and javascript: URLs count only inside a tag,
- * between its `<` and `>`: an `on…=` attribute outside any quoted value, or
- * a quoted value that opens with `javascript:`. Words in text content never
- * match.
+ * and commented-out markup is refused like any other. The <script> rule
+ * takes any namespace prefix (`<svg:script`). Handlers and javascript: URLs
+ * count only inside a tag, between its `<` and `>`: an `on…=` attribute
+ * outside any quoted value, or a quoted value that opens with
+ * `javascript:`. Words in text content never match.
  */
 
 /** From a `<` up to a point inside the same tag that is outside any quoted
