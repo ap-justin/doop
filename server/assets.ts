@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
 import * as storage from './storage.ts'
+import { svgPayloadProblem } from './svgSafety.ts'
 
 /**
  * Uploaded assets (images, and the files of font libraries): bytes in object storage (server/storage.ts), one
@@ -107,6 +108,13 @@ export async function createAsset(
     throw new Error(`file is ${(buf.length / 1024 / 1024).toFixed(1)} MB — the limit is 5 MB`)
   const mime = sniffMime(buf)
   if (!mime) throw new Error('unsupported file type — png, jpg, webp, gif and svg are accepted')
+  if (mime === 'image/svg+xml') {
+    const problem = svgPayloadProblem(buf.toString('utf8'))
+    if (problem)
+      throw new Error(
+        `this SVG contains ${problem} — upload plain images only, and put a frame's CSS and JS inline in its HTML`,
+      )
+  }
   return storeAsset(buf, { mime, ext: MIME_EXT[mime] }, meta)
 }
 
