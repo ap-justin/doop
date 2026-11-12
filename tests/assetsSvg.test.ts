@@ -85,7 +85,7 @@ describe('createAsset with SVG', () => {
     ['a javascript: URL', '<a href="javascript:x()"><rect/></a>', 'a javascript: URL'],
   ])('refuses an SVG with %s, naming the rule and the way out, and writes nothing', async (_, inner, rule) => {
     await expect(createAsset(svg(inner), meta)).rejects.toThrow(
-      `this SVG contains ${rule} — upload plain images only, and ${REFUSAL_HINT}`,
+      `this SVG contains ${rule}, so it was not uploaded. Upload plain images only, and ${REFUSAL_HINT}`,
     )
     expect(written.objects).toEqual([])
     expect(written.rows).toEqual([])
