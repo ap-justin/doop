@@ -219,7 +219,10 @@ describe('a key limited to one workspace over /mcp', () => {
       expect(names).toContain('In A')
       for (const name of outside) expect(names).not.toContain(name)
     }
-    expect(await listed(unlimited)).toEqual(expect.arrayContaining(['In A', ...outside]))
+    const all = await listed(unlimited)
+    expect(all).toEqual(expect.arrayContaining(['In A', 'In B', 'Personal', "Limit's first canvas"]))
+    /* listing covers own, shared and workspace canvases; one open only by link is never listed, limit or not */
+    expect(all).not.toContain('By link')
   })
 
   const bot = { agent_name: 'Limit Bot' }
