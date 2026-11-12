@@ -107,7 +107,7 @@ function withoutComments(svg: string): string {
   const find = terminatorFinder(svg)
   const kept: string[] = []
   let copiedTo = 0
-  for (let at = svg.indexOf('<'); at !== -1; ) {
+  for (let at = svg.indexOf('<'); at !== -1;) {
     let end = -1
     if (svg.startsWith('<!--', at)) {
       end = find('-->', at + 4)
