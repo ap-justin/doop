@@ -289,6 +289,8 @@ describe('a key limited to one workspace over /mcp', () => {
         expect(outside.text).not.toContain('HUMAN FEEDBACK')
         expect(masked(outside.text, b)).toBe(masked(missing.text, madeUp))
       },
+      /* these tools search the live web, up to 15 s per fetch, and each case calls one twice */
+      45_000,
     )
   })
 
