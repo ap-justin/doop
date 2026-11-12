@@ -1,16 +1,18 @@
 /**
  * What an uploaded SVG may not carry. Assets are images: frames reference
- * them with <img> or CSS, where an SVG never runs code. Scripts, event
- * handlers and foreignObject only matter when the file is opened as a
- * document, and a CDATA section lets a file carry a stylesheet or a script
- * verbatim for a frame to fetch and evaluate. A frame's own CSS and JS
+ * them with <img> or CSS, where an SVG never runs code. Scripts and event
+ * handlers only matter when the file is opened as a document, and a CDATA
+ * section lets a file carry a stylesheet or a script verbatim for a frame
+ * to fetch and evaluate. A frame's own CSS and JS
  * belong inline in its HTML, so none of these has a use here.
+ * <foreignObject> stays allowed: diagram exporters (draw.io, Mermaid) use it
+ * for labels, and it is as inert as the rest of the file in an <img>.
  *
  * Text-level checks on purpose: they catch what exporters and agents write,
  * not a file built to slip past them. Markup hidden through entities still
  * renders inert as an image, though a frame that reads the file as text
  * gets it decoded. Comments are dropped first, so commented-out markup is ignored. The
- * <script> and <foreignObject> rules take any namespace prefix
+ * <script> rule takes any namespace prefix
  * (`<svg:script`). Handlers and javascript: URLs count only inside a tag,
  * between its `<` and `>`: an `on…=` attribute outside any quoted value, or
  * a quoted value that opens with `javascript:`. Words in text content never
@@ -23,7 +25,6 @@ const IN_TAG = String.raw`<[^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*`
 
 const RULES: readonly { pattern: RegExp; what: string }[] = [
   { pattern: /<(?:[^\s<>/:]+:)?script[\s>/]/i, what: 'a <script> element' },
-  { pattern: /<(?:[^\s<>/:]+:)?foreignObject[\s>/]/i, what: 'a <foreignObject> element' },
   { pattern: /<!\[CDATA\[/, what: 'a CDATA section' },
   {
     pattern: new RegExp(String.raw`${IN_TAG}\son[a-z]+\s*=`, 'i'),

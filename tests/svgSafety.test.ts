@@ -30,9 +30,8 @@ describe('svgPayloadProblem', () => {
     expect(svgPayloadProblem(wrap('<desc><![CDATA[window.run=function(){}]]></desc>'))).toBe('a CDATA section')
   })
 
-  it('refuses event handlers, foreignObject and javascript: URLs', () => {
+  it('refuses event handlers and javascript: URLs', () => {
     expect(svgPayloadProblem(wrap('<rect onload="x()"/>'))).toBe('an event handler attribute (on…=)')
-    expect(svgPayloadProblem(wrap('<foreignObject><div/></foreignObject>'))).toBe('a <foreignObject> element')
     expect(svgPayloadProblem(wrap('<a href="javascript:x()"><rect/></a>'))).toBe('a javascript: URL')
   })
 
@@ -49,10 +48,9 @@ describe('svgPayloadProblem', () => {
     expect(svgPayloadProblem(wrap('<a href=" JavaScript:x()"><rect/></a>'))).toBe('a javascript: URL')
   })
 
-  it('refuses namespace-prefixed script and foreignObject elements', () => {
+  it('refuses a namespace-prefixed script element', () => {
     const prefixed = '<svg:script xmlns:svg="http://www.w3.org/2000/svg">alert(1)</svg:script>'
     expect(svgPayloadProblem(wrap(prefixed))).toBe('a <script> element')
-    expect(svgPayloadProblem(wrap('<svg:foreignObject><div/></svg:foreignObject>'))).toBe('a <foreignObject> element')
   })
 
   it('ignores commented-out markup without letting a comment hide any', () => {
@@ -115,15 +113,14 @@ describe('svgPayloadProblem on real exporter output', () => {
 describe('svgPayloadProblem keeps its patterns tight', () => {
   it('lets near-misses through', () => {
     expect(svgPayloadProblem(wrap('<scripted/>'))).toBeUndefined()
-    expect(svgPayloadProblem(wrap('<foreignObjectX><rect/></foreignObjectX>'))).toBeUndefined()
+    expect(svgPayloadProblem(wrap('<foreignObject><div>Label</div></foreignObject>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<rect data-onclick="x"/>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<a href="javascript"><rect/></a>'))).toBeUndefined()
     expect(svgPayloadProblem(wrap('<a href="javascript is a language"><rect/></a>'))).toBeUndefined()
   })
 
-  it('matches the handler, foreignObject and javascript: rules in any letter case', () => {
+  it('matches the handler and javascript: rules in any letter case', () => {
     expect(svgPayloadProblem(wrap('<rect ONLOAD="x()"/>'))).toBe('an event handler attribute (on…=)')
-    expect(svgPayloadProblem(wrap('<FOREIGNOBJECT><div/></FOREIGNOBJECT>'))).toBe('a <foreignObject> element')
     expect(svgPayloadProblem(wrap('<a href="JavaScript:x()"><rect/></a>'))).toBe('a javascript: URL')
   })
 
