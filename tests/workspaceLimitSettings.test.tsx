@@ -68,6 +68,17 @@ function checkbox(label: string): HTMLInputElement {
 function hasButton(label: string): boolean {
   return Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === label)
 }
+/* a row's limit editor, named for its hook's host */
+function rowPicker(host: string): HTMLElement {
+  const found = container.querySelector<HTMLElement>(`[role="group"][aria-label="Change canvases for ${host}"]`)
+  if (!found) throw new Error(`no limit picker for ${host}`)
+  return found
+}
+function editButton(host: string): HTMLButtonElement {
+  const found = container.querySelector<HTMLButtonElement>(`button[aria-label="Change canvases for ${host}"]`)
+  if (!found) throw new Error(`no "Change canvases" button for ${host}`)
+  return found
+}
 async function click(el: HTMLElement) {
   await act(async () => el.click())
 }
@@ -253,10 +264,10 @@ it('lifts a webhook limit from its row, sending null for every canvas', async ()
   /* and the button that opened it is off until the editor closes */
   expect(edit.disabled).toBe(true)
 
-  const allButtons = Array.from(container.querySelectorAll('button')).filter(
+  const all = Array.from(rowPicker('hooks.example.com').querySelectorAll('button')).find(
     (b) => b.textContent?.trim() === 'All canvases',
-  )
-  await click(allButtons.at(-1)!)
+  )!
+  await click(all)
   await click(button('Save'))
 
   expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: null })
@@ -278,4 +289,97 @@ it('changes a webhook limit to other workspaces and never sends an empty list', 
 
   expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: ['w2'] })
   expect(container.textContent).toContain('Only in Studio')
+})
+
+it('lifts a stranded webhook limit for someone with no workspaces left', async () => {
+  mocks.listWorkspaces.mockResolvedValue(workspaces([]))
+  const stranded = hook('h1', 'https://hooks.example.com/doop', [])
+  mocks.listWebhooks.mockResolvedValue([stranded])
+  mocks.updateWebhook.mockResolvedValue({ ...stranded, workspaces: null })
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  /* every canvas is the one answer left, and Save says so */
+  expect(button('Save').disabled).toBe(false)
+  await click(button('Save'))
+
+  expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: null })
+  expect(container.textContent).not.toContain('No workspace available')
+})
+
+it('clears a failed limit save from the row once a retry succeeds', async () => {
+  const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  mocks.listWebhooks.mockResolvedValue([limited])
+  mocks.updateWebhook
+    .mockRejectedValueOnce(new Error('500'))
+    .mockResolvedValueOnce({ ...limited, workspaces: [{ id: 'w2', name: 'Studio' }] })
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  expect(container.textContent).toContain('The canvases could not be changed')
+
+  await click(button('Save'))
+  expect(container.textContent).not.toContain('The canvases could not be changed')
+  expect(container.textContent).toContain('no deliveries yet')
+})
+
+it('clears a failed limit save from the row on Cancel', async () => {
+  const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  mocks.listWebhooks.mockResolvedValue([limited])
+  mocks.updateWebhook.mockRejectedValueOnce(new Error('500'))
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  expect(container.textContent).toContain('The canvases could not be changed')
+
+  await click(button('Cancel'))
+  expect(container.textContent).not.toContain('The canvases could not be changed')
+  expect(container.textContent).toContain('no deliveries yet')
+})
+
+it('keeps the editor another hook opened when an earlier save lands late', async () => {
+  const first = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  const second = hook('h2', 'https://n8n.example.org/webhook', [{ id: 'w2', name: 'Studio' }])
+  mocks.listWebhooks.mockResolvedValue([first, second])
+  let land!: (value: WebhookListing) => void
+  mocks.updateWebhook.mockReturnValueOnce(new Promise<WebhookListing>((r) => (land = r)))
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  await click(button('Cancel'))
+  await click(editButton('n8n.example.org'))
+
+  await act(async () => land({ ...first, workspaces: [{ id: 'w2', name: 'Studio' }] }))
+  /* the second hook's editor is still open on its own limit */
+  expect(rowPicker('n8n.example.org')).toBeTruthy()
+  expect(checkbox('Studio').checked).toBe(true)
+  expect(hasButton('Save')).toBe(true)
+})
+
+it('moves focus into the limit editor when it opens and back to its button when it closes', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])])
+  mocks.updateWebhook.mockResolvedValue(hook('h1', 'https://hooks.example.com/doop', null))
+  await mount(<Webhooks />)
+
+  const edit = editButton('hooks.example.com')
+  edit.focus()
+  await click(edit)
+  expect(rowPicker('hooks.example.com').contains(document.activeElement)).toBe(true)
+
+  const cancel = button('Cancel')
+  cancel.focus()
+  await click(cancel)
+  expect(document.activeElement).toBe(editButton('hooks.example.com'))
+
+  await click(editButton('hooks.example.com'))
+  const save = button('Save')
+  save.focus()
+  await click(save)
+  expect(document.activeElement).toBe(editButton('hooks.example.com'))
 })

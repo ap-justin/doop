@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage, type WebhookListing } from '../lib/api'
 import { posthog } from '../lib/posthog'
 import { timeAgo } from '../lib/time'
@@ -103,6 +103,37 @@ export function Webhooks() {
   /* the hook whose limit is being changed, and the pick so far */
   const [editing, setEditing] = useState<{ id: string; value: string[] | null } | null>(null)
   const [rowNote, setRowNote] = useState<Record<string, { text: string; tone?: 'error' | 'success' }>>({})
+  const editorRef = useRef<HTMLDivElement>(null)
+  const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  /* the hook whose "Change canvases" button gets focus back once it is enabled again */
+  const returnFocusTo = useRef<string | null>(null)
+  const editingId = editing?.id
+
+  /* the opened editor takes focus from its button, which it disables: its first
+     tab stop, the Segmented root (Radix hands that on to the chosen segment)
+     or, with no choice to offer, the first enabled button */
+  useEffect(() => {
+    if (!editingId) return
+    editorRef.current
+      ?.querySelector<HTMLElement>('[tabindex="0"], button:not([disabled]):not([tabindex="-1"])')
+      ?.focus()
+  }, [editingId])
+
+  useEffect(() => {
+    const id = returnFocusTo.current
+    if (!id) return
+    /* another hook's editor is open and holds focus */
+    if (editing) {
+      returnFocusTo.current = null
+      return
+    }
+    /* still saving: the button is disabled until the save settles */
+    if (busy === id) return
+    returnFocusTo.current = null
+    const active = document.activeElement
+    /* only when closing the editor dropped focus, never over a control the person moved to */
+    if (!active || active === document.body || !active.isConnected) editButtons.current.get(id)?.focus()
+  }, [editing, busy])
 
   useEffect(() => {
     api.listWebhooks().then(setHooks, (e: unknown) => {
@@ -112,6 +143,22 @@ export function Webhooks() {
       setError(errorMessage(e, translate('webhooks.loadFailed')))
     })
   }, [])
+
+  function clearNote(id: string) {
+    setRowNote(({ [id]: _cleared, ...rest }) => rest)
+  }
+
+  function openEditor(hook: WebhookListing) {
+    returnFocusTo.current = null
+    clearNote(hook.id)
+    setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })
+  }
+
+  function closeEditor(id: string) {
+    returnFocusTo.current = id
+    clearNote(id)
+    setEditing(null)
+  }
 
   function replace(next: WebhookListing) {
     setHooks((current) => current?.map((h) => (h.id === next.id ? next : h)) ?? null)
@@ -182,7 +229,10 @@ export function Webhooks() {
       hook,
       async () => {
         replace(await api.updateWebhook(hook.id, { workspaceIds: value }))
-        setEditing(null)
+        clearNote(hook.id)
+        returnFocusTo.current = hook.id
+        /* the person may have moved on to another hook's editor while this one saved */
+        setEditing((current) => (current?.id === hook.id ? null : current))
       },
       t('webhooks.limitSaveFailed'),
     )
@@ -285,6 +335,9 @@ export function Webhooks() {
 
       {hooks?.map((hook) => {
         const status = rowNote[hook.id] ?? health(hook, t)
+        /* with no workspace to pick, every canvas is the only answer: a limit
+           whose workspaces are all gone can then still be lifted */
+        const editValue = workspaces.list?.length === 0 ? null : (editing?.value ?? null)
         return (
           <CardRow
             key={hook.id}
@@ -305,9 +358,13 @@ export function Webhooks() {
                 <Button
                   size="sm"
                   variant="ghost"
+                  ref={(el) => {
+                    if (el) editButtons.current.set(hook.id, el)
+                    else editButtons.current.delete(hook.id)
+                  }}
                   disabled={busy === hook.id || editing?.id === hook.id}
                   aria-label={t('webhooks.editLimitAria', { host: hostOf(hook.url) })}
-                  onClick={() => setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })}
+                  onClick={() => openEditor(hook)}
                 >
                   {t('webhooks.editLimit')}
                 </Button>
@@ -339,22 +396,22 @@ export function Webhooks() {
                 })}
               </div>
               {editing?.id === hook.id && (
-                <div className="mt-2 flex flex-wrap items-center gap-2.5">
+                <div ref={editorRef} className="mt-2 flex flex-wrap items-center gap-2.5">
                   <WorkspaceLimitPicker
                     workspaces={workspaces}
-                    value={editing.value}
+                    value={editValue}
                     onChange={(value) => setEditing({ id: hook.id, value })}
-                    labels={limitLabels}
+                    labels={{ ...limitLabels, aria: t('webhooks.editLimitAria', { host: hostOf(hook.url) }) }}
                   />
                   <div className="flex basis-full flex-wrap gap-1">
                     <Button
                       size="sm"
-                      disabled={busy === hook.id || workspaces.list === null || editing.value?.length === 0}
-                      onClick={() => void saveLimit(hook, editing.value)}
+                      disabled={busy === hook.id || workspaces.list === null || editValue?.length === 0}
+                      onClick={() => void saveLimit(hook, editValue)}
                     >
                       {t('common.save')}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                    <Button size="sm" variant="ghost" onClick={() => closeEditor(hook.id)}>
                       {t('common.cancel')}
                     </Button>
                   </div>
