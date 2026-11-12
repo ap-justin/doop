@@ -20,6 +20,18 @@ import { agentKeys } from './db/schema.ts'
 
 const PREFIX = 'dpk_'
 
+/** What a key may do over /mcp: `full` is every tool, `comment` only reads
+ *  canvases and takes part in comment threads (see COMMENT_SCOPE_TOOLS). */
+export const AGENT_KEY_SCOPES = ['full', 'comment'] as const
+export type AgentKeyScope = (typeof AGENT_KEY_SCOPES)[number]
+
+export function isAgentKeyScope(value: unknown): value is AgentKeyScope {
+  return AGENT_KEY_SCOPES.some((scope) => scope === value)
+}
+
+/** A stored scope this build does not know gets the narrower one. */
+const asScope = (value: string): AgentKeyScope => (isAgentKeyScope(value) ? value : 'comment')
+
 /** Keys per account. A ceiling against unbounded growth, not a plan limit. */
 const MAX_KEYS = 25
 
@@ -28,6 +40,7 @@ export interface AgentKeyInfo {
   name: string
   /** the secret's first characters — enough to recognise, never to use */
   start: string
+  scope: AgentKeyScope
   createdAt: number
   lastUsedAt: number | null
 }
@@ -36,6 +49,7 @@ const publicColumns = {
   id: agentKeys.id,
   name: agentKeys.name,
   start: agentKeys.start,
+  scope: agentKeys.scope,
   createdAt: agentKeys.createdAt,
   lastUsedAt: agentKeys.lastUsedAt,
 }
@@ -58,12 +72,14 @@ export function isAgentKeySecret(bearer: string): boolean {
 export async function createAgentKey(
   userId: string,
   name: string,
+  scope: AgentKeyScope = 'full',
 ): Promise<(AgentKeyInfo & { secret: string }) | null> {
   const secret = PREFIX + nanoid(32)
   const info: AgentKeyInfo = {
     id: nanoid(8),
     name: name.trim().slice(0, 60) || 'Agent key',
     start: secret.slice(0, PREFIX.length + 4),
+    scope,
     createdAt: Date.now(),
     lastUsedAt: null,
   }
@@ -71,7 +87,7 @@ export async function createAgentKey(
     .insert(agentKeys)
     .select(
       sql`select ${info.id}::text, ${hash(secret)}::text, ${userId}::text, ${info.name}::text, ${info.start}::text,
-          ${info.createdAt}::bigint, null::bigint
+          ${info.scope}::text, ${info.createdAt}::bigint, null::bigint
           where (select count(*) from ${agentKeys} where ${agentKeys.userId} = ${userId}) < ${MAX_KEYS}`,
     )
     .returning({ id: agentKeys.id })
@@ -79,8 +95,13 @@ export async function createAgentKey(
   return { ...info, secret }
 }
 
-export function listAgentKeys(userId: string): Promise<AgentKeyInfo[]> {
-  return db.select(publicColumns).from(agentKeys).where(eq(agentKeys.userId, userId)).orderBy(desc(agentKeys.createdAt))
+export async function listAgentKeys(userId: string): Promise<AgentKeyInfo[]> {
+  const rows = await db
+    .select(publicColumns)
+    .from(agentKeys)
+    .where(eq(agentKeys.userId, userId))
+    .orderBy(desc(agentKeys.createdAt))
+  return rows.map((row) => ({ ...row, scope: asScope(row.scope) }))
 }
 
 /** Revocation is deletion: the next MCP request with the secret gets a 401. */
@@ -99,10 +120,10 @@ const touched = new Map<string, number>()
 const TOUCH_INTERVAL_MS = 60_000
 
 /** The MCP gate: a valid secret resolves to the account it acts as. */
-export async function verifyAgentKey(secret: string): Promise<{ userId: string } | null> {
+export async function verifyAgentKey(secret: string): Promise<{ userId: string; scope: AgentKeyScope } | null> {
   if (!/^dpk_[\w-]{20,}$/.test(secret)) return null
   const [key] = await db
-    .select({ id: agentKeys.id, userId: agentKeys.userId })
+    .select({ id: agentKeys.id, userId: agentKeys.userId, scope: agentKeys.scope })
     .from(agentKeys)
     .where(eq(agentKeys.secretHash, hash(secret)))
   if (!key) return null
@@ -114,5 +135,5 @@ export async function verifyAgentKey(secret: string): Promise<{ userId: string }
       .where(eq(agentKeys.id, key.id))
       .catch((err: unknown) => console.error('[agent-keys] lastUsedAt write failed', err))
   }
-  return { userId: key.userId }
+  return { userId: key.userId, scope: asScope(key.scope) }
 }

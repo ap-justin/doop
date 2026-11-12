@@ -13,6 +13,12 @@ export const agentKeys: Catalog['agentKeys'] = {
   createKey: 'Criar chave',
   namePlaceholder: 'O que vai usá-la, ex.: mastra-prod',
   nameAria: 'Nome da chave de agente',
+  accessRow: 'Acesso',
+  accessAria: 'Acesso da chave de agente',
+  scopeFull: 'Acesso total',
+  scopeComment: 'Ler e comentar',
+  scopeFullHint: 'Pode usar todas as ferramentas: desenhar, editar e excluir, além de ler e comentar.',
+  scopeCommentHint: 'Pode ler canvases e responder ou resolver comentários. Não pode criar nem alterar mais nada.',
 
   yourNewKey: 'Sua nova chave',
   copyNow: 'Copie agora — ela é mostrada uma única vez e guardada como hash.',

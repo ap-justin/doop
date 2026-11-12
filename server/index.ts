@@ -1146,7 +1146,10 @@ app.get('/api/agent-keys', async (req, res) => {
 })
 
 app.post('/api/agent-keys', async (req, res) => {
-  const key = await agentKeys.createAgentKey(req.user!.id, String(req.body?.name ?? ''))
+  const scope = req.body?.scope ?? 'full'
+  if (!agentKeys.isAgentKeyScope(scope))
+    return res.status(400).json({ error: `scope must be one of: ${agentKeys.AGENT_KEY_SCOPES.join(', ')}` })
+  const key = await agentKeys.createAgentKey(req.user!.id, String(req.body?.name ?? ''), scope)
   if (!key) return res.status(400).json({ error: 'agent key limit reached — revoke one you no longer use' })
   res.json(key)
 })
