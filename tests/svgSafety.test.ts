@@ -128,3 +128,22 @@ describe('svgPayloadProblem keeps its patterns tight', () => {
     expect(svgPayloadProblem(wrap('<rect\tonclick="x()"/>'))).toBe('an event handler attribute (on…=)')
   })
 })
+
+describe('svgPayloadProblem on openers that never close', () => {
+  /* At 1 MB a scan that restarts its search at every opener takes from
+   * 15 s (CDATA) to minutes (DOCTYPE); a linear one takes about 100 ms. */
+  const size = 1024 * 1024
+  const cases = [
+    ['<!DOCTYPE [', undefined],
+    ['<![CDATA[', 'a CDATA section'],
+    ['<!--', undefined],
+    ['<?', undefined],
+  ] as const
+
+  it.each(cases)('reads 1 MB of repeated %s in linear time', (opener, problem) => {
+    const svg = `<svg>${opener.repeat(Math.ceil(size / opener.length))}`
+    const started = performance.now()
+    expect(svgPayloadProblem(svg)).toBe(problem)
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+})
