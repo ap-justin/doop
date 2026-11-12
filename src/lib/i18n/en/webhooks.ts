@@ -28,7 +28,7 @@ export const webhooks = {
 
   title: 'Webhooks',
   descriptionBefore:
-    'doop POSTs a signed JSON event to each URL below when something happens on a canvas you own, were invited to, or that lives in one of your workspaces — route it to Slack, n8n, an issue tracker, anything with an HTTP endpoint. Each delivery carries an ',
+    'doop POSTs a signed JSON event to each URL below when something happens on a canvas you own, were invited to, or that lives in one of your workspaces. A webhook limited to some workspaces hears only their canvases. Route it to Slack, n8n, an issue tracker, anything with an HTTP endpoint. Each delivery carries an ',
   descriptionAfter:
     ' header (HMAC-SHA256 with the webhook’s secret) so the receiver can trust it. Failed deliveries are retried three times; a hook that keeps failing pauses itself.',
   newWebhookRow: 'New webhook',

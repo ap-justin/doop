@@ -250,6 +250,8 @@ it('lifts a webhook limit from its row, sending null for every canvas', async ()
   await click(edit)
   /* the editor opens on the hook's own limit */
   expect(checkbox('Acme').checked).toBe(true)
+  /* and the button that opened it is off until the editor closes */
+  expect(edit.disabled).toBe(true)
 
   const allButtons = Array.from(container.querySelectorAll('button')).filter(
     (b) => b.textContent?.trim() === 'All canvases',

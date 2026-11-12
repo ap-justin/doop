@@ -305,7 +305,7 @@ export function Webhooks() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={busy === hook.id}
+                  disabled={busy === hook.id || editing?.id === hook.id}
                   aria-label={t('webhooks.editLimitAria', { host: hostOf(hook.url) })}
                   onClick={() => setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })}
                 >

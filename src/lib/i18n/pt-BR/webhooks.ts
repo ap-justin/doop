@@ -29,7 +29,7 @@ export const webhooks: Catalog['webhooks'] = {
 
   title: 'Webhooks',
   descriptionBefore:
-    'O doop envia um POST com um evento JSON assinado para cada URL abaixo quando algo acontece em um canvas que é seu, para o qual você foi convidado ou que está em um dos seus workspaces — encaminhe para o Slack, n8n, um rastreador de issues, qualquer coisa com um endpoint HTTP. Cada entrega leva um cabeçalho ',
+    'O doop envia um POST com um evento JSON assinado para cada URL abaixo quando algo acontece em um canvas que é seu, para o qual você foi convidado ou que está em um dos seus workspaces. Um webhook limitado a alguns workspaces ouve só os canvases deles. Encaminhe para o Slack, n8n, um rastreador de issues, qualquer coisa com um endpoint HTTP. Cada entrega leva um cabeçalho ',
   descriptionAfter:
     ' (HMAC-SHA256 com o segredo do webhook) para que o destinatário possa confiar nela. Entregas que falham são tentadas de novo três vezes; um webhook que continua falhando se pausa sozinho.',
   newWebhookRow: 'Novo webhook',
