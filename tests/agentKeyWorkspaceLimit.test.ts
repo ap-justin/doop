@@ -22,7 +22,7 @@ globalThis.fetch = async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input))
   switch (url.hostname) {
     case 'api.iconify.design':
-      return url.pathname.endsWith('/search') ? json({ icons: ['mdi:arrow-right', 'mdi:arrow-left'] }) : gone()
+      return url.pathname.endsWith('/search') ? json({ icons: ['stub:arrow-right', 'stub:arrow-left'] }) : gone()
     case 'api.pexels.com':
       return json({ photos: [{ src: { large: 'https://images.pexels.com/l.jpg', tiny: 'https://images.pexels.com/t.jpg' }, alt: 'office', photographer: 'Stub', width: 4, height: 3, avg_color: '#000000' }] })
     case 'api.onepagelove.com':
@@ -52,9 +52,11 @@ beforeAll(async () => {
     RESIDENT_TASK_LIMIT: '5',
     ANTHROPIC_API_KEY: '',
     OPENAI_API_KEY: '',
-    /* keys so search_images and search_inspiration run (upstreams stubbed); room for the searches below */
+    /* keys so search_images and search_inspiration run (upstreams stubbed); room for the searches below.
+       No Brandfetch id, so search_logos stays on the stubbed DuckDuckGo and Iconify hosts whatever the shell sets */
     PEXELS_API_KEY: 'stub',
     ONEPAGELOVE_API_KEY: 'stub',
+    BRANDFETCH_CLIENT_ID: '',
     MCP_SEARCHES_PER_MIN: '1000',
     NODE_OPTIONS: withStubbedUpstreams(),
   })
@@ -211,7 +213,7 @@ describe('a key limited to one workspace over /mcp', () => {
     )
 
   it('lists only the canvases in its workspaces', async () => {
-    const outside = ['In B', 'Personal', 'By link']
+    const outside = ['In B', 'Personal', "Limit's first canvas", 'By link']
     for (const key of [limitedFull, limitedComment]) {
       const names = await listed(key)
       expect(names).toContain('In A')
@@ -384,14 +386,31 @@ describe('a key limited to one workspace over /mcp', () => {
     30_000,
   )
 
+  /* a value only STUB_UPSTREAMS produces, so a preload that failed to load (the
+     tools then answer from the live web) fails here; list_backgrounds is local
+     and carries none */
+  const stubMarkers: Record<string, string | null> = {
+    search_inspiration: 'Stub Site',
+    search_images: 'images.pexels.com/l.jpg',
+    list_backgrounds: null,
+    search_icons: 'stub:arrow-right',
+    search_logos: 'stub:arrow-right',
+  }
+
   it.each(optionalCanvasCalls)(
     'announces feedback on a canvas it may reach, so the %s probe can tell',
     async (tool, args) => {
       const res = await callTool(unlimited, tool, { ...args, canvas_id: b.canvasId, ...bot })
       expect(res.isError, res.text).toBe(false)
       expect(res.text).toContain('HUMAN FEEDBACK')
+      const marker = stubMarkers[tool]
+      if (marker) expect(res.text, `${tool} should answer from the stubbed upstream`).toContain(marker)
     },
   )
+
+  it('has a stub marker entry for every optional-canvas tool', () => {
+    expect(Object.keys(stubMarkers).sort()).toEqual(optionalCanvasCalls.map(([tool]) => tool).sort())
+  })
 
   /* a canvas the key may reach, carrying an id that belongs to B */
   const crossIdCalls: [string, (t: Target) => Record<string, unknown>][] = [
