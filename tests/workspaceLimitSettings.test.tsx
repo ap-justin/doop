@@ -68,9 +68,10 @@ function checkbox(label: string): HTMLInputElement {
 function hasButton(label: string): boolean {
   return Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === label)
 }
-/* a row's limit editor, named for its hook's host */
+/* a row's limit editor, named for its hook's host: the All/Some switch, which
+   Radix's single toggle group renders as a radiogroup */
 function rowPicker(host: string): HTMLElement {
-  const found = container.querySelector<HTMLElement>(`[role="group"][aria-label="Change canvases for ${host}"]`)
+  const found = container.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="Change canvases for ${host}"]`)
   if (!found) throw new Error(`no limit picker for ${host}`)
   return found
 }
