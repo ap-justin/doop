@@ -54,10 +54,10 @@ export interface SyncKeyInfo {
   frames: number
 }
 
-/** An account-scoped bearer credential for /mcp (headless agents). The
- *  secret exists only on the create response — the list shows `start`. */
 export type AgentKeyScope = 'full' | 'comment'
 
+/** An account-scoped bearer credential for /mcp (headless agents). The
+ *  secret exists only on the create response — the list shows `start`. */
 export interface AgentKeyInfo {
   id: string
   name: string

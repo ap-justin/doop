@@ -321,10 +321,11 @@ function frameSummary(f: {
   }
 }
 
-/** Registers every tool outside COMMENT_SCOPE_TOOLS with a handler that
- *  refuses. The SDK's own enable/disable would hide a tool but answer a call
- *  with a protocol error that says nothing about why, so the tool stays listed
- *  and the refusal explains the key's limit. */
+/** Wraps server.registerTool so every tool registered after this call and
+ *  outside COMMENT_SCOPE_TOOLS gets a handler that refuses; call it before the
+ *  first registration. The SDK's own enable/disable would hide a tool but
+ *  answer a call with a protocol error that says nothing about why, so the
+ *  tool stays listed and the refusal explains the key's limit. */
 function limitToComments(server: McpServer) {
   const register = server.registerTool.bind(server) as (name: string, config: unknown, cb: unknown) => unknown
   const limited = (name: string, config: unknown, cb: unknown) =>
