@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listWebhooks: vi.fn(),
   createWebhook: vi.fn(),
   updateWebhook: vi.fn(),
+  testWebhook: vi.fn(),
 }))
 
 vi.mock('../src/lib/posthog', () => ({ posthog: { capture: vi.fn() } }))
@@ -71,7 +72,7 @@ function hasButton(label: string): boolean {
 /* a row's limit editor, named for its hook's host: the All/Some switch, which
    Radix's single toggle group renders as a radiogroup */
 function rowPicker(host: string): HTMLElement {
-  const found = container.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="Change canvases for ${host}"]`)
+  const found = container.querySelector<HTMLElement>(`[role="radiogroup"][aria-label="Canvases ${host} hears from"]`)
   if (!found) throw new Error(`no limit picker for ${host}`)
   return found
 }
@@ -335,11 +336,26 @@ it('clears a failed limit save from the row on Cancel', async () => {
   await click(editButton('hooks.example.com'))
   await click(checkbox('Studio'))
   await click(button('Save'))
-  expect(container.textContent).toContain('The canvases could not be changed')
+  /* announced, not just painted */
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('The canvases could not be changed')
 
   await click(button('Cancel'))
   expect(container.textContent).not.toContain('The canvases could not be changed')
   expect(container.textContent).toContain('no deliveries yet')
+})
+
+it('keeps a test-ping result on the row through opening and cancelling the limit editor', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])])
+  mocks.testWebhook.mockResolvedValue({ ok: false, status: null, error: 'timeout' })
+  await mount(<Webhooks />)
+
+  await click(button('Send test'))
+  expect(container.textContent).toContain('ping failed: timeout')
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).toContain('ping failed: timeout')
+  await click(button('Cancel'))
+  expect(container.textContent).toContain('ping failed: timeout')
 })
 
 it('keeps the editor another hook opened when an earlier save lands late', async () => {

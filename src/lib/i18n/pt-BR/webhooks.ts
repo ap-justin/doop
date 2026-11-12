@@ -44,6 +44,8 @@ export const webhooks: Catalog['webhooks'] = {
   limitPickOne: 'Escolha pelo menos um workspace.',
   limitedTo: 'Só em {names}',
   limitGroupAria: 'Workspaces de que o webhook recebe eventos',
+  limitAriaFor: 'Canvases de que {host} recebe eventos',
+  limitGroupAriaFor: 'Workspaces de que {host} recebe eventos',
   limitLoadFailed: 'Não foi possível carregar seus workspaces',
   limitNone: 'Nenhum workspace disponível',
   editLimit: 'Mudar canvases',

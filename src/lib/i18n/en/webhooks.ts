@@ -43,6 +43,8 @@ export const webhooks = {
   limitPickOne: 'Pick at least one workspace.',
   limitedTo: 'Only in {names}',
   limitGroupAria: 'Workspaces the webhook hears from',
+  limitAriaFor: 'Canvases {host} hears from',
+  limitGroupAriaFor: 'Workspaces {host} hears from',
   limitLoadFailed: 'Your workspaces could not be loaded',
   limitNone: 'No workspace available',
   editLimit: 'Change canvases',
