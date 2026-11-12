@@ -33,11 +33,15 @@ async function servedHeaders(url: string): Promise<Headers> {
 
 describe('GET /a/:id.:ext cross-origin header', () => {
   it.each([
-    ['ttf', ttf],
-    ['woff', woff],
-    ['woff2', woff2],
-    ['otf', (spec: Parameters<typeof ttf>[0]) => Buffer.concat([Buffer.from('OTTO'), ttf(spec).subarray(4)])],
-  ])('is sent for a %s font', async (ext, build) => {
+    ['ttf', 'font/ttf', ttf],
+    ['woff', 'font/woff', woff],
+    ['woff2', 'font/woff2', woff2],
+    [
+      'otf',
+      'font/otf',
+      (spec: Parameters<typeof ttf>[0]) => Buffer.concat([Buffer.from('OTTO'), ttf(spec).subarray(4)]),
+    ],
+  ])('is sent for a %s font', async (ext, mime, build) => {
     const res = await owner.req('/api/fonts', {
       method: 'POST',
       headers: {
@@ -47,8 +51,10 @@ describe('GET /a/:id.:ext cross-origin header', () => {
       body: new Uint8Array(build({ family: `Asset Cors ${ext}` })),
     })
     expect(res.status).toBe(200)
-    const headers = await servedHeaders((await res.json()).url)
-    expect(headers.get('content-type')).toMatch(/^font\//)
+    const { url } = await res.json()
+    expect(url.endsWith(`.${ext}`)).toBe(true)
+    const headers = await servedHeaders(url)
+    expect(headers.get('content-type')).toBe(mime)
     expect(headers.get('access-control-allow-origin')).toBe('*')
   })
 
