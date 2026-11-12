@@ -28,8 +28,9 @@ const sealedText = customType<{ data: string; driverData: string }>({
   fromDriver: (value) => open(value),
 })
 
-/** A jsonb limit list: null (no limit) or a non-empty array, never `[]`,
- *  which would read as a limit that admits nothing. */
+/** A jsonb limit list: null (no limit) or a non-empty array. `[]` is refused
+ *  as a limit chosen to admit nothing; a stored list still comes to admit
+ *  nothing once its owner leaves or deletes every workspace on it. */
 const nonEmptyArrayOrNull = (column: AnyPgColumn) =>
   sql`${column} IS NULL OR (jsonb_typeof(${column}) = 'array' AND jsonb_array_length(${column}) > 0)`
 
@@ -300,7 +301,7 @@ export const agentKeys = pgTable(
     scope: text('scope').notNull().default('full'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     lastUsedAt: bigint('last_used_at', { mode: 'number' }),
-    /** workspaces the key may act in; null = every canvas the owner can reach */
+    /** workspaces the key may act in while its owner belongs to them; null = every canvas the owner can reach */
     workspaceIds: jsonb('workspace_ids').$type<string[]>(),
   },
   (t) => [
@@ -807,7 +808,8 @@ export const webhooks = pgTable(
     secret: sealedText('secret').notNull(),
     /** subscribed event names (shared/webhooks.ts WEBHOOK_EVENTS) */
     events: jsonb('events').$type<string[]>().notNull(),
-    /** workspaces whose canvases the hook hears about; null = every canvas the owner can reach */
+    /** workspaces whose canvases the hook hears about while its owner belongs to them;
+     *  null = every canvas the owner can reach */
     workspaceIds: jsonb('workspace_ids').$type<string[]>(),
     enabled: boolean('enabled').notNull().default(true),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
