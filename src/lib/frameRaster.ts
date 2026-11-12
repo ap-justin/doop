@@ -424,9 +424,11 @@ const ASSET_PATH = /^\/a\/[^/]+\.[^/.]+$/
  * on `origin`, else null. Frame HTML names uploads by the server's
  * `BETTER_AUTH_URL`, and the `/a/` route in `server/index.ts` serves only
  * fonts cross-origin, so an editor on any other origin cannot read an image
- * upload from there. Assets are immutable under an unguessable id, so this
- * origin's copy is the same bytes; one from another instance may be missing
- * here, so the caller keeps the original URL to fall back on.
+ * upload from there. Fonts are rewritten too, since the URL does not say
+ * which an upload is. Assets are immutable under an unguessable id, so this
+ * origin's copy is the same bytes. One from another instance may be missing
+ * here; the caller then tries the original URL, which answers cross-origin
+ * only for fonts, so an image from there sends the export to the server.
  */
 export function localAssetCopy(url: string, origin: string): string | null {
   let parsed: URL

@@ -747,9 +747,10 @@ the OSS journal skips it while retaining the shared migration tags and timestamp
 Gemini cloud workers remain an operator-managed, opt-in pilot; see `docs/gemini-cloud-pilot.md`.
 
 The asset route (`/a/`, `server/index.ts`) sends `Access-Control-Allow-Origin: *` for fonts only, so
-sandboxed frames can load them while a frame cannot `fetch()` any other upload. An upload therefore
-renders through a plain `<img>` or `background` url(), not a `crossorigin` `<img>` or a CSS `mask` /
-`shape-outside` url(), which fetch in cors mode. Tests: `assetCors.test.ts`.
+sandboxed frames can load them while a frame cannot `fetch()` any other upload. In a frame an upload
+therefore works as a plain `<img>` or `background` url() and fails in any cors-mode use: an image
+loaded with `crossOrigin` (a canvas or WebGL texture) or a CSS `mask`, `clip-path` or `shape-outside`
+url(). Tests: `assetCors.test.ts`.
 Migrations 0040 (agent feedback) and 0041 (custom fonts) retain their shared timestamps; their OSS
 snapshots omit the deferred Figma `integrations.refresh_token` column, as does the credential
 encryption backfill. Desktop downloads use the platform-neutral `https://doop.design/download` page.
