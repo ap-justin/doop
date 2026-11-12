@@ -485,9 +485,10 @@ app.get('/a/:id.:ext', async (req, res) => {
     /* CORS for fonts only: @font-face from a frame's opaque origin needs it,
        a plain <img> or background url() does not. Leaving it off every
        other asset keeps a frame from fetch()ing an upload as text and
-       evaluating it, at the cost of every cors-mode use of an upload: an
-       image loaded with crossOrigin (a canvas or WebGL texture) and a CSS
-       mask, clip-path or shape-outside url(). */
+       evaluating it, at the cost of cors-mode uses of an upload, such as an
+       image loaded with crossOrigin or a CSS mask, clip-path or
+       shape-outside url(). A plain <img> drawn onto a canvas loads but
+       taints it, so pixel reads and WebGL textures fail either way. */
     if (found.meta.mime.startsWith('font/')) res.set('Access-Control-Allow-Origin', '*')
     /* svg can script when opened as a document — neuter it; <img> embeds
        are unaffected */
