@@ -7,6 +7,9 @@ import { ttf, woff, woff2 } from './fontFiles.ts'
    images load without it and must not be readable by a frame's fetch(). */
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)])
+const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)])
+const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4, 7), Buffer.from('WEBP'), Buffer.alloc(64, 7)])
+const GIF = Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(64, 7)])
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>')
 
 let server: Server
@@ -32,6 +35,7 @@ describe('GET /a/:id.:ext cross-origin header', () => {
     ['ttf', ttf],
     ['woff', woff],
     ['woff2', woff2],
+    ['otf', (spec: Parameters<typeof ttf>[0]) => Buffer.concat([Buffer.from('OTTO'), ttf(spec).subarray(4)])],
   ])('is sent for a %s font', async (ext, build) => {
     const res = await owner.req('/api/fonts', {
       method: 'POST',
@@ -49,6 +53,9 @@ describe('GET /a/:id.:ext cross-origin header', () => {
 
   it.each([
     ['png', PNG, 'image/png'],
+    ['jpg', JPG, 'image/jpeg'],
+    ['webp', WEBP, 'image/webp'],
+    ['gif', GIF, 'image/gif'],
     ['svg', SVG, 'image/svg+xml'],
   ])('is not sent for a %s', async (_name, bytes, mime) => {
     const res = await owner.req(`/api/canvases/${canvasId}/assets`, {
