@@ -1,0 +1,4 @@
+ALTER TABLE "agent_keys" ADD COLUMN "workspace_ids" jsonb;--> statement-breakpoint
+ALTER TABLE "webhooks" ADD COLUMN "workspace_ids" jsonb;--> statement-breakpoint
+ALTER TABLE "agent_keys" ADD CONSTRAINT "agent_keys_workspace_ids_nonempty" CHECK ("agent_keys"."workspace_ids" IS NULL OR (jsonb_typeof("agent_keys"."workspace_ids") = 'array' AND jsonb_array_length("agent_keys"."workspace_ids") > 0));--> statement-breakpoint
+ALTER TABLE "webhooks" ADD CONSTRAINT "webhooks_workspace_ids_nonempty" CHECK ("webhooks"."workspace_ids" IS NULL OR (jsonb_typeof("webhooks"."workspace_ids") = 'array' AND jsonb_array_length("webhooks"."workspace_ids") > 0));

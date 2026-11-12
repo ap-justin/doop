@@ -20,6 +20,16 @@ export const agentKeys: Catalog['agentKeys'] = {
   scopeFullHint: 'Pode usar todas as ferramentas: desenhar, editar e excluir, além de ler e comentar.',
   scopeCommentHint: 'Pode ler canvases e responder ou resolver comentários. Não pode criar nem alterar mais nada.',
 
+  canvasesRow: 'Canvases',
+  limitAll: 'Todos os canvases',
+  limitSome: 'Só alguns workspaces',
+  limitAria: 'Canvases que a chave alcança',
+  limitPickOne: 'Escolha pelo menos um workspace.',
+  limitedTo: 'Só em {names}',
+  limitGroupAria: 'Workspaces que a chave alcança',
+  limitLoadFailed: 'Não foi possível carregar seus workspaces',
+  limitNone: 'Nenhum workspace disponível',
+
   yourNewKey: 'Sua nova chave',
   copyNow: 'Copie agora — ela é mostrada uma única vez e guardada como hash.',
   headlessConfigLabel: 'Configuração MCP para um cliente sem interface',

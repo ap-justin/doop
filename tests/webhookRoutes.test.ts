@@ -92,3 +92,30 @@ it('patches, rotates, tests and deletes by id, 404 when it is not yours', async 
   mocks.rotate.mockResolvedValueOnce(undefined as unknown as string)
   expect((await json('POST', '/w9/rotate')).status).toBe(404)
 })
+
+it('hands a workspace limit to the registry, and a null one lifts it', async () => {
+  await json('POST', '/', { url: 'https://hooks.example.com/', events: ['comment.created'], workspaceIds: ['ws-a'] })
+  expect(mocks.create).toHaveBeenCalledWith('alice', {
+    url: 'https://hooks.example.com/',
+    events: ['comment.created'],
+    workspaceIds: ['ws-a'],
+  })
+  expect((await json('PATCH', '/w1', { workspaceIds: null })).status).toBe(200)
+  expect(mocks.update).toHaveBeenCalledWith('alice', 'w1', { workspaceIds: null })
+  expect((await json('PATCH', '/w1', { workspaceIds: 'ws-a' })).status).toBe(400)
+})
+
+it('refuses a field it does not know, naming it, so a misspelled limit never means no limit', async () => {
+  const created = await json('POST', '/', {
+    url: 'https://hooks.example.com/',
+    events: ['comment.created'],
+    workspace_ids: ['ws-a'],
+  })
+  expect(created.status).toBe(400)
+  expect((await created.json()).error).toContain('workspace_ids')
+  const patched = await json('PATCH', '/w1', { enabled: true, workspace_ids: null })
+  expect(patched.status).toBe(400)
+  expect((await patched.json()).error).toContain('workspace_ids')
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.update).not.toHaveBeenCalled()
+})

@@ -19,6 +19,16 @@ export const agentKeys = {
   scopeFullHint: 'Can use every tool: draw, edit and delete as well as read and comment.',
   scopeCommentHint: 'Can read canvases and reply to or resolve comments. Cannot create or change anything else.',
 
+  canvasesRow: 'Canvases',
+  limitAll: 'All canvases',
+  limitSome: 'Only some workspaces',
+  limitAria: 'Canvases the key reaches',
+  limitPickOne: 'Pick at least one workspace.',
+  limitedTo: 'Only in {names}',
+  limitGroupAria: 'Workspaces the key reaches',
+  limitLoadFailed: 'Your workspaces could not be loaded',
+  limitNone: 'No workspace available',
+
   yourNewKey: 'Your new key',
   copyNow: 'Copy it now — it is shown once and stored hashed.',
   headlessConfigLabel: 'MCP config for a headless client',

@@ -56,6 +56,13 @@ export interface SyncKeyInfo {
 
 export type AgentKeyScope = 'full' | 'comment'
 
+/** The workspaces an agent key or webhook is limited to; null reaches every
+ *  canvas its owner can. */
+export type WorkspaceLimit = { id: string; name: string }[] | null
+
+/** A webhook as the settings list carries it, with its workspace limit. */
+export type WebhookListing = WebhookInfo & { workspaces: WorkspaceLimit }
+
 /** An account-scoped bearer credential for /mcp (headless agents). The
  *  secret exists only on the create response — the list shows `start`. */
 export interface AgentKeyInfo {
@@ -64,6 +71,7 @@ export interface AgentKeyInfo {
   start: string
   /** `comment` keys can read canvases and take part in comment threads only */
   scope: AgentKeyScope
+  workspaces: WorkspaceLimit
   createdAt: number
   lastUsedAt: number | null
 }
@@ -300,11 +308,19 @@ export async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listWebhooks: () => req<WebhookInfo[]>('/api/webhooks'),
-  createWebhook: (input: { url: string; events: WebhookEventType[] }) =>
-    req<WebhookInfo & { secret: string }>('/api/webhooks', { method: 'POST', body: JSON.stringify(input) }),
-  updateWebhook: (id: string, patch: { url?: string; events?: WebhookEventType[]; enabled?: boolean }) =>
-    req<WebhookInfo>(`/api/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  listWebhooks: () => req<WebhookListing[]>('/api/webhooks'),
+  createWebhook: (input: { url: string; events: WebhookEventType[]; workspaceIds?: string[] }) =>
+    req<WebhookListing & { secret: string }>('/api/webhooks', { method: 'POST', body: JSON.stringify(input) }),
+  updateWebhook: (
+    id: string,
+    patch: {
+      url?: string
+      events?: WebhookEventType[]
+      enabled?: boolean
+      /** null lifts the limit; never [] */
+      workspaceIds?: string[] | null
+    },
+  ) => req<WebhookListing>(`/api/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteWebhook: (id: string) => req<{ ok: boolean }>(`/api/webhooks/${id}`, { method: 'DELETE' }),
   /* font libraries: a workspace's with an id, the signed-in person's without */
   listFonts: (workspaceId?: string) =>
@@ -384,10 +400,11 @@ export const api = {
   syncFlow: (canvasId: string) => req<SyncFlow>(`/api/canvases/${canvasId}/sync-flow`),
   /* agent keys: bearer credentials for headless MCP clients */
   listAgentKeys: () => req<AgentKeyInfo[]>('/api/agent-keys'),
-  createAgentKey: (name: string, scope: AgentKeyScope = 'full') =>
+  /* no workspaceIds reaches every canvas the owner can */
+  createAgentKey: (name: string, scope: AgentKeyScope = 'full', workspaceIds?: string[]) =>
     req<AgentKeyInfo & { secret: string }>('/api/agent-keys', {
       method: 'POST',
-      body: JSON.stringify({ name, scope }),
+      body: JSON.stringify({ name, scope, workspaceIds }),
     }),
   deleteAgentKey: (keyId: string) => req(`/api/agent-keys/${keyId}`, { method: 'DELETE' }),
   /* GitHub repos connected as import sources */

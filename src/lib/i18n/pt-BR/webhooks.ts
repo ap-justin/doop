@@ -37,6 +37,19 @@ export const webhooks: Catalog['webhooks'] = {
   addWebhook: 'Adicionar webhook',
   urlAria: 'URL do webhook',
 
+  canvasesRow: 'Canvases',
+  limitAll: 'Todos os canvases',
+  limitSome: 'Só alguns workspaces',
+  limitAria: 'Canvases de que o webhook recebe eventos',
+  limitPickOne: 'Escolha pelo menos um workspace.',
+  limitedTo: 'Só em {names}',
+  limitGroupAria: 'Workspaces de que o webhook recebe eventos',
+  limitLoadFailed: 'Não foi possível carregar seus workspaces',
+  limitNone: 'Nenhum workspace disponível',
+  editLimit: 'Mudar canvases',
+  editLimitAria: 'Mudar canvases de {host}',
+  limitSaveFailed: 'Não foi possível mudar os canvases',
+
   signingSecretRow: 'Segredo de assinatura',
   copyNow: 'Copie agora — ele é mostrado uma única vez. Use-o para verificar as entregas do seu lado.',
   signatureFormula:

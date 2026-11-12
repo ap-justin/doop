@@ -36,6 +36,19 @@ export const webhooks = {
   addWebhook: 'Add webhook',
   urlAria: 'Webhook URL',
 
+  canvasesRow: 'Canvases',
+  limitAll: 'All canvases',
+  limitSome: 'Only some workspaces',
+  limitAria: 'Canvases the webhook hears from',
+  limitPickOne: 'Pick at least one workspace.',
+  limitedTo: 'Only in {names}',
+  limitGroupAria: 'Workspaces the webhook hears from',
+  limitLoadFailed: 'Your workspaces could not be loaded',
+  limitNone: 'No workspace available',
+  editLimit: 'Change canvases',
+  editLimitAria: 'Change canvases for {host}',
+  limitSaveFailed: 'The canvases could not be changed',
+
   signingSecretRow: 'Signing secret',
   copyNow: 'Copy it now — it is shown once. Verify deliveries with it on your side.',
   signatureFormula:

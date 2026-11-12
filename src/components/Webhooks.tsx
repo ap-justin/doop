@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage } from '../lib/api'
+import { api, errorMessage, type WebhookListing } from '../lib/api'
 import { posthog } from '../lib/posthog'
 import { timeAgo } from '../lib/time'
-import { WEBHOOK_EVENTS, type WebhookEventType, type WebhookInfo } from '../../shared/webhooks'
+import { WEBHOOK_EVENTS, type WebhookEventType } from '../../shared/webhooks'
 import { t as translate, useT, type PlainMessageKey, type Translate } from '../lib/i18n'
 import { ConfirmDialog } from './ui/alert-dialog'
 import { Button } from './ui/button'
@@ -12,6 +12,7 @@ import { Checkbox } from './ui/checkbox'
 import { CodeBlock } from './ui/code-block'
 import { CardDescription, CardHeader, CardRow, CardTitle, SettingsCard } from './ui/card'
 import { TrashIcon } from './ui/icons'
+import { useMyWorkspaces, workspaceLimitText, WorkspaceLimitPicker } from './WorkspaceLimitPicker'
 
 function hostOf(url: string): string {
   try {
@@ -34,7 +35,7 @@ const EVENT_LABELS: Record<WebhookEventType, PlainMessageKey> = {
 }
 
 /** The one-line health of a hook, phrased for a person. */
-function health(hook: WebhookInfo, t: Translate): { text: string; tone?: 'error' | 'success' } {
+function health(hook: WebhookListing, t: Translate): { text: string; tone?: 'error' | 'success' } {
   /* a paused hook's reason is the server's own text */
   if (!hook.enabled && hook.lastError?.startsWith('paused')) return { text: hook.lastError, tone: 'error' }
   if (!hook.enabled) return { text: t('webhooks.healthOff') }
@@ -85,9 +86,12 @@ function EventPicker({ value, onChange }: { value: WebhookEventType[]; onChange:
  *  on creation or rotation — the list never carries it. */
 export function Webhooks() {
   const t = useT()
-  const [hooks, setHooks] = useState<WebhookInfo[] | null>(null)
+  const [hooks, setHooks] = useState<WebhookListing[] | null>(null)
   const [url, setUrl] = useState('')
   const [events, setEvents] = useState<WebhookEventType[]>([...WEBHOOK_EVENTS])
+  const workspaces = useMyWorkspaces()
+  /* null delivers from every canvas; a list only from those workspaces */
+  const [limit, setLimit] = useState<string[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   /* the one moment a secret exists client-side */
@@ -95,7 +99,9 @@ export function Webhooks() {
   const [busy, setBusy] = useState<string | null>(null)
   /* the action awaiting "are you sure" — an in-app dialog, since
      window.confirm is a silent "cancel" in the desktop shell's webview */
-  const [confirming, setConfirming] = useState<{ kind: 'rotate' | 'remove'; hook: WebhookInfo } | null>(null)
+  const [confirming, setConfirming] = useState<{ kind: 'rotate' | 'remove'; hook: WebhookListing } | null>(null)
+  /* the hook whose limit is being changed, and the pick so far */
+  const [editing, setEditing] = useState<{ id: string; value: string[] | null } | null>(null)
   const [rowNote, setRowNote] = useState<Record<string, { text: string; tone?: 'error' | 'success' }>>({})
 
   useEffect(() => {
@@ -107,7 +113,7 @@ export function Webhooks() {
     })
   }, [])
 
-  function replace(next: WebhookInfo) {
+  function replace(next: WebhookListing) {
     setHooks((current) => current?.map((h) => (h.id === next.id ? next : h)) ?? null)
   }
 
@@ -115,9 +121,14 @@ export function Webhooks() {
     setSaving(true)
     setError('')
     try {
-      const { secret: fresh, ...info } = await api.createWebhook({ url: url.trim(), events })
+      const { secret: fresh, ...info } = await api.createWebhook({
+        url: url.trim(),
+        events,
+        workspaceIds: limit ?? undefined,
+      })
       posthog.capture('webhook_created', { events })
       setUrl('')
+      setLimit(null)
       setSecret({ id: info.id, secret: fresh })
       setHooks((current) => [info, ...(current ?? [])])
     } catch (e) {
@@ -127,7 +138,7 @@ export function Webhooks() {
     }
   }
 
-  async function act(hook: WebhookInfo, work: () => Promise<void>, failure: string) {
+  async function act(hook: WebhookListing, work: () => Promise<void>, failure: string) {
     setBusy(hook.id)
     try {
       await work()
@@ -138,7 +149,7 @@ export function Webhooks() {
     }
   }
 
-  const test = (hook: WebhookInfo) =>
+  const test = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
@@ -158,14 +169,25 @@ export function Webhooks() {
       t('webhooks.testFailed'),
     )
 
-  const toggle = (hook: WebhookInfo) =>
+  const toggle = (hook: WebhookListing) =>
     act(
       hook,
       async () => replace(await api.updateWebhook(hook.id, { enabled: !hook.enabled })),
       t('webhooks.toggleFailed'),
     )
 
-  const rotate = (hook: WebhookInfo) =>
+  /* `value` is null (every canvas) or a non-empty list: Save is disabled at [] */
+  const saveLimit = (hook: WebhookListing, value: string[] | null) =>
+    act(
+      hook,
+      async () => {
+        replace(await api.updateWebhook(hook.id, { workspaceIds: value }))
+        setEditing(null)
+      },
+      t('webhooks.limitSaveFailed'),
+    )
+
+  const rotate = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
@@ -176,7 +198,7 @@ export function Webhooks() {
       t('webhooks.rotateFailed'),
     )
 
-  const remove = (hook: WebhookInfo) =>
+  const remove = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
@@ -187,6 +209,15 @@ export function Webhooks() {
       },
       t('webhooks.removeFailed'),
     )
+
+  const limitLabels = {
+    all: t('webhooks.limitAll'),
+    some: t('webhooks.limitSome'),
+    aria: t('webhooks.limitAria'),
+    groupAria: t('webhooks.limitGroupAria'),
+    pickOne: t('webhooks.limitPickOne'),
+    loadFailed: t('webhooks.limitLoadFailed'),
+  }
 
   return (
     <SettingsCard>
@@ -202,7 +233,18 @@ export function Webhooks() {
       <CardRow
         label={t('webhooks.newWebhookRow')}
         action={
-          <Button size="sm" disabled={saving || hooks === null || !url.trim() || !events.length} onClick={create}>
+          <Button
+            size="sm"
+            disabled={
+              saving ||
+              hooks === null ||
+              workspaces.list === null ||
+              !url.trim() ||
+              !events.length ||
+              limit?.length === 0
+            }
+            onClick={create}
+          >
             {saving ? t('webhooks.adding') : t('webhooks.addWebhook')}
           </Button>
         }
@@ -225,6 +267,10 @@ export function Webhooks() {
           <EventPicker value={events} onChange={setEvents} />
           {error && <Note tone="error">{error}</Note>}
         </div>
+      </CardRow>
+
+      <CardRow label={t('webhooks.canvasesRow')}>
+        <WorkspaceLimitPicker workspaces={workspaces} value={limit} onChange={setLimit} labels={limitLabels} />
       </CardRow>
 
       {secret && (
@@ -256,6 +302,15 @@ export function Webhooks() {
                 >
                   {t('webhooks.rotateSecret')}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy === hook.id}
+                  aria-label={t('webhooks.editLimitAria', { host: hostOf(hook.url) })}
+                  onClick={() => setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })}
+                >
+                  {t('webhooks.editLimit')}
+                </Button>
                 <Button size="sm" variant="ghost" disabled={busy === hook.id} onClick={() => void toggle(hook)}>
                   {hook.enabled ? t('webhooks.turnOff') : t('webhooks.turnOn')}
                 </Button>
@@ -276,6 +331,35 @@ export function Webhooks() {
                 {hook.url}
               </div>
               <div className="mt-1 text-caption text-ink-faint">{hook.events.join(' · ')}</div>
+              <div className="mt-1 text-caption text-ink-faint">
+                {workspaceLimitText(hook.workspaces, {
+                  all: t('webhooks.limitAll'),
+                  none: t('webhooks.limitNone'),
+                  some: (names) => t('webhooks.limitedTo', { names }),
+                })}
+              </div>
+              {editing?.id === hook.id && (
+                <div className="mt-2 flex flex-wrap items-center gap-2.5">
+                  <WorkspaceLimitPicker
+                    workspaces={workspaces}
+                    value={editing.value}
+                    onChange={(value) => setEditing({ id: hook.id, value })}
+                    labels={limitLabels}
+                  />
+                  <div className="flex basis-full flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      disabled={busy === hook.id || workspaces.list === null || editing.value?.length === 0}
+                      onClick={() => void saveLimit(hook, editing.value)}
+                    >
+                      {t('common.save')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <Note tone={status.tone}>{status.text}</Note>
             </div>
           </CardRow>
