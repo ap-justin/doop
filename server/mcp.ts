@@ -166,8 +166,9 @@ function err(message: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true }
 }
 
-/** The only tools a `comment`-scoped agent key may call: read a canvas and
- *  take part in its comment threads. Everything else is refused before it runs. */
+/** The only tools a `comment`-scoped agent key may call: read a canvas, the
+ *  style guides, tokens and references a review is judged against, and take
+ *  part in its comment threads. Everything else is refused before it runs. */
 export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'list_canvases',
   'get_canvas',
@@ -176,11 +177,21 @@ export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'get_frame_screenshot',
   'list_frame_versions',
   'get_prototype',
+  'list_guidelines',
+  'get_guidelines',
+  'get_tokens',
+  'get_reference',
   'get_profile',
   'get_guide',
   'reply_to_comment',
   'resolve_comment',
 ])
+
+/** Leads get_guide for a `comment` key, whose guide otherwise describes a
+ *  design workflow it cannot carry out. */
+const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, screenshots, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
+
+`
 
 /** Reaches agents that start designing without having read the canvas's style guides. */
 function withGuidelinesNudge<T extends { content: { type: 'text' | 'image'; [k: string]: unknown }[] }>(
@@ -366,13 +377,14 @@ export function buildMcpServer(
     err(`no frame with id ${id} accessible to this account${readOnlyNote(store.getFrame(id)?.canvasId)}`)
   /* Feedback is claimed, and set_status nudged, only for agents that may
      act on it: claiming assigns a human's request to this agent, which a
-     read-only agent could never carry out. */
+     read-only agent or a `comment` key could never carry out. */
+  const mayAct = (canvasId: string) => scope === 'full' && roleAllows(roleOn(canvasId), 'edit')
   const withFeedback = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendFeedback(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendFeedback(result, canvasId, actor) : result
   const withFeedbackNotice = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendFeedbackNotice(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendFeedbackNotice(result, canvasId, actor) : result
   const withStatusNudge = <T extends ToolContent>(result: T, canvasId: string, actor?: Actor): T =>
-    roleAllows(roleOn(canvasId), 'edit') ? appendStatusNudge(result, canvasId, actor) : result
+    mayAct(canvasId) ? appendStatusNudge(result, canvasId, actor) : result
   const noComment = (id: string) => err(`no comment with id ${id} on this canvas`)
   /* export_frame's PDF: the file travels inside the tool result, not as a
      public URL, so it stays behind the same canvas gate as the frames */
@@ -434,7 +446,7 @@ export function buildMcpServer(
         topic: z.enum(GUIDE_TOPICS).describe('Guide topic to load'),
       },
     },
-    async () => text(DOOP_GUIDE),
+    async () => text(scope === 'comment' ? COMMENT_SCOPE_GUIDE_NOTE + DOOP_GUIDE : DOOP_GUIDE),
   )
 
   server.registerTool(

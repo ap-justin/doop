@@ -176,16 +176,34 @@ describe('agent key scope', () => {
     expect(reply.result?.isError).toBeFalsy()
   })
 
-  it.each(['create_frame', 'set_frame_html', 'edit_frame_html'])('refuses %s for a comment key', async (tool) => {
-    const args = {
-      create_frame: { canvas_id: canvasId, name: 'x', html: '<p>x</p>', agent_name: 'Scope Bot' },
-      set_frame_html: { frame_id: frameId, html: '<p>x</p>', agent_name: 'Scope Bot' },
-      edit_frame_html: { frame_id: frameId, old_str: 'a', new_str: 'b', agent_name: 'Scope Bot' },
-    }[tool]
-    const res = await callTool(commentKey, tool, args ?? {})
-    expect(res.result?.isError).toBe(true)
-    expect(res.result?.content[0]?.text).toContain('limited to reading and comments')
+  it.each(['list_guidelines', 'get_tokens'])('lets a comment key call %s', async (tool) => {
+    const res = await callTool(commentKey, tool, { canvas_id: canvasId })
+    expect(res.result?.isError).toBeFalsy()
   })
+
+  it('tells a comment key what it can do in the guide', async () => {
+    const comment = await callTool(commentKey, 'get_guide', { topic: 'doop-instructions' })
+    expect(comment.result?.content[0]?.text).toContain('read-and-comment agent key')
+    const full = await callTool(fullKey, 'get_guide', { topic: 'doop-instructions' })
+    expect(full.result?.content[0]?.text).not.toContain('read-and-comment agent key')
+  })
+
+  it.each(['create_frame', 'set_frame_html', 'edit_frame_html', 'generate_image', 'get_feedback', 'set_status'])(
+    'refuses %s for a comment key',
+    async (tool) => {
+      const args = {
+        create_frame: { canvas_id: canvasId, name: 'x', html: '<p>x</p>', agent_name: 'Scope Bot' },
+        set_frame_html: { frame_id: frameId, html: '<p>x</p>', agent_name: 'Scope Bot' },
+        edit_frame_html: { frame_id: frameId, old_str: 'a', new_str: 'b', agent_name: 'Scope Bot' },
+        generate_image: { prompt: 'a cat', canvas_id: canvasId, agent_name: 'Scope Bot' },
+        get_feedback: { canvas_id: canvasId, agent_name: 'Scope Bot' },
+        set_status: { canvas_id: canvasId, status: 'Reviewing', agent_name: 'Scope Bot' },
+      }[tool]
+      const res = await callTool(commentKey, tool, args ?? {})
+      expect(res.result?.isError).toBe(true)
+      expect(res.result?.content[0]?.text).toContain('limited to reading and comments')
+    },
+  )
 
   it('leaves a full key unchanged', async () => {
     const res = await callTool(fullKey, 'create_frame', {
