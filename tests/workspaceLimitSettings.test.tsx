@@ -76,6 +76,11 @@ function rowPicker(host: string): HTMLElement {
   if (!found) throw new Error(`no limit picker for ${host}`)
   return found
 }
+function checkedSegment(host: string): HTMLElement {
+  const found = rowPicker(host).querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')
+  if (!found) throw new Error(`no chosen segment in the limit picker for ${host}`)
+  return found
+}
 function editButton(host: string): HTMLButtonElement {
   const found = container.querySelector<HTMLButtonElement>(`button[aria-label="Change canvases for ${host}"]`)
   if (!found) throw new Error(`no "Change canvases" button for ${host}`)
@@ -358,6 +363,69 @@ it('keeps a test-ping result on the row through opening and cancelling the limit
   expect(container.textContent).toContain('ping failed: timeout')
 })
 
+it('announces a limit save that fails twice the same way a second time', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])])
+  mocks.updateWebhook.mockRejectedValue(new Error('500'))
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  const first = container.querySelector('[role="alert"]')
+  expect(first?.textContent).toBe('The canvases could not be changed')
+
+  await click(button('Save'))
+  const second = container.querySelector('[role="alert"]')
+  expect(second?.textContent).toBe('The canvases could not be changed')
+  /* a screen reader announces an alert node as it is inserted, not a reused one */
+  expect(second).not.toBe(first)
+  expect(first?.isConnected).toBe(false)
+})
+
+it('clears a failed toggle from the row once a retry succeeds', async () => {
+  const live = hook('h1', 'https://hooks.example.com/doop', null)
+  mocks.listWebhooks.mockResolvedValue([live])
+  mocks.updateWebhook.mockRejectedValueOnce(new Error('500')).mockResolvedValueOnce({ ...live, enabled: false })
+  await mount(<Webhooks />)
+
+  await click(button('Turn off'))
+  expect(container.textContent).toContain('That could not be saved')
+
+  await click(button('Turn off'))
+  expect(container.textContent).not.toContain('That could not be saved')
+  expect(container.textContent).toContain('off — nothing is sent')
+})
+
+it('keeps a test-ping result on the row through a successful limit save', async () => {
+  const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  mocks.listWebhooks.mockResolvedValue([limited])
+  mocks.testWebhook.mockResolvedValue({ ok: false, status: null, error: 'timeout' })
+  mocks.updateWebhook.mockResolvedValue({ ...limited, workspaces: [{ id: 'w2', name: 'Studio' }] })
+  await mount(<Webhooks />)
+
+  await click(button('Send test'))
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+
+  expect(container.textContent).toContain('Only in Studio')
+  expect(container.textContent).toContain('ping failed: timeout')
+})
+
+it('keeps a failed toggle on the row through opening and cancelling the limit editor', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', null)])
+  mocks.updateWebhook.mockRejectedValue(new Error('500'))
+  await mount(<Webhooks />)
+
+  await click(button('Turn off'))
+  expect(container.textContent).toContain('That could not be saved')
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).toContain('That could not be saved')
+  await click(button('Cancel'))
+  expect(container.textContent).toContain('That could not be saved')
+})
+
 it('keeps the editor another hook opened when an earlier save lands late', async () => {
   const first = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
   const second = hook('h2', 'https://n8n.example.org/webhook', [{ id: 'w2', name: 'Studio' }])
@@ -387,7 +455,9 @@ it('moves focus into the limit editor when it opens and back to its button when 
   const edit = editButton('hooks.example.com')
   edit.focus()
   await click(edit)
-  expect(rowPicker('hooks.example.com').contains(document.activeElement)).toBe(true)
+  /* the chosen segment, not the first one in the picker */
+  expect(document.activeElement).toBe(checkedSegment('hooks.example.com'))
+  expect(document.activeElement?.textContent?.trim()).toBe('Only some workspaces')
 
   const cancel = button('Cancel')
   cancel.focus()
@@ -399,4 +469,13 @@ it('moves focus into the limit editor when it opens and back to its button when 
   save.focus()
   await click(save)
   expect(document.activeElement).toBe(editButton('hooks.example.com'))
+})
+
+it('focuses the chosen "All canvases" segment when an unlimited hook opens its editor', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', null)])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  expect(document.activeElement).toBe(checkedSegment('hooks.example.com'))
+  expect(document.activeElement?.textContent?.trim()).toBe('All canvases')
 })

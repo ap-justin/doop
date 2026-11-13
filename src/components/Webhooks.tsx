@@ -56,13 +56,18 @@ function health(hook: WebhookListing, t: Translate): { text: string; tone?: 'err
   }
 }
 
-/** A row's own line in place of its health. `from: 'limit'` marks a failed
- *  limit save, the only note the limit editor clears. */
+/** A row's own line in place of its health. `from` marks a failed action,
+ *  which the row's next successful action clears: `'limit'` a limit save, the
+ *  only note the limit editor clears, `'action'` any other. A ping result has
+ *  none and stays until replaced. `id` is new for every note, so a repeated
+ *  failure mounts a fresh alert that is announced again. */
 interface RowNote {
+  id: number
   text: string
   tone?: 'error' | 'success'
-  from?: 'limit'
+  from?: Failure
 }
+type Failure = 'limit' | 'action'
 
 /** Picks events with their labels; used for the new-hook form. */
 function EventPicker({ value, onChange }: { value: WebhookEventType[]; onChange: (next: WebhookEventType[]) => void }) {
@@ -111,6 +116,7 @@ export function Webhooks() {
   /* the hook whose limit is being changed, and the pick so far */
   const [editing, setEditing] = useState<{ id: string; value: string[] | null } | null>(null)
   const [rowNote, setRowNote] = useState<Record<string, RowNote>>({})
+  const noteIds = useRef(0)
   const editorRef = useRef<HTMLDivElement>(null)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
   /* the hook whose "Change canvases" button gets focus back once it is enabled again */
@@ -120,12 +126,16 @@ export function Webhooks() {
   /* the opened editor takes focus from its button, which it disables: the
      chosen segment, which Radix then makes the picker's tab stop (this runs
      before Radix's own re-render sets any tabindex to 0), or, with no choice
-     to offer, the first enabled button: Retry, Cancel while loading, Save */
+     to offer, the first enabled button: Retry, Cancel while loading, Save.
+     Two queries, not one selector list: the segments are buttons too, and a
+     list matches the first in document order, the unchosen "All" */
   useEffect(() => {
-    if (!editingId) return
-    editorRef.current
-      ?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"], button:not([disabled])')
-      ?.focus()
+    const editor = editingId ? editorRef.current : null
+    if (!editor) return
+    const target =
+      editor.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
+      editor.querySelector<HTMLElement>('button:not([disabled])')
+    target?.focus()
   }, [editingId])
 
   useEffect(() => {
@@ -153,24 +163,31 @@ export function Webhooks() {
     })
   }, [])
 
-  /* a ping result or another action's failure stays until something replaces it */
-  function clearLimitNote(id: string) {
+  /* the id is taken here, not in the updater, which StrictMode runs twice */
+  function writeNote(hookId: string, note: Omit<RowNote, 'id'>) {
+    const next = { ...note, id: ++noteIds.current }
+    setRowNote((notes) => ({ ...notes, [hookId]: next }))
+  }
+
+  /* a ping result has no `from`, so it stays until something replaces it */
+  function clearFailure(hookId: string, kinds: readonly Failure[]) {
     setRowNote((notes) => {
-      if (notes[id]?.from !== 'limit') return notes
-      const { [id]: _cleared, ...rest } = notes
+      const from = notes[hookId]?.from
+      if (!from || !kinds.includes(from)) return notes
+      const { [hookId]: _cleared, ...rest } = notes
       return rest
     })
   }
 
   function openEditor(hook: WebhookListing) {
     returnFocusTo.current = null
-    clearLimitNote(hook.id)
+    clearFailure(hook.id, ['limit'])
     setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })
   }
 
   function closeEditor(id: string) {
     returnFocusTo.current = id
-    clearLimitNote(id)
+    clearFailure(id, ['limit'])
     setEditing(null)
   }
 
@@ -199,12 +216,15 @@ export function Webhooks() {
     }
   }
 
-  async function act(hook: WebhookListing, work: () => Promise<void>, failure: string, from?: RowNote['from']) {
+  /* a success clears the row's failed actions, and a failed limit save only
+     when it is this action: a toggle succeeding has not saved the limit */
+  async function act(hook: WebhookListing, work: () => Promise<void>, failure: string, from: Failure = 'action') {
     setBusy(hook.id)
     try {
       await work()
+      clearFailure(hook.id, from === 'limit' ? ['action', 'limit'] : ['action'])
     } catch (e) {
-      setRowNote((n) => ({ ...n, [hook.id]: { text: errorMessage(e, failure), tone: 'error', from } }))
+      writeNote(hook.id, { text: errorMessage(e, failure), tone: 'error', from })
     } finally {
       setBusy(null)
     }
@@ -215,15 +235,15 @@ export function Webhooks() {
       hook,
       async () => {
         const result = await api.testWebhook(hook.id)
-        setRowNote((n) => ({
-          ...n,
-          [hook.id]: result.ok
+        writeNote(
+          hook.id,
+          result.ok
             ? { text: t('webhooks.pingAnswered', { status: String(result.status) }), tone: 'success' }
             : {
                 text: t('webhooks.pingFailed', { error: result.error ?? t('webhooks.pingNoResponse') }),
                 tone: 'error',
               },
-        }))
+        )
         const fresh = await api.listWebhooks()
         setHooks(fresh)
       },
@@ -243,7 +263,6 @@ export function Webhooks() {
       hook,
       async () => {
         replace(await api.updateWebhook(hook.id, { workspaceIds: value }))
-        clearLimitNote(hook.id)
         returnFocusTo.current = hook.id
         /* the person may have moved on to another hook's editor while this one saved */
         setEditing((current) => (current?.id === hook.id ? null : current))
@@ -439,7 +458,11 @@ export function Webhooks() {
                 </div>
               )}
               {/* a failed action is announced; a failing hook's health line is not */}
-              <Note tone={status.tone} role={note?.tone === 'error' ? 'alert' : undefined}>
+              <Note
+                key={note?.tone === 'error' ? note.id : 'status'}
+                tone={status.tone}
+                role={note?.tone === 'error' ? 'alert' : undefined}
+              >
                 {status.text}
               </Note>
             </div>
