@@ -314,7 +314,7 @@ it('lifts a stranded webhook limit for someone with no workspaces left', async (
   expect(container.textContent).not.toContain('No workspace available')
 })
 
-const widenNote = 'Saving will send this webhook events from all your canvases.'
+const widenNote = 'Once saved, this webhook hears from all your canvases.'
 function segment(host: string, label: string): HTMLButtonElement {
   const found = Array.from(rowPicker(host).querySelectorAll('button')).find((b) => b.textContent?.trim() === label)
   if (!found) throw new Error(`no segment "${label}" in the limit picker for ${host}`)
@@ -362,7 +362,7 @@ it('stays quiet about widening for a hook that still has a workspace, or none li
   expect(hasButton('Save')).toBe(false)
 
   await click(editButton('other.example.com'))
-  /* the editor is open on its own "All canvases", so the absence below is read from a live editor */
+  /* a hook with no limit opens on "All canvases" */
   expect(checkedSegment('other.example.com').textContent?.trim()).toBe('All canvases')
   expect(container.textContent).not.toContain(widenNote)
 })
