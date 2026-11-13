@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { api, errorMessage, type WebhookListing } from '../lib/api'
 import { posthog } from '../lib/posthog'
 import { timeAgo } from '../lib/time'
@@ -118,6 +118,7 @@ export function Webhooks() {
   const [editing, setEditing] = useState<{ id: string; value: string[] | null } | null>(null)
   const [rowNote, setRowNote] = useState<Record<string, RowNote>>({})
   const noteIds = useRef(0)
+  const widenNoteIdBase = useId()
   const editorRef = useRef<HTMLDivElement>(null)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
   /* the hook whose "Change canvases" button gets focus back once it is enabled again */
@@ -375,6 +376,8 @@ export function Webhooks() {
         /* with no workspace to pick, every canvas is the only answer: a limit
            whose workspaces are all gone can then still be lifted */
         const editValue = workspaces.list?.length === 0 ? null : (editing?.value ?? null)
+        const widensToAll = hook.workspaces?.length === 0 && workspaces.list !== null && editValue === null
+        const widenNoteId = `${widenNoteIdBase}-${hook.id}`
         return (
           <CardRow
             key={hook.id}
@@ -444,9 +447,16 @@ export function Webhooks() {
                       groupAria: t('webhooks.limitGroupAriaFor', { host }),
                     }}
                   />
+                  {/* a limit with no reachable workspace hears nothing; saving every canvas ends that */}
+                  {widensToAll && (
+                    <Note id={widenNoteId} className="basis-full">
+                      {t('webhooks.limitWidenNote')}
+                    </Note>
+                  )}
                   <div className="flex basis-full flex-wrap gap-1">
                     <Button
                       size="sm"
+                      aria-describedby={widensToAll ? widenNoteId : undefined}
                       disabled={busy === hook.id || workspaces.list === null || editValue?.length === 0}
                       onClick={() => void saveLimit(hook, editValue)}
                     >

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgentKeyInfo, WebhookListing, WorkspacesResponse } from '../src/lib/api'
 import type { WorkspaceSummary } from '../shared/types'
+import { webhooks } from '../src/lib/i18n/en/webhooks'
 
 /* Agent keys and webhooks reach every canvas by default; Settings can limit a
    new one to some of the person's workspaces, and each list names the limit. */
@@ -312,6 +313,112 @@ it('lifts a stranded webhook limit for someone with no workspaces left', async (
 
   expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: null })
   expect(container.textContent).not.toContain('No workspace available')
+})
+
+const widenNote = webhooks.limitWidenNote
+function segment(host: string, label: string): HTMLButtonElement {
+  const found = Array.from(rowPicker(host).querySelectorAll('button')).find((b) => b.textContent?.trim() === label)
+  if (!found) throw new Error(`no segment "${label}" in the limit picker for ${host}`)
+  return found
+}
+const showAll = () => segment('hooks.example.com', 'All canvases')
+
+it('warns before saving every canvas over a limit with no workspace left', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  /* the editor opens on "Only some workspaces", which saves nothing wider */
+  expect(container.textContent).not.toContain(widenNote)
+  await click(showAll())
+  expect(container.textContent).toContain(widenNote)
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
+  await click(segment('hooks.example.com', 'Only some workspaces'))
+  expect(container.textContent).not.toContain(widenNote)
+  expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
+})
+
+it('saves every canvas for a limit with no workspace left once the warning has shown', async () => {
+  const stranded = hook('h1', 'https://hooks.example.com/doop', [])
+  mocks.listWebhooks.mockResolvedValue([stranded])
+  mocks.updateWebhook.mockResolvedValue({ ...stranded, workspaces: null })
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(showAll())
+  expect(container.textContent).toContain(widenNote)
+  await click(button('Save'))
+
+  expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: null })
+  expect(hasButton('Save')).toBe(false)
+  expect(container.textContent).not.toContain(widenNote)
+})
+
+it('warns when no workspace is left to pick and every canvas is the only choice', async () => {
+  mocks.listWorkspaces.mockResolvedValue(workspaces([]))
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).toContain(widenNote)
+  /* the editor focuses Save straight away here, so the warning has to ride on it */
+  expect(document.activeElement).toBe(button('Save'))
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
+})
+
+it('stays quiet about widening for a hook that still has a workspace, or none limited', async () => {
+  mocks.listWebhooks.mockResolvedValue([
+    hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }]),
+    hook('h2', 'https://other.example.com/doop', null),
+  ])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(showAll())
+  expect(container.textContent).not.toContain(widenNote)
+  await click(button('Cancel'))
+  expect(hasButton('Save')).toBe(false)
+
+  await click(editButton('other.example.com'))
+  /* a hook with no limit opens on "All canvases" */
+  expect(checkedSegment('other.example.com').textContent?.trim()).toBe('All canvases')
+  expect(container.textContent).not.toContain(widenNote)
+})
+
+it('keeps the widening warning off while the workspaces failed to load', async () => {
+  mocks.listWorkspaces.mockRejectedValue(new Error('500'))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  /* the row editor is open (its own Save and Try again), with no picker to choose from */
+  expect(hasButton('Save')).toBe(true)
+  const retries = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Try again')
+  expect(retries).toHaveLength(2)
+  expect(container.textContent).not.toContain(widenNote)
+  expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
+})
+
+it('shows the widening warning once a failed workspace load is retried and no workspace is left', async () => {
+  mocks.listWorkspaces.mockRejectedValueOnce(new Error('500'))
+  mocks.listWorkspaces.mockResolvedValue(workspaces([]))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).not.toContain(widenNote)
+  /* the new-webhook form's Try again comes first, the row editor's second */
+  const retries = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Try again')
+  expect(retries).toHaveLength(2)
+  await click(retries[1]!)
+
+  expect(container.textContent).toContain(widenNote)
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
 })
 
 it('clears a failed limit save from the row once a retry succeeds', async () => {
