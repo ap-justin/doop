@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgentKeyInfo, WebhookListing, WorkspacesResponse } from '../src/lib/api'
 import type { WorkspaceSummary } from '../shared/types'
+import { webhooks } from '../src/lib/i18n/en/webhooks'
 
 /* Agent keys and webhooks reach every canvas by default; Settings can limit a
    new one to some of the person's workspaces, and each list names the limit. */
@@ -314,7 +315,7 @@ it('lifts a stranded webhook limit for someone with no workspaces left', async (
   expect(container.textContent).not.toContain('No workspace available')
 })
 
-const widenNote = 'Once saved, this webhook hears from all your canvases.'
+const widenNote = webhooks.limitWidenNote
 function segment(host: string, label: string): HTMLButtonElement {
   const found = Array.from(rowPicker(host).querySelectorAll('button')).find((b) => b.textContent?.trim() === label)
   if (!found) throw new Error(`no segment "${label}" in the limit picker for ${host}`)
@@ -334,6 +335,22 @@ it('warns before saving every canvas over a limit with no workspace left', async
   await click(segment('hooks.example.com', 'Only some workspaces'))
   expect(container.textContent).not.toContain(widenNote)
   expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
+})
+
+it('saves every canvas for a limit with no workspace left once the warning has shown', async () => {
+  const stranded = hook('h1', 'https://hooks.example.com/doop', [])
+  mocks.listWebhooks.mockResolvedValue([stranded])
+  mocks.updateWebhook.mockResolvedValue({ ...stranded, workspaces: null })
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(showAll())
+  expect(container.textContent).toContain(widenNote)
+  await click(button('Save'))
+
+  expect(mocks.updateWebhook).toHaveBeenCalledWith('h1', { workspaceIds: null })
+  expect(hasButton('Save')).toBe(false)
+  expect(container.textContent).not.toContain(widenNote)
 })
 
 it('warns when no workspace is left to pick and every canvas is the only choice', async () => {
