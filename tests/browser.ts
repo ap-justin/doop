@@ -53,8 +53,9 @@ const STEP_TIMEOUT_MS = 15_000
  *  queue behind each other for seconds per load. Nothing is watched, so a
  *  module cannot change under a run, and the browser may keep what it fetches
  *  for an hour. Documents (fixtures, and app routes such as `/c/<id>` that
- *  Vite answers with index.html) are left uncached, and so is anything the
- *  `proxy` option forwards: the API's answers change as a test runs. */
+ *  Vite answers with index.html) keep Vite's `no-cache`, and anything the
+ *  `proxy` option forwards keeps the API's own headers: its answers change as
+ *  a test runs. */
 function cacheModulesForRun(): Plugin {
   return {
     name: 'doop-test-module-cache',
