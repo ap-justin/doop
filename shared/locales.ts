@@ -17,7 +17,9 @@ export function isLocale(value: unknown): value is Locale {
 }
 
 /** GET /api/locale-config: the language this server shows to anyone who has
- *  not picked one. */
+ *  not picked one, and whether it runs in lean mode (server/lean.ts), which
+ *  the client reads before its first render to hide what lean mode turns off. */
 export interface LocaleConfig {
   defaultLocale: Locale
+  lean: boolean
 }

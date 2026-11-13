@@ -34,6 +34,7 @@ import {
   XIcon,
 } from './ui/icons'
 import { useT, type PlainMessageKey } from '../lib/i18n'
+import { useLean } from '../lib/lean'
 
 /**
  * The home page's front door: the hopping Disc-D, a greeting, a strip of
@@ -128,7 +129,10 @@ export function HomeHero({
   /** a timestamp — the rail's "Ask Doop" and ⌘/ ask for the keyboard */
   focusAt: number
 }) {
-  const hidden = usePromptBoxHidden()
+  /* lean mode has no in-app agent for the composer to brief, so the hero
+     steps aside as it does when the person hides it */
+  const lean = useLean()
+  const hidden = usePromptBoxHidden() || lean
   const [confirmHide, setConfirmHide] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const [text, setText] = useState('')

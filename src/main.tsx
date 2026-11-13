@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import './lib/posthog'
+import { loadAnalytics } from './lib/posthog'
 import { App } from './App'
 import { initDesktopShell } from './lib/desktop'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -14,8 +14,10 @@ installTranslateGuard()
 initDesktopShell()
 initTheme()
 
-/* the language is settled first, so the first paint already speaks it */
-void initLocale().then(() =>
+/* the language and lean mode are settled first, so the first paint already
+   speaks it and shows only what the server offers */
+void initLocale().then(() => {
+  void loadAnalytics()
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <TooltipProvider>
@@ -23,5 +25,5 @@ void initLocale().then(() =>
         <UpdateCard />
       </TooltipProvider>
     </React.StrictMode>,
-  ),
-)
+  )
+})

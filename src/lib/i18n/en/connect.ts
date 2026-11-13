@@ -33,6 +33,10 @@ export const connect = {
   claudeDesktopAddTitle: 'Add Doop to Claude Desktop',
   claudeDesktopAddBody:
     'Click Add to Claude in the Doop desktop app, then confirm the installation in Claude. Your Doop server address is filled in for you.',
+  /* lean mode, in a browser: the extension by hand, no Doop desktop app */
+  claudeDesktopLedeLean: 'Install the Doop extension in Claude Desktop, sign in, and start designing together.',
+  claudeDesktopAddBodyLean:
+    'Download the extension below and open it with Claude Desktop, then confirm the installation in Claude.',
   claudeDesktopConnectTitle: 'Connect your Doop account',
   claudeDesktopConnectBody:
     'Enable the extension in Claude. Sign in to Doop in the browser that opens and approve the connection.',
@@ -79,6 +83,8 @@ export const connect = {
   codexAddTitle: 'Add Doop to Codex',
   codexAddBody:
     'Doop Desktop configures Codex for you. This works with Codex CLI and the Codex tab in the ChatGPT desktop app.',
+  codexLedeLean: 'Add Doop to Codex, sign in, and start designing with Codex.',
+  codexAddBodyLean: 'Add Doop with Codex CLI. This also sets it up for the Codex tab in the ChatGPT desktop app.',
   codexSignInTitle: 'Sign in from Codex',
   codexSignInBody:
     'Open a new Codex chat. If Doop needs authentication, sign in from its MCP settings. For Codex CLI, run the command below and approve the connection in your browser.',

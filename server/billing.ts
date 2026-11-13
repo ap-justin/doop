@@ -1,4 +1,5 @@
 import { env } from './env.ts'
+import { leanMode } from './lean.ts'
 import express from 'express'
 import Stripe from 'stripe'
 import { PLANS, isBillingInterval, workspaceStatusFrom } from '../shared/billing.ts'
@@ -25,8 +26,9 @@ const PRICES: Record<BillingInterval, string | undefined> = {
 }
 const ORIGIN = env.BETTER_AUTH_URL
 
+/** Lean mode bills nothing, whatever keys are set: every workspace is active. */
 export function billingEnabled(): boolean {
-  return !!SECRET_KEY
+  return !!SECRET_KEY && !leanMode()
 }
 
 let client: Stripe | null = null

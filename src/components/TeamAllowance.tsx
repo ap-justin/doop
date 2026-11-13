@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { ACCOUNT_KIND_LABELS } from '../../shared/modelMenu'
 import type { RunnerProvider } from '../../shared/agentRunner'
 import { t as translate, useT, type Translate } from '../lib/i18n'
+import { isLean } from '../lib/lean'
 
 /**
  * Free-tier metering UI for the resident team: the shared allowance hook,
@@ -24,7 +25,9 @@ export function useAllowance(): { allowance: Allowance | null; refresh: () => vo
   /* re-read whenever a model account is connected or dropped anywhere in the
      app, so every meter on screen agrees without prop-drilling */
   const version = useStore((s) => s.allowanceVersion)
+  /* lean mode meters nothing: no allowance, so no meter shows anywhere */
   const refresh = useCallback(() => {
+    if (isLean()) return
     api.agentAllowance().then(setAllowance, () => {})
   }, [])
   useEffect(refresh, [refresh, version])

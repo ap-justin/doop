@@ -33,8 +33,12 @@ import { setTabsUser } from './lib/desktop'
 import { isDesktopShell } from './lib/shell'
 import { SIGNUP_PARAM, parseSignupMethod } from '../shared/firstCanvas'
 import { useT } from './lib/i18n'
+import { useLean } from './lib/lean'
 
 export { navigate }
+
+/* the pages of features lean mode turns off, matched as the router below matches them */
+const LEAN_OFF_PATHS = ['/community', '/integrations', '/automations']
 
 /* A provider sign-in that created the account lands here carrying
    ?signup=<method> (shared/firstCanvas.ts); the email form reports its own
@@ -57,6 +61,7 @@ export function App() {
   const [guestAuth, setGuestAuth] = useState<'signin' | 'signup' | null>(null)
   const signInRequired = useStore((s) => s.signInRequired)
   const me = useMe(session?.user.id)
+  const lean = useLean()
   const identifiedUserId = useRef<string | null>(null)
 
   useEffect(() => {
@@ -125,7 +130,8 @@ export function App() {
     if (!isPending) setTabsUser(session?.user?.id ?? null)
   }, [isPending, session?.user?.id])
 
-  const localAgentUser = !isPending && me && !me.impersonating ? session?.user.id : undefined
+  /* lean mode has no in-app agent for a desktop Claude to run tasks for */
+  const localAgentUser = !lean && !isPending && me && !me.impersonating ? session?.user.id : undefined
   useEffect(() => {
     if (localAgentUser) return startLocalAgent(localAgentUser)
   }, [localAgentUser])
@@ -211,6 +217,9 @@ export function App() {
     <Admin />
   ) : path.startsWith('/settings') ? (
     <Settings />
+  ) : lean && LEAN_OFF_PATHS.some((off) => path.startsWith(off)) ? (
+    /* in lean mode they land home, as an unknown path does */
+    <Home />
   ) : path.startsWith('/community') ? (
     <Community />
   ) : path.startsWith('/integrations') ? (

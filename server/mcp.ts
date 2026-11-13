@@ -72,7 +72,7 @@ import { createImportedWebpageFrame } from './webpageImport.ts'
 import { normalizeImportUrl } from './importer.ts'
 import { extensions, type McpToolHelpers } from './extensions.ts'
 import { websiteAccessErrorMessage } from './websiteAccess.ts'
-import { mentionedRole } from '../shared/agents.ts'
+import { activeExtensions, residentMention } from './lean.ts'
 import * as allowance from './allowance.ts'
 import { previewOf, previewToolMeta, registerFramePreview, type CanvasPreview } from './chatgptApp.ts'
 import * as persist from './db/persist.ts'
@@ -111,7 +111,7 @@ ${extensionGuideLines()}- Feedback: humans reply to your tasks; their notes arri
 - Problems with Doop itself: when a Doop tool errors, misbehaves or lacks something you need, or the guide leaves you guessing, call report_issue with what you tried and what happened, then carry on. Ideas for making Doop better for agents, or something that worked well, go to share_feedback. Both reach the Doop team, not the humans on the canvas.`
 
 function extensionGuideLines(): string {
-  const lines = extensions.flatMap((extension) => extension.mcpGuideLines ?? [])
+  const lines = activeExtensions(extensions).flatMap((extension) => extension.mcpGuideLines ?? [])
   return lines.length ? lines.join('\n') + '\n' : ''
 }
 
@@ -1108,7 +1108,7 @@ export function buildMcpServer(
       if (!body.trim() || !actions.openThread(comment_id)) return err('thread resolved or empty text')
       /* an @mention commands the resident agent to change frames — the REST
          reply route holds comment-only visitors to the same rule */
-      if (mentionedRole(body) && !canvasFor(canvas_id, 'edit'))
+      if (residentMention(body) && !canvasFor(canvas_id, 'edit'))
         return err('asking an agent to change the canvas needs edit access')
       const actor = actorFrom(agent_name)
       arrive(canvas_id, agent_name)
@@ -1116,7 +1116,7 @@ export function buildMcpServer(
          metered like a card; plain replies stay free. Mirrors the REST reply
          route so the meter is spent exactly once either way. */
       let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-      if (mentionedRole(body) && ownerId) {
+      if (residentMention(body) && ownerId) {
         gate = await allowance.consumeResidentTask(ownerId)
         if (!gate.ok)
           return err(
@@ -2047,7 +2047,8 @@ export function buildMcpServer(
      account's whole workspace), which a workspace limit cannot bound, so a
      limited key is never given them: unregistered, they are absent from
      tools/list and a call gets the SDK's unknown-tool error. */
-  if (!workspaceLimit) for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
+  if (!workspaceLimit)
+    for (const extension of activeExtensions(extensions)) extension.registerMcpTools?.(server, extensionHelpers)
 
   server.registerTool(
     'get_frame_screenshot',

@@ -2,8 +2,8 @@
    about itself. The shell injects two globals before any page script runs:
    __DOOP_DESKTOP__ (the shell version) and, from 0.1.5, __DOOP_DESKTOP_PLATFORM__
    (Rust's std::env::consts::OS). This module has no imports on purpose:
-   src/lib/posthog.ts must read the markers before the App tree is
-   evaluated, and src/lib/desktop.ts pulls that tree in via `navigate`. */
+   src/lib/posthogClient.ts reads the markers without pulling in the App
+   tree, which src/lib/desktop.ts does via `navigate`. */
 
 export type DesktopPlatform = 'macos' | 'windows' | 'linux'
 

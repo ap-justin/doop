@@ -8,6 +8,7 @@ import { useRailDrawer } from '../lib/railDrawer'
 import { timeAgo } from '../lib/time'
 import { openCanvasTab } from '../lib/desktop'
 import { useT } from '../lib/i18n'
+import { useLean } from '../lib/lean'
 import { cn } from '@/lib/utils'
 import { AgentIcon } from './AgentIcon'
 import { AccountMenu } from './DashShell'
@@ -67,9 +68,12 @@ export type WorkspacePane = 'members' | 'fonts' | 'billing' | 'general'
 
 const WORKSPACE_PANES: readonly WorkspacePane[] = ['members', 'fonts', 'billing', 'general']
 
-/** the panes a workspace role may open: billing and settings are for its owner and admins */
-export function workspacePanesFor(role: WorkspaceSummary['role'] | undefined): WorkspacePane[] {
-  return WORKSPACE_PANES.filter((p) => role !== 'member' || p === 'members' || p === 'fonts')
+/** the panes a workspace role may open: billing and settings are for its owner and admins,
+ *  and lean mode, which bills nothing, has no billing pane */
+export function workspacePanesFor(role: WorkspaceSummary['role'] | undefined, lean: boolean): WorkspacePane[] {
+  return WORKSPACE_PANES.filter(
+    (p) => (role !== 'member' || p === 'members' || p === 'fonts') && !(lean && p === 'billing'),
+  )
 }
 
 /** an agent that worked this recently is treated as still at the desk */
@@ -119,6 +123,7 @@ export function AppRail({
   children?: ReactNode
 }) {
   const t = useT()
+  const lean = useLean()
   const [own, setOwn] = useState<RailLists | null>(() => lastLists)
   const needsOwn = canvases === undefined || workspaces === undefined
   useEffect(() => {
@@ -310,7 +315,7 @@ export function AppRail({
             <BuildingIcon size="rail" />
           </IconButton>
           {openWorkspace === w.id &&
-            workspacePanesFor(w.role).map((p) => (
+            workspacePanesFor(w.role, lean).map((p) => (
               <IconButton
                 key={p}
                 aria-label={`${w.name}: ${paneRows[p].label}`}
@@ -326,20 +331,29 @@ export function AppRail({
         <FolderPlusIcon size="rail" />
       </IconButton>
       <Rule />
-      <IconButton aria-label={t('rail.community')} on={active === 'community'} onClick={() => go('/community')}>
-        <WebIcon size="rail" />
-      </IconButton>
-      <IconButton aria-label={t('rail.automations')} on={active === 'automations'} onClick={() => go('/automations')}>
-        <WorkflowIcon size="rail" />
-      </IconButton>
-      <IconButton
-        aria-label={t('rail.integrations')}
-        on={active === 'integrations'}
-        onClick={() => go('/integrations')}
-      >
-        <BlocksIcon size="rail" />
-      </IconButton>
-      <Rule />
+      {/* explore and resources lead to pages lean mode turns off */}
+      {!lean && (
+        <>
+          <IconButton aria-label={t('rail.community')} on={active === 'community'} onClick={() => go('/community')}>
+            <WebIcon size="rail" />
+          </IconButton>
+          <IconButton
+            aria-label={t('rail.automations')}
+            on={active === 'automations'}
+            onClick={() => go('/automations')}
+          >
+            <WorkflowIcon size="rail" />
+          </IconButton>
+          <IconButton
+            aria-label={t('rail.integrations')}
+            on={active === 'integrations'}
+            onClick={() => go('/integrations')}
+          >
+            <BlocksIcon size="rail" />
+          </IconButton>
+          <Rule />
+        </>
+      )}
       {agents.map((a) => (
         <span key={a.name} className="grid size-8 place-items-center" title={a.name}>
           <AgentIcon name={a.name} size={14} color={colorFor(a.name)} />
@@ -447,7 +461,7 @@ export function AppRail({
                 >
                   {t('rail.workspaceCanvases')}
                 </DashNavItem>
-                {workspacePanesFor(w.role).map((p) => (
+                {workspacePanesFor(w.role, lean).map((p) => (
                   <DashNavItem
                     key={p}
                     density="rail"
@@ -467,37 +481,42 @@ export function AppRail({
         </DashNavItem>
       </nav>
 
-      <DashSectionLabel density="rail">{t('rail.explore')}</DashSectionLabel>
-      <nav className="flex flex-col gap-0.5">
-        <DashNavItem
-          density="rail"
-          icon={<WebIcon size="rail" />}
-          active={active === 'community'}
-          onClick={() => go('/community')}
-        >
-          {t('rail.community')}
-        </DashNavItem>
-      </nav>
+      {/* explore and resources lead to pages lean mode turns off */}
+      {!lean && (
+        <>
+          <DashSectionLabel density="rail">{t('rail.explore')}</DashSectionLabel>
+          <nav className="flex flex-col gap-0.5">
+            <DashNavItem
+              density="rail"
+              icon={<WebIcon size="rail" />}
+              active={active === 'community'}
+              onClick={() => go('/community')}
+            >
+              {t('rail.community')}
+            </DashNavItem>
+          </nav>
 
-      <DashSectionLabel density="rail">{t('rail.resources')}</DashSectionLabel>
-      <nav className="flex flex-col gap-0.5">
-        <DashNavItem
-          density="rail"
-          icon={<WorkflowIcon size="rail" />}
-          active={active === 'automations'}
-          onClick={() => go('/automations')}
-        >
-          {t('rail.automations')}
-        </DashNavItem>
-        <DashNavItem
-          density="rail"
-          icon={<BlocksIcon size="rail" />}
-          active={active === 'integrations'}
-          onClick={() => go('/integrations')}
-        >
-          {t('rail.integrations')}
-        </DashNavItem>
-      </nav>
+          <DashSectionLabel density="rail">{t('rail.resources')}</DashSectionLabel>
+          <nav className="flex flex-col gap-0.5">
+            <DashNavItem
+              density="rail"
+              icon={<WorkflowIcon size="rail" />}
+              active={active === 'automations'}
+              onClick={() => go('/automations')}
+            >
+              {t('rail.automations')}
+            </DashNavItem>
+            <DashNavItem
+              density="rail"
+              icon={<BlocksIcon size="rail" />}
+              active={active === 'integrations'}
+              onClick={() => go('/integrations')}
+            >
+              {t('rail.integrations')}
+            </DashNavItem>
+          </nav>
+        </>
+      )}
 
       {/* a page's own group keeps the drawer's contract: a pick puts it away */}
       <div

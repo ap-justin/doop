@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { FALLBACK_LOCALE, isLocale, type Locale, type LocaleConfig } from '../../../shared/locales'
+import { setLean } from '../lean'
 
 export { LOCALES, LOCALE_NAMES, isLocale, type Locale } from '../../../shared/locales'
 
@@ -71,27 +72,32 @@ export function setLocale(locale: Locale): void {
   notify()
 }
 
-async function fetchServerDefault(): Promise<Locale | null> {
+type ServerConfig = { defaultLocale: Locale | null; lean: boolean }
+
+async function fetchConfig(): Promise<ServerConfig> {
   try {
     const res = await fetch('/api/locale-config', { signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS) })
-    if (!res.ok) return null
+    if (!res.ok) return { defaultLocale: null, lean: false }
     const config = (await res.json()) as Partial<LocaleConfig>
-    return isLocale(config.defaultLocale) ? config.defaultLocale : null
+    return { defaultLocale: isLocale(config.defaultLocale) ? config.defaultLocale : null, lean: config.lean === true }
   } catch {
-    return null
+    return { defaultLocale: null, lean: false }
   }
 }
 
-/** Settles the language before React mounts: the browser's own pick when it
- *  has one, otherwise the server's default (one short request), otherwise
- *  English. Then follows picks made in other tabs. */
+/** Settles the language and lean mode before React mounts, from one short
+ *  request: the browser's own pick when it has one, otherwise the server's
+ *  default, otherwise English; lean only when the server says so. Then
+ *  follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
     if (event.key !== null && event.key !== LOCALE_STORAGE_KEY) return
     picked = undefined
     notify()
   })
-  if (!getPicked()) serverDefault = (await fetchServerDefault()) ?? FALLBACK_LOCALE
+  const config = await fetchConfig()
+  setLean(config.lean)
+  if (!getPicked()) serverDefault = config.defaultLocale ?? FALLBACK_LOCALE
   snapshot = null
   mark()
 }

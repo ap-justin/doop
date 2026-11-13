@@ -6,7 +6,6 @@ import { normalizeRotation } from '../shared/frameRotation.ts'
 import type { CommentAnchorInput } from '../shared/comments.ts'
 import type { LocaleConfig } from '../shared/locales.ts'
 import { FIRST_CANVAS_PATH, SIGNUP_PARAM, parseSignupMethod } from '../shared/firstCanvas.ts'
-import { localAgentRouter, handleLocalAgentMcp, wake as wakeUserWork } from './localAgent.ts'
 import { handleGeminiCloudMcp } from './geminiCloudMcp.ts'
 import { geminiCloudWorkerFor } from './geminiCloudRuns.ts'
 import http from 'node:http'
@@ -85,16 +84,30 @@ import { accountsView, listRunners, MODEL_MENUS } from './agentRunners.ts'
 import { setStoredDefault } from './agentDefaults.ts'
 import { isRunnerProvider } from '../shared/agentRunner.ts'
 import { modelCatalogFor } from './modelCatalog.ts'
-import { mentionedRole } from '../shared/agents.ts'
 import { activeAgentTasks } from '../shared/agentActivity.ts'
 import { colorFor } from '../shared/types.ts'
 import { isPeerViewport } from '../shared/viewport.ts'
 import { exportScaleSuffix, fitExportScale, parseExportScale } from '../shared/exportScale.ts'
 import { emailShare } from './canvasShares.ts'
 import * as userEvents from './userEvents.ts'
+import { activeExtensions, leanGate, leanMode, residentMention, unlessLean } from './lean.ts'
 import type { Canvas, ClientMessage, Presence, ServerMessage } from '../shared/types.ts'
 
 const PORT = env.PORT
+
+/* lean mode never loads localAgent.ts, which loads the resident agent;
+   leanGate refuses its routes, so these stand-ins are never reached */
+const {
+  localAgentRouter,
+  handleLocalAgentMcp,
+  wake: wakeUserWork,
+} = leanMode()
+  ? {
+      localAgentRouter: express.Router(),
+      handleLocalAgentMcp: async (_req: express.Request, _res: express.Response) => {},
+      wake: (_userId: string) => {},
+    }
+  : await import('./localAgent.ts')
 
 /* Identifies the client bundle this process serves. Hashing dist/index.html
    works because Vite writes hashed asset names into it — any frontend change
@@ -124,14 +137,14 @@ store.init(data.canvases)
 await workspaces.hydrateWorkspaces() // before the first request: canvasRole reads membership
 await webhooks.hydrateWebhooks()
 await hydrateFonts() // before the first request: frame writes add the faces they use
-billing.reportBillingConfig()
+if (!leanMode()) billing.reportBillingConfig()
 actions.hydrateLogs(data)
-seed()
+if (!leanMode()) seed()
 
 /* Never-attempted queued cards get their first pickup after boot. Hydration
    marks interrupted claimed cards as failed, so they are excluded until a
    human explicitly retries them. */
-{
+if (!leanMode()) {
   const pending = [...data.tasks.entries()]
     .filter(([, list]) => list.some((t) => t.queuedBy && !t.agentName && !t.endedAt))
     .map(([canvasId]) => canvasId)
@@ -359,6 +372,9 @@ const app = express()
 app.set('trust proxy', 1)
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }))
+
+/* lean mode: the routes of the features it turns off answer as missing ones */
+app.use(leanGate)
 
 /* ------------------------------------------------------------------ */
 /* PostHog relay: the client sends analytics + session-replay traffic  */
@@ -613,7 +629,7 @@ app.post('/stripe/webhook', express.raw({ type: '*/*', limit: '1mb' }), (req, re
   })
 })
 
-for (const extension of extensions) {
+for (const extension of activeExtensions(extensions)) {
   if (extension.webhookRouter) app.use(`/webhooks/${extension.id}`, extension.webhookRouter())
 }
 
@@ -677,7 +693,7 @@ app.get('/api/oidc-config', (req, res) => {
 /* Public: the interface language for visitors who have not picked one. The
    client asks before its first render, so sign-in already speaks it. */
 app.get('/api/locale-config', (_req, res) => {
-  const config: LocaleConfig = { defaultLocale: env.DEFAULT_LOCALE }
+  const config: LocaleConfig = { defaultLocale: env.DEFAULT_LOCALE, lean: leanMode() }
   res.json(config)
 })
 
@@ -893,7 +909,7 @@ const ROLE_DENIED: Record<CanvasRole, string> = {
    agent would make the edits the link withholds. Answers the 403 itself. */
 function refuseAgentMention(req: express.Request, res: express.Response, canvasId: string, text: string): boolean {
   const canvas = store.getCanvas(canvasId)
-  if (!mentionedRole(text) || (canvas && canEditCanvas(req.user!.id, canvas))) return false
+  if (!residentMention(text) || (canvas && canEditCanvas(req.user!.id, canvas))) return false
   res.status(403).json({ error: 'asking an agent to change the canvas needs edit access' })
   return true
 }
@@ -946,7 +962,7 @@ app.use('/api/automations', automationsRouter)
 app.use('/api/integrations', integrationsRouter)
 app.use('/api/workspaces', workspaces.workspacesRouter)
 app.use('/api/live-activities', liveActivitiesRouter)
-startLiveActivityDelivery()
+unlessLean(startLiveActivityDelivery)
 app.use('/api/billing', billing.billingRouter)
 
 /* free-tier meter for the resident team: {used, limit, connected, byoModel} */
@@ -2137,7 +2153,7 @@ app.post('/api/frames/:id/comments', async (req, res) => {
   if (refuseAgentMention(req, res, frame.canvasId, String(text ?? ''))) return
   /* a comment that @mentions a resident agent is a new command to the team,
      so it's metered like a card; plain comments and replies stay free */
-  if (mentionedRole(String(text ?? ''))) {
+  if (residentMention(String(text ?? ''))) {
     const gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
@@ -2184,7 +2200,7 @@ app.post('/api/canvases/:id/comments', async (req, res) => {
   if (!body.trim()) return res.status(400).json({ error: 'empty text' })
   if (refuseAgentMention(req, res, canvas.id, body)) return
   let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-  if (mentionedRole(body)) {
+  if (residentMention(body)) {
     gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
@@ -2220,7 +2236,7 @@ app.post('/api/comments/:id/replies', async (req, res) => {
   if (refuseAgentMention(req, res, found.canvasId, text)) return
   /* same rule as a fresh comment: only an @mention costs a resident task */
   let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-  if (mentionedRole(text)) {
+  if (residentMention(text)) {
     gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
@@ -2691,9 +2707,9 @@ wss.on('connection', (ws, upgradeReq) => {
       /* the demo and the card kick are the owner's team at work — a share
          link visitor without edit rights is only looking */
       if (role !== 'edit') return
-      demo.maybePlay(msg.canvasId) // first visit to a fresh signup canvas: the demo agent performs
+      if (!leanMode()) demo.maybePlay(msg.canvasId) // first visit to a fresh signup canvas: the demo agent performs
       /* Start never-attempted cards. Failed/interrupted cards are excluded. */
-      if (actions.getTasks(msg.canvasId).some((t) => t.queuedBy && !t.agentName && !t.endedAt)) {
+      if (!leanMode() && actions.getTasks(msg.canvasId).some((t) => t.queuedBy && !t.agentName && !t.endedAt)) {
         import('./resident.ts').then((r) => r.onFeedback(msg.canvasId)).catch(() => {})
       }
       return
@@ -2759,6 +2775,7 @@ wss.on('connection', (ws, upgradeReq) => {
 
 server.listen(PORT, () => {
   console.log(`⟡ doop server     http://localhost:${PORT}`)
+  if (leanMode()) console.log('lean mode: on')
   /* comments anchored before element ids: stamped now, while serving, so a
      slow or failing row can never keep the server from coming up */
   if (data.legacyCommentSelectors.size > 0) {
@@ -2788,19 +2805,20 @@ server.listen(PORT, () => {
   /* The Doop Agent failing silently is the one "why is nothing happening?"
      a self-hoster cannot debug from the UI — board cards and @mentions just
      sit there. Say so at boot, not only when the first card is queued. */
-  const tier = serverTierInfo()
-  console.log(
-    tier.ready
-      ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
-      : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
-  )
+  const tier = leanMode() ? undefined : serverTierInfo()
+  if (tier)
+    console.log(
+      tier.ready
+        ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
+        : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
+    )
   console.log(
     serverImageGenEnabled()
       ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
       : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
   )
   /* automations fire from here: one tick a minute over the due rows */
-  startScheduler()
+  unlessLean(startScheduler)
   startMcpTokenPrune()
-  for (const extension of extensions) extension.startWorker?.()
+  for (const extension of activeExtensions(extensions)) extension.startWorker?.()
 })

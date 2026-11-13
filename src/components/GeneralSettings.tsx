@@ -1,4 +1,5 @@
 import { useLocale, useT } from '../lib/i18n'
+import { useLean } from '../lib/lean'
 import { setPromptBoxHidden, usePromptBoxHidden } from '../lib/homePreferences'
 import { LanguagePicker } from './LanguagePicker'
 import { Note } from './ui/note'
@@ -9,6 +10,8 @@ export function GeneralSettings() {
   const t = useT()
   const hidden = usePromptBoxHidden()
   const { picked } = useLocale()
+  /* lean mode has no home prompt box to show or hide */
+  const lean = useLean()
   return (
     <>
       <SettingsCard>
@@ -21,24 +24,26 @@ export function GeneralSettings() {
           <Note>{picked ? t('settings.languagePicked') : t('settings.languageServerDefault')}</Note>
         </CardRow>
       </SettingsCard>
-      <SettingsCard>
-        <CardHeader>
-          <CardTitle>{t('settings.homeDashboardTitle')}</CardTitle>
-          <CardDescription>{t('settings.homeDashboardDescription')}</CardDescription>
-        </CardHeader>
-        <CardRow
-          label={<label htmlFor="show-prompt-box">{t('settings.showPromptBox')}</label>}
-          action={
-            <Switch
-              id="show-prompt-box"
-              checked={!hidden}
-              onCheckedChange={(checked) => setPromptBoxHidden(!checked)}
-            />
-          }
-        >
-          <span className="text-body text-ink-soft">{t('settings.showPromptBoxHint')}</span>
-        </CardRow>
-      </SettingsCard>
+      {!lean && (
+        <SettingsCard>
+          <CardHeader>
+            <CardTitle>{t('settings.homeDashboardTitle')}</CardTitle>
+            <CardDescription>{t('settings.homeDashboardDescription')}</CardDescription>
+          </CardHeader>
+          <CardRow
+            label={<label htmlFor="show-prompt-box">{t('settings.showPromptBox')}</label>}
+            action={
+              <Switch
+                id="show-prompt-box"
+                checked={!hidden}
+                onCheckedChange={(checked) => setPromptBoxHidden(!checked)}
+              />
+            }
+          >
+            <span className="text-body text-ink-soft">{t('settings.showPromptBoxHint')}</span>
+          </CardRow>
+        </SettingsCard>
+      )}
     </>
   )
 }

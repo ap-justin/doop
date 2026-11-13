@@ -8,6 +8,7 @@ import * as actions from './actions.ts'
 import * as allowance from './allowance.ts'
 import * as meta from './meta.ts'
 import { AutomationPullError, extensions } from './extensions.ts'
+import { activeExtensions, leanMode } from './lean.ts'
 import { hasDurableCanvasAccess } from './access.ts'
 import { getUserName, isBanned } from './auth.ts'
 import { roleName } from '../shared/agents.ts'
@@ -405,6 +406,7 @@ async function queueAgent(
     })
     committed = true
     actions.publishQueuedCard(step.canvasId, card)
+    if (leanMode()) return
     const { onFeedback } = await import('./resident.ts')
     onFeedback(step.canvasId)
   } finally {
@@ -493,7 +495,7 @@ export async function advanceRun(id: string): Promise<void> {
             await runPull(row, step, `${(await getUserName(row.ownerId)) ?? 'Automation'} · ${row.name}`),
           )
         } else {
-          const extension = extensions.find((e) => e.id === step.type)
+          const extension = activeExtensions(extensions).find((e) => e.id === step.type)
           if (!extension?.runAutomationAction) throw new StepError(`No integration handles ${step.type}`)
           const result = await extension.runAutomationAction(step, {
             ownerId: row.ownerId,

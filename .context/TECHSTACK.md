@@ -687,6 +687,31 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `workers/gemini/Dockerfile` builds the worker. Setup and limitations: `docs/gemini-cloud-pilot.md`.
   `DOOP_GEMINI_CLOUD_WORKERS` enables operator-managed routing and BYO metering; unset by default.
 
+- Lean mode (`server/lean.ts`, `DOOP_LEAN=1`; any other value is off and the server is unchanged):
+  Doop as a canvas for MCP agents. `leanGate`, mounted right after `/healthz`, sends the routes of
+  the in-app Doop Agent and model accounts, in-app image generation, billing (the Stripe webhook,
+  `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
+  Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
+  cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
+  The code stays; guards sit where things start: `activeExtensions` (no extension routes, workers,
+  MCP tools or guide lines), `unlessLean` (scheduler, live-activity delivery), `residentMention`
+  (an `@mention` is plain text: no task, no meter), `billingEnabled` false (every workspace
+  active), `localAgent.ts` and so `resident.ts` never loaded, no welcome canvas, first canvas or
+  demo, analytics capture off. The client reads `lean` from `GET /api/locale-config`. Tests:
+  `lean.test.ts`, `leanHttp.test.ts`.
+  Client: `initLocale` asks `/api/locale-config` once on every load (a failed or slow answer is
+  lean off) and settles `src/lib/lean.ts` (`useLean()`, `isLean()`) before the first render.
+  `src/lib/posthog.ts` is a facade that loads `posthogClient.ts` on its own chunk only when not
+  lean; until then calls queue, and in lean they do nothing. Lean hides each entry point to what
+  the server refused, at its own render site: `/community`, `/integrations` and `/automations*`
+  land on Home; the rail drops Explore and Resources (both widths) and the workspace billing pane
+  (`workspacePanesFor`, so `?pane=billing` falls back); Settings drops the Doop Agent pane
+  (`?pane=agent` falls back, General is the default) and the prompt-box switch; the home hero,
+  the canvas `PromptBar`, ⌘K and ⌘/, comment @agent chips and retries, queued-card Stop / Retry,
+  the welcome checklist, the share dialog's community listing, the account menu's plan line and
+  desktop download, plan labels on Home and Workspace, the support chat item, GitHub and
+  integration import sources, and Doop Desktop prompts in Connect AI (browser only) go;
+  `useAllowance` and the local Claude poller never ask. Tests: `leanClient.test.tsx`.
 - Docker - `Dockerfile` + `docker-compose.yml`; `docker compose up` runs the app container
   (port 4400) and a `postgres:16-alpine` db container for self-hosting.
 

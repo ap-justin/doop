@@ -20,6 +20,7 @@ import { CheckIcon, ChevronLeftIcon } from './ui/icons'
 import { Modal, ModalActions, ModalLede, ModalSpacer, ModalTitle } from './ui/modal'
 import { cn } from '@/lib/utils'
 import { isDesktopShell } from '../lib/shell'
+import { useLean } from '../lib/lean'
 
 /**
  * "Connect AI" is about agents that join the canvas from outside: Claude Code,
@@ -128,6 +129,8 @@ interface StepOptions {
   canvasId?: string | undefined
   /** opens Settings → Agent keys, coming back to this canvas */
   openAgentKeys: () => void
+  /** false in a browser on a lean server, which does not offer the Doop desktop app */
+  desktopApp: boolean
 }
 
 /** An agent with no browser to sign in with: an agent key, sent as a bearer header. */
@@ -160,7 +163,7 @@ function agentSteps(
   agent: AgentId,
   mcpUrl: string,
   prompt: string,
-  { claudeConnection, mcpConnection, canvasId, openAgentKeys }: StepOptions,
+  { claudeConnection, mcpConnection, canvasId, openAgentKeys, desktopApp }: StepOptions,
 ): { lede: string; steps: Step[] } {
   const jsonConfig = JSON.stringify({ mcpServers: { doop: { type: 'http', url: mcpUrl } } }, null, 2)
   const pointAt: Step = {
@@ -205,11 +208,11 @@ function agentSteps(
     case 'claude':
       if (claudeConnection === 'desktop') {
         return {
-          lede: t('connect.claudeDesktopLede'),
+          lede: desktopApp ? t('connect.claudeDesktopLede') : t('connect.claudeDesktopLedeLean'),
           steps: [
             {
               title: t('connect.claudeDesktopAddTitle'),
-              body: t('connect.claudeDesktopAddBody'),
+              body: desktopApp ? t('connect.claudeDesktopAddBody') : t('connect.claudeDesktopAddBodyLean'),
               action: <ClaudeDesktopInstall mcpUrl={mcpUrl} />,
             },
             {
@@ -335,11 +338,11 @@ function agentSteps(
       }
     case 'codex':
       return {
-        lede: t('connect.codexLede'),
+        lede: desktopApp ? t('connect.codexLede') : t('connect.codexLedeLean'),
         steps: [
           {
             title: t('connect.codexAddTitle'),
-            body: t('connect.codexAddBody'),
+            body: desktopApp ? t('connect.codexAddBody') : t('connect.codexAddBodyLean'),
             action: <CodexInstall mcpUrl={mcpUrl} canvasId={canvasId} />,
           },
           {
@@ -432,11 +435,13 @@ function AgentSteps({
     if (isDesktopShell()) navigate(`/settings?pane=keys${from}`)
     else window.open('/settings?pane=keys', '_blank', 'noopener')
   }
+  const lean = useLean()
   const { lede, steps } = agentSteps(t, agent, mcpUrl, prompt, {
     claudeConnection,
     mcpConnection,
     canvasId,
     openAgentKeys,
+    desktopApp: !lean || isDesktopShell(),
   })
   return (
     <>

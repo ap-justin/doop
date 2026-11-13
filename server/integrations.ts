@@ -1,5 +1,6 @@
 import express from 'express'
 import * as meta from './meta.ts'
+import { activeExtensions } from './lean.ts'
 import { extensions, OAuthStartError, type OAuthCallbackQuery, type OAuthConnect } from './extensions.ts'
 import { DESKTOP_CONNECT_PATH, isDesktopState, markDesktopState, unmarkDesktopState } from '../shared/desktopConnect.ts'
 
@@ -21,7 +22,7 @@ export interface IntegrationsStatus {
 async function statusFor(userId: string): Promise<IntegrationsStatus> {
   const metaRow = await meta.getConnection(userId)
   const status: IntegrationsStatus = { meta: { enabled: meta.metaEnabled(), ...meta.connectionInfo(metaRow) } }
-  for (const extension of extensions) {
+  for (const extension of activeExtensions(extensions)) {
     if (extension.connectionStatus) status[extension.id] = await extension.connectionStatus(userId)
   }
   return status
@@ -61,7 +62,7 @@ integrationsRouter.delete('/meta', async (req, res) => {
  *  that brings one. */
 const oauthConnections = new Map<string, OAuthConnect>([
   ['meta', metaOAuth],
-  ...extensions.flatMap((e): [string, OAuthConnect][] => (e.oauth ? [[e.id, e.oauth]] : [])),
+  ...activeExtensions(extensions).flatMap((e): [string, OAuthConnect][] => (e.oauth ? [[e.id, e.oauth]] : [])),
 ])
 
 /** String values only: a repeated or nested parameter is not something any
@@ -134,7 +135,7 @@ export function relayDesktopCallback(req: express.Request, res: express.Response
 
 /* Each extension's other connect routes mount under its id; success
    responses that should show the fresh status get it from statusFor. */
-for (const extension of extensions) {
+for (const extension of activeExtensions(extensions)) {
   if (extension.connectRouter) {
     integrationsRouter.use(
       `/${extension.id}`,

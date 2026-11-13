@@ -93,11 +93,10 @@ describe('locale', () => {
     expect(document.documentElement.lang).toBe('en')
   })
 
-  it('does not ask the server when the browser already picked', async () => {
+  it("keeps the browser's pick over the server's default", async () => {
     store.set('doop-locale', 'pt-BR')
     serverSays({ defaultLocale: 'en' })
     await i18n.initLocale()
-    expect(fetch).not.toHaveBeenCalled()
     expect(i18n.getLocale()).toBe('pt-BR')
   })
 

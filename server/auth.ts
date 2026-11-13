@@ -8,6 +8,7 @@ import { db } from './db/index.ts'
 import * as authSchema from './db/auth-schema.ts'
 import { store } from './store.ts'
 import * as demo from './demo.ts'
+import { leanMode } from './lean.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
 import { acceptInvites } from './workspaces.ts'
 import { purgeUserData } from './accountDeletion.ts'
@@ -494,9 +495,11 @@ function buildAuth() {
             assertSignupDomainAllowed(user.email)
           },
           after: async (user) => {
-            const first = (user.name || 'Your').split(/\s+/)[0]
-            const canvas = store.createCanvas(`${first}'s first canvas`, user.id)
-            demo.markPending(canvas.id)
+            if (!leanMode()) {
+              const first = (user.name || 'Your').split(/\s+/)[0]
+              const canvas = store.createCanvas(`${first}'s first canvas`, user.id)
+              demo.markPending(canvas.id)
+            }
             /* the other half of the ADMIN_EMAILS reconcile: syncAdmins covers
                people who already existed at boot, this covers signups after.
                With SMTP on, a fresh signup is never verified yet, so the

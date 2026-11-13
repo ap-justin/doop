@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea'
 import { ToggleChipGroup, ToggleChipItem } from './ui/toggle-chip'
 import { useT, type PlainMessageKey } from '@/lib/i18n'
+import { useLean } from '@/lib/lean'
 
 type ShareableCanvas = Pick<
   Canvas,
@@ -78,6 +79,7 @@ export function ShareModal({
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const lean = useLean()
   const t = useT()
 
   useEffect(() => {
@@ -327,7 +329,8 @@ export function ShareModal({
             {t('panels.shareCopyLink')}
           </Button>
         </div>
-        {isOwner && (
+        {/* lean mode has no community gallery to list in */}
+        {isOwner && !lean && (
           <CommunityListing canvas={canvas} busy={busy} setBusy={setBusy} setError={setError} onChange={onChange} />
         )}
         {upgrade && (

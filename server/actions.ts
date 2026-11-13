@@ -4,7 +4,8 @@ import * as persist from './db/persist.ts'
 import * as thumbs from './thumbs.ts'
 import { colorFor } from '../shared/types.ts'
 import type { StackWrite } from '../shared/frameStack.ts'
-import { DEFAULT_ROLE_ID, mentionedRole, normalizePipeline, roleByAgentName, roleName } from '../shared/agents.ts'
+import { DEFAULT_ROLE_ID, normalizePipeline, roleByAgentName, roleName } from '../shared/agents.ts'
+import { leanMode, residentMention } from './lean.ts'
 import { canvasPages } from '../shared/pages.ts'
 import { FRAME_COMMENT_SELECTOR, isCanvasComment, type CommentAnchorInput } from '../shared/comments.ts'
 import { isElementId } from '../shared/elementId.ts'
@@ -408,7 +409,7 @@ export function addTaskFeedback(
     broadcast(canvasId, { type: 'feedback', feedback: fb })
     /* resident Doop agent picks feedback up instantly (no-op without an API
        key). Dynamic import: resident depends on this module. */
-    import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+    if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
     logActivity(
       canvasId,
       resolveActor({ name: from, kind: 'user' }),
@@ -494,7 +495,7 @@ export function retryTaskFeedback(feedbackId: string, by: string): TaskFeedback 
     persist.saveFeedback(feedback)
     broadcast(canvasId, { type: 'feedback', feedback })
     logActivity(canvasId, resolveActor({ name: by, kind: 'user' }), 'retried agent feedback')
-    import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+    if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
     return feedback
   }
   return undefined
@@ -906,7 +907,7 @@ function postComment(
   const clean = text.trim()
   if (!clean) return undefined
   /* @Doop, @brand, @a11y… — whichever resident agent is mentioned picks it up */
-  const mentioned = mentionedRole(clean)
+  const mentioned = residentMention(clean)
   const list = commentLog.get(canvasId) ?? []
   /* strictly increasing per canvas: thread order is reconstructed from `at`
      after a restart, so two messages must never share a timestamp */
@@ -943,7 +944,7 @@ function postComment(
   if (comment.forAgent) {
     /* @Doop mention: the resident agent picks it up instantly (no-op without
        an API key). Dynamic import: resident depends on this module. */
-    import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+    if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
   }
   emitCanvasEvent(canvasId, {
     type: parentId ? 'comment.replied' : 'comment.created',
@@ -1018,7 +1019,7 @@ export function retryComment(commentId: string, by: string): ElementComment | un
     persist.saveComment(comment)
     broadcast(canvasId, { type: 'comment', comment })
     logActivity(canvasId, resolveActor({ name: by, kind: 'user' }), 'retried a comment', comment.frameId)
-    import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+    if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
     return comment
   }
   return undefined
@@ -1244,7 +1245,7 @@ export function addQueuedCard(
     `queued a card for ${pipeline.map(roleName).join(' → ')}: “${clean}”`,
   )
   /* the resident agents pick queued cards up instantly (no-op without a key) */
-  import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+  if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
   return card
 }
 
@@ -1356,7 +1357,7 @@ export function addRepoCards(canvasId: string, input: RepoImportInput, from: str
       .filter(Boolean)
       .join(' and ')
     logActivity(canvasId, actor, `queued ${what} from ${input.repo} for ${roleName(DEFAULT_ROLE_ID)}`)
-    import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+    if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
   }
   return cards
 }
@@ -1404,7 +1405,7 @@ export function advanceCard(canvasId: string, cardId: string, by: Actor): AgentT
   persist.saveTask(canvasId, card)
   broadcast(canvasId, { type: 'task', task: card })
   logActivity(canvasId, by, `handed “${card.status}” to ${roleName(pipeline[next])}`)
-  import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+  if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
   return card
 }
 
@@ -1430,7 +1431,7 @@ export function failCard(canvasId: string, cardId: string, reason: string): Agen
   broadcast(canvasId, { type: 'task', task: card })
   emitCanvasEvent(canvasId, { type: 'task.failed', task: card, reason })
   /* a run whose every card is now failed lets go of its model call at once */
-  import('./resident.ts').then((r) => r.onCardStopped(canvasId)).catch(() => {})
+  if (!leanMode()) import('./resident.ts').then((r) => r.onCardStopped(canvasId)).catch(() => {})
   return card
 }
 
@@ -1455,7 +1456,7 @@ export function retryCard(canvasId: string, cardId: string, by: string): AgentTa
   persist.saveTask(canvasId, card)
   broadcast(canvasId, { type: 'task', task: card })
   logActivity(canvasId, resolveActor({ name: by, kind: 'user' }), `retried a card: “${card.status}”`)
-  import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
+  if (!leanMode()) import('./resident.ts').then((r) => r.onFeedback(canvasId)).catch(() => {})
   return card
 }
 
