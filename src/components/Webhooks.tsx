@@ -56,11 +56,12 @@ function health(hook: WebhookListing, t: Translate): { text: string; tone?: 'err
   }
 }
 
-/** A row's own line in place of its health. `from` marks a failed action,
- *  which the row's next successful action clears: `'limit'` a limit save, the
- *  only note the limit editor clears, `'action'` any other. A ping result has
- *  none and stays until replaced. `id` is new for every note, so a repeated
- *  failure mounts a fresh alert that is announced again. */
+/** A row's own line in place of its health. `from` marks a failed action:
+ *  `'action'` goes when any action on the row next succeeds, `'limit'` (a
+ *  failed limit save) only when a limit save succeeds or the limit editor
+ *  opens or closes. A ping result has none and stays until replaced. `id` is
+ *  new for every note, so a repeated failure mounts a fresh alert that is
+ *  announced again. */
 interface RowNote {
   id: number
   text: string
@@ -216,8 +217,8 @@ export function Webhooks() {
     }
   }
 
-  /* a success clears the row's failed actions, and a failed limit save only
-     when it is this action: a toggle succeeding has not saved the limit */
+  /* a success clears the row's failed action, and a failed limit save only when
+     this was the limit save: a toggle succeeding has not saved the limit */
   async function act(hook: WebhookListing, work: () => Promise<void>, failure: string, from: Failure = 'action') {
     setBusy(hook.id)
     try {
