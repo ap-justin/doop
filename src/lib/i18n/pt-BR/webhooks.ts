@@ -48,6 +48,7 @@ export const webhooks: Catalog['webhooks'] = {
   limitGroupAriaFor: 'Workspaces de que {host} recebe eventos',
   limitLoadFailed: 'Não foi possível carregar seus workspaces',
   limitNone: 'Nenhum workspace disponível',
+  limitWidenNote: 'Ao salvar, este webhook passará a receber eventos de todos os seus canvases.',
   editLimit: 'Mudar canvases',
   editLimitAria: 'Mudar canvases de {host}',
   limitSaveFailed: 'Não foi possível mudar os canvases',

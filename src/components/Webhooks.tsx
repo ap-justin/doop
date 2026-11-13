@@ -444,6 +444,10 @@ export function Webhooks() {
                       groupAria: t('webhooks.limitGroupAriaFor', { host }),
                     }}
                   />
+                  {/* a limit with no reachable workspace hears nothing; saving every canvas ends that */}
+                  {hook.workspaces?.length === 0 && workspaces.list !== null && editValue === null && (
+                    <div className="basis-full text-caption text-ink-faint">{t('webhooks.limitWidenNote')}</div>
+                  )}
                   <div className="flex basis-full flex-wrap gap-1">
                     <Button
                       size="sm"

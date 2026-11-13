@@ -47,6 +47,7 @@ export const webhooks = {
   limitGroupAriaFor: 'Workspaces {host} hears from',
   limitLoadFailed: 'Your workspaces could not be loaded',
   limitNone: 'No workspace available',
+  limitWidenNote: 'Saving will send this webhook events from all your canvases.',
   editLimit: 'Change canvases',
   editLimitAria: 'Change canvases for {host}',
   limitSaveFailed: 'The canvases could not be changed',

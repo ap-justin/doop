@@ -314,6 +314,53 @@ it('lifts a stranded webhook limit for someone with no workspaces left', async (
   expect(container.textContent).not.toContain('No workspace available')
 })
 
+const widenNote = 'Saving will send this webhook events from all your canvases.'
+const showAll = () =>
+  Array.from(rowPicker('hooks.example.com').querySelectorAll('button')).find(
+    (b) => b.textContent?.trim() === 'All canvases',
+  )!
+
+it('warns before saving every canvas over a limit with no workspace left', async () => {
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  /* the editor opens on "Only some workspaces", which saves nothing wider */
+  expect(container.textContent).not.toContain(widenNote)
+  await click(showAll())
+  expect(container.textContent).toContain(widenNote)
+  const some = Array.from(rowPicker('hooks.example.com').querySelectorAll('button')).find(
+    (b) => b.textContent?.trim() === 'Only some workspaces',
+  )!
+  await click(some)
+  expect(container.textContent).not.toContain(widenNote)
+})
+
+it('warns when no workspace is left to pick and every canvas is the only choice', async () => {
+  mocks.listWorkspaces.mockResolvedValue(workspaces([]))
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).toContain(widenNote)
+})
+
+it('stays quiet about widening for a hook that still has a workspace, or none limited', async () => {
+  mocks.listWebhooks.mockResolvedValue([
+    hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }]),
+    hook('h2', 'https://other.example.com/doop', null),
+  ])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(showAll())
+  expect(container.textContent).not.toContain(widenNote)
+  await click(button('Cancel'))
+
+  await click(editButton('other.example.com'))
+  expect(container.textContent).not.toContain(widenNote)
+})
+
 it('clears a failed limit save from the row once a retry succeeds', async () => {
   const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
   mocks.listWebhooks.mockResolvedValue([limited])
