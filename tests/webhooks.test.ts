@@ -11,25 +11,51 @@ const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   access: vi.fn((_userId: string, _canvas: unknown) => true),
   dbError: null as Error | null,
+  /** the next query waits on this before it resolves */
+  dbHold: null as Promise<void> | null,
+  /** every `.set(...)` an update wrote, in the order the queries were issued */
+  sets: [] as unknown[],
+  aliceIn: new Set<string>(),
 }))
 vi.mock('node:dns/promises', () => ({ lookup: mocks.lookup }))
 vi.mock('../server/db/index.ts', () => {
   const chain: unknown = new Proxy(() => {}, {
-    get: (_t, prop) =>
-      prop === 'then'
-        ? (resolve: (v: unknown[]) => void, reject: (e: Error) => void) =>
-            mocks.dbError ? reject(mocks.dbError) : resolve([])
-        : () => chain,
+    get: (_t, prop) => {
+      if (prop === 'set')
+        return (values: unknown) => {
+          mocks.sets.push(values)
+          return chain
+        }
+      if (prop !== 'then') return () => chain
+      return (resolve: (v: unknown[]) => void, reject: (e: Error) => void) => {
+        const hold = mocks.dbHold ?? Promise.resolve()
+        mocks.dbHold = null
+        void hold.then(() => (mocks.dbError ? reject(mocks.dbError) : resolve([])))
+      }
+    },
     apply: () => chain,
   })
   return { db: chain }
 })
 vi.mock('../server/access.ts', () => ({ hasDurableCanvasAccess: mocks.access }))
 vi.mock('../server/store.ts', () => ({
-  store: { getCanvas: (id: string) => (id === 'c1' ? CANVAS : undefined) },
+  store: { getCanvas: (id: string) => CANVASES.find((c) => c.id === id) },
+}))
+/* alice belongs to Alpha and Beta (until a test has her leave); Gamma is someone else's */
+vi.mock('../server/workspaces.ts', () => ({
+  getWorkspace: (id: string) => WORKSPACES[id],
+  isWorkspaceMember: (id: string, userId?: string) => userId === 'alice' && mocks.aliceIn.has(id),
 }))
 
+const WORKSPACES: Record<string, { id: string; name: string }> = {
+  'ws-a': { id: 'ws-a', name: 'Alpha' },
+  'ws-b': { id: 'ws-b', name: 'Beta' },
+  'ws-c': { id: 'ws-c', name: 'Gamma' },
+}
 const CANVAS: Canvas = { id: 'c1', name: 'Landing', ownerId: 'alice', createdAt: 0, updatedAt: 0, frames: [] }
+const IN_A: Canvas = { ...CANVAS, id: 'c-a', name: 'In Alpha', workspaceId: 'ws-a' }
+const IN_B: Canvas = { ...CANVAS, id: 'c-b', name: 'In Beta', workspaceId: 'ws-b' }
+const CANVASES = [CANVAS, IN_A, IN_B]
 const FRAME: Frame = {
   id: 'f1',
   canvasId: 'c1',
@@ -68,6 +94,9 @@ beforeEach(async () => {
   mocks.access.mockReturnValue(true)
   mocks.fetch.mockResolvedValue(ok())
   mocks.dbError = null
+  mocks.dbHold = null
+  mocks.sets = []
+  mocks.aliceIn = new Set(['ws-a', 'ws-b'])
   vi.stubGlobal('fetch', mocks.fetch)
   unstubAllEnvs()
   await webhooks.hydrateWebhooks() // empties the registry
@@ -78,8 +107,12 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const register = (userId = 'alice', events: unknown = ['comment.created'], url = 'https://hooks.example.com/doop') =>
-  webhooks.createWebhook(userId, { url, events })
+const register = (
+  userId = 'alice',
+  events: unknown = ['comment.created'],
+  url = 'https://hooks.example.com/doop',
+  workspaceIds?: unknown,
+) => webhooks.createWebhook(userId, { url, events, workspaceIds })
 
 describe('address screening', () => {
   it.each([
@@ -201,6 +234,71 @@ describe('registry', () => {
     expect(updated).toMatchObject({ url: 'https://moved.example.com/', failures: 1, lastError: 'HTTP 500' })
   })
 
+  it('keeps a workspace limit, de-duplicated, and lists it with names', async () => {
+    const { info: limited } = await register('alice', ['comment.created'], undefined, ['ws-a', 'ws-a'])
+    expect(limited.workspaces).toEqual([{ id: 'ws-a', name: 'Alpha' }])
+    const { info: open } = await register('alice', ['comment.created'], 'https://two.example.com/')
+    expect(open.workspaces).toBeNull()
+  })
+
+  it.each([
+    ['an empty list', [], /at least one workspace/],
+    ['an unknown workspace', ['ws-x'], /no workspace with id ws-x/],
+    ['a workspace the owner is not in', ['ws-c'], /no workspace with id ws-c/],
+  ])('refuses %s as a user error', async (_label, workspaceIds, message) => {
+    await expect(register('alice', ['comment.created'], undefined, workspaceIds)).rejects.toThrow(message)
+    await expect(register('alice', ['comment.created'], undefined, workspaceIds)).rejects.toBeInstanceOf(
+      webhooks.WebhookInputError,
+    )
+    const { info } = await register()
+    await expect(webhooks.updateWebhook('alice', info.id, { workspaceIds })).rejects.toThrow(message)
+  })
+
+  it('changes the limit, and null lifts it', async () => {
+    const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
+    expect((await webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-b'] }))?.workspaces).toEqual([
+      { id: 'ws-b', name: 'Beta' },
+    ])
+    expect((await webhooks.updateWebhook('alice', info.id, { enabled: false }))?.workspaces).toEqual([
+      { id: 'ws-b', name: 'Beta' },
+    ])
+    expect((await webhooks.updateWebhook('alice', info.id, { workspaceIds: null }))?.workspaces).toBeNull()
+  })
+
+  it('lists only the workspaces the owner can still reach, and [] when none is left', async () => {
+    const { info } = await register('alice', ['comment.created'], undefined, ['ws-a', 'ws-b'])
+    mocks.aliceIn.delete('ws-a')
+    expect(webhooks.listWebhooks('alice').find((h) => h.id === info.id)?.workspaces).toEqual([
+      { id: 'ws-b', name: 'Beta' },
+    ])
+    mocks.aliceIn.delete('ws-b')
+    expect(webhooks.listWebhooks('alice').find((h) => h.id === info.id)?.workspaces).toEqual([])
+  })
+
+  it('tells the owner they left a workspace the hook still names, rather than that it does not exist', async () => {
+    const { info } = await register('alice', ['comment.created'], undefined, ['ws-a', 'ws-b'])
+    mocks.aliceIn.delete('ws-a')
+    await expect(webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-a', 'ws-b'] })).rejects.toThrow(
+      /no longer a member of workspace ws-a/,
+    )
+    await expect(webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-c'] })).rejects.toThrow(
+      /no workspace with id ws-c/,
+    )
+  })
+
+  it('applies racing limit changes in order, so memory ends on the value the database kept', async () => {
+    const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
+    let release = () => {}
+    mocks.dbHold = new Promise<void>((resolve) => (release = resolve))
+    const lifting = webhooks.updateWebhook('alice', info.id, { workspaceIds: null })
+    const narrowing = webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-b'] })
+    await vi.advanceTimersByTimeAsync(0)
+    release()
+    await Promise.all([lifting, narrowing])
+    expect(mocks.sets.at(-1)).toEqual({ workspaceIds: ['ws-b'] })
+    expect(webhooks.listWebhooks('alice')[0]?.workspaces).toEqual([{ id: 'ws-b', name: 'Beta' }])
+  })
+
   it('re-enabling clears the failure history', async () => {
     const { info } = await register()
     mocks.fetch.mockResolvedValue(ok(500))
@@ -250,6 +348,102 @@ describe('delivery', () => {
     webhooks.onCanvasEvent('c1', { type: 'comment.created', comment: COMMENT, frame: FRAME, actorKind: 'user' })
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.fetch.mock.calls.map(([u]) => u)).toEqual(['https://hooks.example.com/doop'])
+  })
+
+  it('sends a limited hook only the events of canvases in its workspaces', async () => {
+    await register('alice', ['comment.created'], 'https://limited.example.com/', ['ws-a'])
+    await register('alice', ['comment.created'], 'https://open.example.com/')
+    for (const canvas of [IN_A, IN_B, CANVAS]) {
+      const comment = { ...COMMENT, canvasId: canvas.id }
+      webhooks.onCanvasEvent(canvas.id, { type: 'comment.created', comment, frame: FRAME, actorKind: 'user' })
+    }
+    await vi.advanceTimersByTimeAsync(0)
+    const sent = mocks.fetch.mock.calls.map(([u, init]) => `${u} ${JSON.parse(String(init.body)).canvas.id}`)
+    expect(sent.sort()).toEqual(
+      [
+        'https://limited.example.com/ c-a',
+        'https://open.example.com/ c-a',
+        'https://open.example.com/ c-b',
+        'https://open.example.com/ c1',
+      ].sort(),
+    )
+  })
+
+  it('sends a limited hook nothing for a canvas in a workspace its owner has left', async () => {
+    await register('alice', ['comment.created'], 'https://limited.example.com/', ['ws-b'])
+    const inBeta = { ...COMMENT, canvasId: IN_B.id }
+    webhooks.onCanvasEvent(IN_B.id, { type: 'comment.created', comment: inBeta, frame: FRAME, actorKind: 'user' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+
+    mocks.aliceIn.delete('ws-b')
+    webhooks.onCanvasEvent(IN_B.id, { type: 'comment.created', comment: inBeta, frame: FRAME, actorKind: 'user' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry once the limit no longer covers the canvas', async () => {
+    const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
+    mocks.fetch.mockResolvedValueOnce(ok(503))
+    webhooks.onCanvasEvent('c-a', { type: 'comment.created', comment: COMMENT, frame: FRAME, actorKind: 'user' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    await webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-b'] })
+    await vi.advanceTimersByTimeAsync(webhooks.RETRY_DELAYS_MS[0]!)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  describe('a limited hook whose delivery fails', () => {
+    const failOnceInAlpha = async () => {
+      const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
+      mocks.fetch.mockResolvedValueOnce(ok(503))
+      webhooks.onCanvasEvent('c-a', { type: 'comment.created', comment: COMMENT, frame: FRAME, actorKind: 'user' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mocks.fetch).toHaveBeenCalledTimes(1)
+      return info
+    }
+
+    it('retries while its limit still covers the canvas', async () => {
+      await failOnceInAlpha()
+      await vi.advanceTimersByTimeAsync(webhooks.RETRY_DELAYS_MS[0]!)
+      expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries when the limit changed to one that still covers the canvas', async () => {
+      const info = await failOnceInAlpha()
+      await webhooks.updateWebhook('alice', info.id, { workspaceIds: ['ws-a', 'ws-b'] })
+      await vi.advanceTimersByTimeAsync(webhooks.RETRY_DELAYS_MS[0]!)
+      expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not retry once its owner has left the canvas’s workspace', async () => {
+      await failOnceInAlpha()
+      mocks.aliceIn.delete('ws-a')
+      await vi.advanceTimersByTimeAsync(webhooks.RETRY_DELAYS_MS[0]!)
+      expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('a limit that changes while the first attempt looks up the address', () => {
+    const changeDuringLookup = async (workspaceIds: string[]) => {
+      const { info } = await register('alice', ['comment.created'], undefined, ['ws-a'])
+      mocks.lookup.mockImplementationOnce(async () => {
+        await webhooks.updateWebhook('alice', info.id, { workspaceIds })
+        return [{ address: '93.184.216.34', family: 4 }]
+      })
+      webhooks.onCanvasEvent('c-a', { type: 'comment.created', comment: COMMENT, frame: FRAME, actorKind: 'user' })
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    it('drops the delivery when the new limit no longer covers the canvas', async () => {
+      await changeDuringLookup(['ws-b'])
+      expect(mocks.fetch).not.toHaveBeenCalled()
+    })
+
+    it('still sends it when the new limit covers the canvas', async () => {
+      await changeDuringLookup(['ws-a', 'ws-b'])
+      expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('retries a failed delivery on the schedule, then records the success', async () => {

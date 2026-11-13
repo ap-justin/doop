@@ -7,7 +7,7 @@ export const agentKeys: Catalog['agentKeys'] = {
 
   title: 'Chaves de agente',
   description:
-    'Credenciais bearer para o endpoint MCP, para agentes que não conseguem abrir um navegador para entrar — um workflow do Mastra, n8n, CI. Uma chave age como você: tudo o que ela desenha é atribuído a você, e ela alcança exatamente os canvases que você alcança. Revogar corta o acesso na hora.',
+    'Credenciais bearer para o endpoint MCP, para agentes que não conseguem abrir um navegador para entrar — um workflow do Mastra, n8n, CI. Uma chave age como você: tudo o que ela desenha é atribuído a você, e ela alcança os canvases que você alcança, ou só os dos workspaces que você escolher abaixo. Revogar corta o acesso na hora.',
   newKeyRow: 'Nova chave',
   creating: 'Criando…',
   createKey: 'Criar chave',
@@ -19,6 +19,16 @@ export const agentKeys: Catalog['agentKeys'] = {
   scopeComment: 'Ler e comentar',
   scopeFullHint: 'Pode usar todas as ferramentas: desenhar, editar e excluir, além de ler e comentar.',
   scopeCommentHint: 'Pode ler canvases e responder ou resolver comentários. Não pode criar nem alterar mais nada.',
+
+  canvasesRow: 'Canvases',
+  limitAll: 'Todos os canvases',
+  limitSome: 'Só alguns workspaces',
+  limitAria: 'Canvases que a chave alcança',
+  limitPickOne: 'Escolha pelo menos um workspace.',
+  limitedTo: 'Só em {names}',
+  limitGroupAria: 'Workspaces que a chave alcança',
+  limitLoadFailed: 'Não foi possível carregar seus workspaces',
+  limitNone: 'Nenhum workspace disponível',
 
   yourNewKey: 'Sua nova chave',
   copyNow: 'Copie agora — ela é mostrada uma única vez e guardada como hash.',

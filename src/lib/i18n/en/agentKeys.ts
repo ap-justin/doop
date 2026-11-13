@@ -6,7 +6,7 @@ export const agentKeys = {
 
   title: 'Agent keys',
   description:
-    'Bearer credentials for the MCP endpoint, for agents that cannot open a browser to sign in — a Mastra workflow, n8n, CI. A key acts as you: everything it designs is attributed to you, and it reaches exactly the canvases you can. Revoking cuts it off immediately.',
+    'Bearer credentials for the MCP endpoint, for agents that cannot open a browser to sign in — a Mastra workflow, n8n, CI. A key acts as you: everything it designs is attributed to you, and it reaches the canvases you can, or only those in the workspaces you pick below. Revoking cuts it off immediately.',
   newKeyRow: 'New key',
   creating: 'Creating…',
   createKey: 'Create key',
@@ -18,6 +18,16 @@ export const agentKeys = {
   scopeComment: 'Read and comment',
   scopeFullHint: 'Can use every tool: draw, edit and delete as well as read and comment.',
   scopeCommentHint: 'Can read canvases and reply to or resolve comments. Cannot create or change anything else.',
+
+  canvasesRow: 'Canvases',
+  limitAll: 'All canvases',
+  limitSome: 'Only some workspaces',
+  limitAria: 'Canvases the key reaches',
+  limitPickOne: 'Pick at least one workspace.',
+  limitedTo: 'Only in {names}',
+  limitGroupAria: 'Workspaces the key reaches',
+  limitLoadFailed: 'Your workspaces could not be loaded',
+  limitNone: 'No workspace available',
 
   yourNewKey: 'Your new key',
   copyNow: 'Copy it now — it is shown once and stored hashed.',

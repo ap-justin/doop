@@ -8,6 +8,12 @@ import { db } from './db/index.ts'
 import { webhooks as table } from './db/schema.ts'
 import { store } from './store.ts'
 import { hasDurableCanvasAccess } from './access.ts'
+import {
+  describeWorkspaceLimit,
+  parseWorkspaceLimit,
+  withinWorkspaceLimit,
+  type WorkspaceLimit,
+} from './workspaceLimit.ts'
 import { canvasLink, commentLink, frameLink } from './links.ts'
 import {
   WEBHOOK_EVENTS,
@@ -23,7 +29,8 @@ import type { AgentTask, Canvas, ElementComment, Frame } from '../shared/types.t
  * A person registers a URL and the events they care about; doop POSTs each
  * matching event on every canvas that person durably has access to (owner,
  * invited member, workspace member — the same rule as design-sync keys, so
- * a share-link visit never subscribes anyone to a canvas for good).
+ * a share-link visit never subscribes anyone to a canvas for good), narrowed
+ * to chosen workspaces when the hook carries a limit (server/workspaceLimit.ts).
  *
  * Deliveries are signed (X-Doop-Signature, HMAC-SHA256 over
  * `<timestamp>.<body>` with the hook's secret) and retried a few times from
@@ -45,9 +52,10 @@ export const TIMEOUT_MS = 10_000
 const USER_AGENT = 'doop-webhooks/1'
 const allowPrivate = () => env.WEBHOOK_ALLOW_PRIVATE_URLS
 
-interface WebhookRecord extends WebhookInfo {
+interface WebhookRecord extends Omit<WebhookInfo, 'workspaces'> {
   userId: string
   secret: string
+  workspaceIds: string[] | null
 }
 
 const hooks = new Map<string, WebhookRecord>()
@@ -60,8 +68,8 @@ function swallow(p: Promise<unknown>) {
 }
 
 function info(hook: WebhookRecord): WebhookInfo {
-  const { userId: _userId, secret: _secret, ...rest } = hook
-  return rest
+  const { userId: _userId, secret: _secret, workspaceIds, ...rest } = hook
+  return { ...rest, workspaces: describeWorkspaceLimit(workspaceIds, hook.userId) }
 }
 
 function normalizeEvents(list: unknown): WebhookEventType[] {
@@ -172,7 +180,14 @@ export function listWebhooks(userId: string): WebhookInfo[] {
     .map(info)
 }
 
-async function checkedInput(input: { url?: string; events?: unknown }) {
+interface WebhookInput {
+  url?: string
+  events?: unknown
+  /** undefined leaves the limit as it is; null lifts it */
+  workspaceIds?: unknown
+}
+
+async function checkedInput(userId: string, input: WebhookInput, current: WorkspaceLimit = null) {
   const url = input.url?.trim()
   if (url !== undefined) {
     const problem = await targetProblem(url)
@@ -180,18 +195,26 @@ async function checkedInput(input: { url?: string; events?: unknown }) {
   }
   const events = input.events === undefined ? undefined : normalizeEvents(input.events)
   if (events && !events.length) throw new WebhookInputError('pick at least one event')
-  return { url, events }
+  let workspaceIds: string[] | null | undefined
+  if (input.workspaceIds !== undefined) {
+    const limit = parseWorkspaceLimit(userId, input.workspaceIds, current)
+    if (!limit.ok) throw new WebhookInputError(limit.error)
+    workspaceIds = limit.limit
+  }
+  return { url, events, workspaceIds }
 }
 
-/* Creates for one account run one at a time: the per-account cap is checked
-   in memory, and two requests racing through the DNS check could both pass it. */
-const creating = new Map<string, Promise<unknown>>()
+/* Creates and updates for one account run one at a time: the per-account cap
+   is checked in memory, and two requests racing through the DNS check could
+   both pass it; two updates whose writes land out of order would leave memory
+   on a value the database no longer holds. */
+const writing = new Map<string, Promise<unknown>>()
 function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
-  const prev = creating.get(key) ?? Promise.resolve()
+  const prev = writing.get(key) ?? Promise.resolve()
   const run = prev.then(work, work)
-  creating.set(key, run)
+  writing.set(key, run)
   const settle = () => {
-    if (creating.get(key) === run) creating.delete(key)
+    if (writing.get(key) === run) writing.delete(key)
   }
   void run.then(settle, settle)
   return run
@@ -203,18 +226,18 @@ function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
  *  leaves the running server and the database agreeing. */
 export function createWebhook(
   userId: string,
-  input: { url: string; events: unknown },
+  input: WebhookInput & { url: string },
 ): Promise<{ info: WebhookInfo; secret: string }> {
   return serialized(userId, () => insertWebhook(userId, input))
 }
 
 async function insertWebhook(
   userId: string,
-  input: { url: string; events: unknown },
+  input: WebhookInput & { url: string },
 ): Promise<{ info: WebhookInfo; secret: string }> {
   if (listWebhooks(userId).length >= MAX_WEBHOOKS)
     throw new WebhookInputError(`you can have ${MAX_WEBHOOKS} webhooks — remove one you no longer use`)
-  const { url, events } = await checkedInput(input)
+  const { url, events, workspaceIds } = await checkedInput(userId, input)
   if (!url || !events) throw new WebhookInputError('a URL and at least one event are required')
   const hook: WebhookRecord = {
     id: nanoid(10),
@@ -222,6 +245,7 @@ async function insertWebhook(
     url,
     secret: `whsec_${nanoid(32)}`,
     events,
+    workspaceIds: workspaceIds ?? null,
     enabled: true,
     createdAt: Date.now(),
     lastStatus: null,
@@ -234,19 +258,29 @@ async function insertWebhook(
   return { info: info(hook), secret: hook.secret }
 }
 
-export async function updateWebhook(
+export function updateWebhook(
   userId: string,
   id: string,
-  patch: { url?: string; events?: unknown; enabled?: boolean },
+  patch: WebhookInput & { enabled?: boolean },
+): Promise<WebhookInfo | undefined> {
+  return serialized(userId, () => applyUpdate(userId, id, patch))
+}
+
+async function applyUpdate(
+  userId: string,
+  id: string,
+  patch: WebhookInput & { enabled?: boolean },
 ): Promise<WebhookInfo | undefined> {
   const hook = owned(userId, id)
   if (!hook) return undefined
-  const { url, events } = await checkedInput(patch)
+  const { url, events, workspaceIds } = await checkedInput(userId, patch, hook.workspaceIds)
   /* only the fields asked for: a delivery that pauses the hook while this
      write is in flight must not be undone by a stale copy of its health */
-  const next: Partial<Pick<WebhookRecord, 'url' | 'events' | 'enabled' | 'failures' | 'lastError'>> = {}
+  const next: Partial<Pick<WebhookRecord, 'url' | 'events' | 'workspaceIds' | 'enabled' | 'failures' | 'lastError'>> =
+    {}
   if (url !== undefined) next.url = url
   if (events) next.events = events
+  if (workspaceIds !== undefined) next.workspaceIds = workspaceIds
   if (patch.enabled !== undefined) {
     next.enabled = patch.enabled
     /* switching a paused hook back on is a fresh start for its health */
@@ -441,14 +475,20 @@ function record(hook: WebhookRecord, ticket: number, result: WebhookDeliveryResu
   )
 }
 
+/** Whether this hook hears about this canvas at all: its owner has durable
+ *  access, and the canvas is inside the hook's workspace limit. */
+function covers(hook: WebhookRecord, canvas: Canvas): boolean {
+  return hasDurableCanvasAccess(hook.userId, canvas) && withinWorkspaceLimit(hook.workspaceIds, hook.userId, canvas)
+}
+
 /** Whether an event on this canvas is still this hook's to receive: not
- *  deleted or paused meanwhile, and its owner can still open the canvas.
+ *  deleted or paused meanwhile, and the canvas is still one it covers.
  *  Asked right before every POST, first attempt included, and before every
  *  retry — access can go away during a DNS lookup or a back-off. */
 function stillDeliverable(hook: WebhookRecord, canvasId: string): boolean {
   if (hooks.get(hook.id) !== hook || !hook.enabled) return false
   const canvas = store.getCanvas(canvasId)
-  return !!canvas && hasDurableCanvasAccess(hook.userId, canvas)
+  return !!canvas && covers(hook, canvas)
 }
 
 async function send(
@@ -470,14 +510,12 @@ async function send(
 }
 
 /** The canvas event bus listener: fan an event out to every hook that
- *  subscribed to it and whose owner durably has access to the canvas. */
+ *  subscribed to it and covers the canvas. */
 export function onCanvasEvent(canvasId: string, event: CanvasEvent): void {
   if (!hooks.size) return
   const canvas = store.getCanvas(canvasId)
   if (!canvas) return
-  const targets = [...hooks.values()].filter(
-    (h) => h.enabled && h.events.includes(event.type) && hasDurableCanvasAccess(h.userId, canvas),
-  )
+  const targets = [...hooks.values()].filter((h) => h.enabled && h.events.includes(event.type) && covers(h, canvas))
   if (!targets.length) return
   const body = deliveryBody(canvas, event)
   for (const hook of targets) void send(hook, canvasId, body, 0)

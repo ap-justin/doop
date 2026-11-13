@@ -30,6 +30,7 @@ import { canvasRole } from './access.ts'
 import { roleAllows, type CanvasRole } from '../shared/canvasRole.ts'
 import { isAgentKeySecret, verifyAgentKey, type AgentKeyScope } from './agentKeys.ts'
 import * as workspaces from './workspaces.ts'
+import { describeWorkspaceLimit, withinWorkspaceLimit, type WorkspaceLimit } from './workspaceLimit.ts'
 import { auth, getUserName, isBanned } from './auth.ts'
 import { capture, captureThrottled } from './analytics.ts'
 import { renderFrame } from './screenshot.ts'
@@ -343,12 +344,14 @@ function limitToComments(server: McpServer) {
  *  their user id — canvases the agent creates or lists are scoped to it, the
  *  same isolation the web UI gets. clientName names the connecting client
  *  when this server did not see its initialize (handleMcpRequest builds one
- *  server per stateless request). */
+ *  server per stateless request). workspaceLimit narrows an agent key to the
+ *  canvases of its workspaces (server/workspaceLimit.ts). */
 export function buildMcpServer(
   owner?: string,
   ownerId?: string,
   clientName?: () => Promise<string | undefined>,
   scope: AgentKeyScope = 'full',
+  workspaceLimit: WorkspaceLimit = null,
 ): McpServer {
   const actorFrom = (agent_name?: string) => actions.resolveActor({ name: agent_name, kind: 'agent', owner })
   /* Canvas access for agents mirrors the web UI: the OAuth user's id runs
@@ -356,10 +359,12 @@ export function buildMcpServer(
      connected by someone holding a view or comment link reads but cannot
      write. Every tool that takes a canvas or frame id resolves it through
      these, naming the role it needs: 'view' to read, 'comment' for comment
-     threads, 'edit' for everything that changes the canvas. */
+     threads, 'edit' for everything that changes the canvas. A canvas
+     outside the key's workspace limit has no role at all, so every tool
+     answers it exactly as it answers an id that does not exist. */
   const roleOn = (canvasId: string) => {
     const c = store.getCanvas(canvasId)
-    return c ? canvasRole(ownerId, c) : null
+    return c && withinWorkspaceLimit(workspaceLimit, ownerId, c) ? canvasRole(ownerId, c) : null
   }
   const canvasFor = (canvasId: string, need: CanvasRole) =>
     roleAllows(roleOn(canvasId), need) ? store.getCanvas(canvasId) : undefined
@@ -512,15 +517,18 @@ export function buildMcpServer(
     /* '' matches no ownerId: a session without a user sees nothing */
     async () =>
       text(
-        workspaces.canvasesFor(ownerId ?? '').map((m) => ({
-          ...m,
-          ...(m.workspaceId
-            ? { workspace_id: m.workspaceId, workspace_name: workspaces.getWorkspace(m.workspaceId)?.name }
-            : {}),
-          /* count what get_canvas will actually return — demo frames are hidden from agents */
-          frameCount: store.getCanvas(m.id)?.frames.filter((f) => !f.demo).length ?? m.frameCount,
-          guidelinesCount: store.getGuidelines(m.id).length,
-        })),
+        workspaces
+          .canvasesFor(ownerId ?? '')
+          .filter((m) => withinWorkspaceLimit(workspaceLimit, ownerId, m))
+          .map((m) => ({
+            ...m,
+            ...(m.workspaceId
+              ? { workspace_id: m.workspaceId, workspace_name: workspaces.getWorkspace(m.workspaceId)?.name }
+              : {}),
+            /* count what get_canvas will actually return — demo frames are hidden from agents */
+            frameCount: store.getCanvas(m.id)?.frames.filter((f) => !f.demo).length ?? m.frameCount,
+            guidelinesCount: store.getGuidelines(m.id).length,
+          })),
       ),
   )
 
@@ -558,15 +566,26 @@ export function buildMcpServer(
       },
     },
     async ({ name, workspace_id }) => {
-      if (workspace_id) {
-        const ws = workspaces.getWorkspace(workspace_id)
-        if (!ws || !workspaces.isWorkspaceMember(ws.id, ownerId)) return err(`no workspace with id ${workspace_id}`)
+      /* a limited key never makes a personal canvas: the one workspace it can
+         still reach is the default, and with several it has to name one */
+      const reachable = describeWorkspaceLimit(workspaceLimit, ownerId)
+      const workspaceId = workspace_id ?? (reachable?.length === 1 ? reachable[0]?.id : undefined)
+      if (reachable && !workspaceId) {
+        if (!reachable.length)
+          return err('this agent key’s workspaces are no longer available to its account, so it cannot create canvases')
+        const choices = reachable.map((ws) => `${ws.name} (${ws.id})`)
+        return err(`this agent key creates canvases only in its workspaces — pass workspace_id: ${choices.join(', ')}`)
+      }
+      if (workspaceId) {
+        const ws = workspaces.getWorkspace(workspaceId)
+        if (!ws || !workspaces.isWorkspaceMember(ws.id, ownerId) || (workspaceLimit && !workspaceLimit.includes(ws.id)))
+          return err(`no workspace with id ${workspaceId}`)
         if (!workspaces.isActive(ws))
           return err(`workspace "${ws.name}" needs a Team plan before canvases can be added`)
       }
       /* owned by the connecting user — an ownerless canvas would be invisible
          on every dashboard (and was once visible on all of them) */
-      const canvas = store.createCanvas(name, ownerId, workspace_id)
+      const canvas = store.createCanvas(name, ownerId, workspaceId)
       return text({ id: canvas.id, name: canvas.name, url: `/c/${canvas.id}` })
     },
   )
@@ -2024,7 +2043,11 @@ export function buildMcpServer(
       return true
     },
   }
-  for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
+  /* Extension tools reach accounts outside Doop's canvases (Linear is the
+     account's whole workspace), which a workspace limit cannot bound, so a
+     limited key is never given them: unregistered, they are absent from
+     tools/list and a call gets the SDK's unknown-tool error. */
+  if (!workspaceLimit) for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
 
   server.registerTool(
     'get_frame_screenshot',
@@ -2325,7 +2348,12 @@ export async function handleMcpRequest(req: Request, res: Response) {
      sending a headless client into OAuth discovery helps nobody. Everything
      else falls through to the OAuth gate below. */
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1]
-  let session: { userId?: string | null; clientId?: string | null; scope?: AgentKeyScope } | null
+  let session: {
+    userId?: string | null
+    clientId?: string | null
+    scope?: AgentKeyScope
+    workspaceIds?: WorkspaceLimit
+  } | null
   if (bearer && isAgentKeySecret(bearer)) {
     session = await verifyAgentKey(bearer)
     if (!session) {
@@ -2403,7 +2431,7 @@ export async function handleMcpRequest(req: Request, res: Response) {
   const clientName = async () =>
     (bearer ? clientNamesByCredential.get(credentialKey(bearer)) : undefined) ??
     (oauthClientId ? await oauthClientName(oauthClientId) : undefined)
-  const server = buildMcpServer(owner, session?.userId ?? undefined, clientName, session?.scope)
+  const server = buildMcpServer(owner, session?.userId ?? undefined, clientName, session?.scope, session?.workspaceIds)
   /* Stateless, and plain JSON rather than an SSE stream per response: no
      tool here sends notifications mid-call, so a stream carries nothing a
      JSON body does not, and JSON is what every client — including ChatGPT's

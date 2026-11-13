@@ -17,10 +17,28 @@ import {
 export const webhooksRouter = Router()
 
 const events = z.array(z.enum(WEBHOOK_EVENTS)).min(1)
-const createSchema = z.object({ url: z.string().trim().min(1), events })
+/* null lifts the limit; the registry checks the list itself (server/workspaceLimit.ts) */
+const workspaceIds = z.array(z.string()).nullable().optional()
+/* strict: a misspelled workspaceIds must be refused, not dropped into "no limit" */
+const createSchema = z.object({ url: z.string().trim().min(1), events, workspaceIds }).strict()
 const patchSchema = z
-  .object({ url: z.string().trim().min(1).optional(), events: events.optional(), enabled: z.boolean().optional() })
-  .refine((p) => p.url !== undefined || p.events !== undefined || p.enabled !== undefined, 'nothing to change')
+  .object({
+    url: z.string().trim().min(1).optional(),
+    events: events.optional(),
+    enabled: z.boolean().optional(),
+    workspaceIds,
+  })
+  .strict()
+  .refine(
+    (p) => p.url !== undefined || p.events !== undefined || p.enabled !== undefined || p.workspaceIds !== undefined,
+    'nothing to change',
+  )
+
+/** The 400 for a body the schema refused: an unknown field by name, else `fallback`. */
+function invalidBody(error: z.ZodError, fallback: string): { error: string } {
+  const keys = error.issues.flatMap((issue) => (issue.code === 'unrecognized_keys' ? issue.keys : []))
+  return { error: keys.length ? `unknown field: ${keys.join(', ')}` : fallback }
+}
 
 /** User-input problems become a 400 with the message; everything else is a 500. */
 type Req = Request<{ id: string }>
@@ -42,7 +60,7 @@ webhooksRouter.post(
   handle(async (req, res) => {
     const parsed = createSchema.safeParse(req.body)
     if (!parsed.success) {
-      res.status(400).json({ error: 'a URL and at least one event are required' })
+      res.status(400).json(invalidBody(parsed.error, 'a URL and at least one event are required'))
       return
     }
     const { info, secret } = await createWebhook(req.user!.id, parsed.data)
@@ -55,7 +73,7 @@ webhooksRouter.patch(
   handle(async (req, res) => {
     const parsed = patchSchema.safeParse(req.body)
     if (!parsed.success) {
-      res.status(400).json({ error: 'invalid webhook change' })
+      res.status(400).json(invalidBody(parsed.error, 'invalid webhook change'))
       return
     }
     const updated = await updateWebhook(req.user!.id, req.params.id, parsed.data)

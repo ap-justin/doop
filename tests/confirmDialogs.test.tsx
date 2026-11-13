@@ -2,8 +2,7 @@
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { AdminUser, AgentKeyInfo } from '../src/lib/api'
-import type { WebhookInfo } from '../shared/webhooks'
+import type { AdminUser, AgentKeyInfo, WebhookListing } from '../src/lib/api'
 
 /* The destructive actions below used to gate on window.confirm, which the
    desktop shell's webview answers with a silent "cancel". They now confirm in
@@ -34,6 +33,7 @@ vi.mock('../src/lib/api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
+      listWorkspaces: () => Promise.resolve({ workspaces: [] }),
       listAgentKeys: mocks.listAgentKeys,
       deleteAgentKey: mocks.deleteAgentKey,
       listWebhooks: mocks.listWebhooks,
@@ -82,10 +82,11 @@ const key = (id: string, name: string): AgentKeyInfo => ({
   name,
   start: 'dpk_abc',
   scope: 'full',
+  workspaces: null,
   createdAt: 0,
   lastUsedAt: null,
 })
-const hook = (id: string, url: string): WebhookInfo => ({
+const hook = (id: string, url: string): WebhookListing => ({
   id,
   url,
   events: [],
@@ -95,6 +96,7 @@ const hook = (id: string, url: string): WebhookInfo => ({
   lastAt: null,
   lastError: null,
   failures: 0,
+  workspaces: null,
 })
 const user = (id: string, name: string, banned: boolean): AdminUser => ({
   id,

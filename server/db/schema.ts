@@ -10,7 +10,10 @@ import {
   primaryKey,
   jsonb,
   customType,
+  check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { open, seal } from '../secretBox.ts'
 import type { CanvasGuide, CanvasPageInfo, FrameApproval } from '../../shared/types.ts'
 import type { AutomationRunState, AutomationTrigger, Schedule, Step } from '../../shared/automations.ts'
@@ -24,6 +27,12 @@ const sealedText = customType<{ data: string; driverData: string }>({
   toDriver: (value) => seal(value),
   fromDriver: (value) => open(value),
 })
+
+/** A jsonb limit list: null (no limit) or a non-empty array. `[]` is refused:
+ *  nobody chooses a limit that admits nothing. A stored list can still come to
+ *  admit nothing once its owner leaves or deletes every workspace on it. */
+const nonEmptyArrayOrNull = (column: AnyPgColumn) =>
+  sql`${column} IS NULL OR (jsonb_typeof(${column}) = 'array' AND jsonb_array_length(${column}) > 0)`
 
 /** ActivityKit tokens are delivery secrets: never return them through read APIs. */
 export const liveActivities = pgTable('live_activities', {
@@ -292,8 +301,14 @@ export const agentKeys = pgTable(
     scope: text('scope').notNull().default('full'),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     lastUsedAt: bigint('last_used_at', { mode: 'number' }),
+    /** workspaces the key may act in while its owner belongs to them; null = every canvas the owner can reach */
+    workspaceIds: jsonb('workspace_ids').$type<string[]>(),
   },
-  (t) => [index('agent_keys_user_idx').on(t.userId), uniqueIndex('agent_keys_hash_idx').on(t.secretHash)],
+  (t) => [
+    index('agent_keys_user_idx').on(t.userId),
+    uniqueIndex('agent_keys_hash_idx').on(t.secretHash),
+    check('agent_keys_workspace_ids_nonempty', nonEmptyArrayOrNull(t.workspaceIds)),
+  ],
 )
 
 /** A GitHub repo connected to a canvas as an import source. Two credential
@@ -793,6 +808,9 @@ export const webhooks = pgTable(
     secret: sealedText('secret').notNull(),
     /** subscribed event names (shared/webhooks.ts WEBHOOK_EVENTS) */
     events: jsonb('events').$type<string[]>().notNull(),
+    /** workspaces whose canvases the hook hears about while its owner belongs to them;
+     *  null = every canvas the owner can reach */
+    workspaceIds: jsonb('workspace_ids').$type<string[]>(),
     enabled: boolean('enabled').notNull().default(true),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
     lastStatus: integer('last_status'),
@@ -801,7 +819,10 @@ export const webhooks = pgTable(
     /** consecutive failed deliveries; the hook pauses itself past a ceiling */
     failures: integer('failures').notNull().default(0),
   },
-  (t) => [index('webhooks_user_idx').on(t.userId)],
+  (t) => [
+    index('webhooks_user_idx').on(t.userId),
+    check('webhooks_workspace_ids_nonempty', nonEmptyArrayOrNull(t.workspaceIds)),
+  ],
 )
 
 /** Which image model generate_image draws with, per user. Separate from

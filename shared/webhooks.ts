@@ -25,6 +25,8 @@ export interface WebhookInfo {
   id: string
   url: string
   events: WebhookEventType[]
+  /** the workspaces whose canvases it hears about; null = every canvas its owner can reach */
+  workspaces: { id: string; name: string }[] | null
   enabled: boolean
   createdAt: number
   /** HTTP status of the last delivery attempt; null = no response (network, timeout, refused) */

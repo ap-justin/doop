@@ -28,13 +28,28 @@ export const webhooks = {
 
   title: 'Webhooks',
   descriptionBefore:
-    'doop POSTs a signed JSON event to each URL below when something happens on a canvas you own, were invited to, or that lives in one of your workspaces — route it to Slack, n8n, an issue tracker, anything with an HTTP endpoint. Each delivery carries an ',
+    'doop POSTs a signed JSON event to each URL below when something happens on a canvas you own, were invited to, or that lives in one of your workspaces. A webhook limited to some workspaces hears only their canvases. Route it to Slack, n8n, an issue tracker, anything with an HTTP endpoint. Each delivery carries an ',
   descriptionAfter:
     ' header (HMAC-SHA256 with the webhook’s secret) so the receiver can trust it. Failed deliveries are retried three times; a hook that keeps failing pauses itself.',
   newWebhookRow: 'New webhook',
   adding: 'Adding…',
   addWebhook: 'Add webhook',
   urlAria: 'Webhook URL',
+
+  canvasesRow: 'Canvases',
+  limitAll: 'All canvases',
+  limitSome: 'Only some workspaces',
+  limitAria: 'Canvases the webhook hears from',
+  limitPickOne: 'Pick at least one workspace.',
+  limitedTo: 'Only in {names}',
+  limitGroupAria: 'Workspaces the webhook hears from',
+  limitAriaFor: 'Canvases {host} hears from',
+  limitGroupAriaFor: 'Workspaces {host} hears from',
+  limitLoadFailed: 'Your workspaces could not be loaded',
+  limitNone: 'No workspace available',
+  editLimit: 'Change canvases',
+  editLimitAria: 'Change canvases for {host}',
+  limitSaveFailed: 'The canvases could not be changed',
 
   signingSecretRow: 'Signing secret',
   copyNow: 'Copy it now — it is shown once. Verify deliveries with it on your side.',

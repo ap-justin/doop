@@ -11,6 +11,7 @@ import { Segmented, SegmentedItem } from './ui/segmented'
 import { CodeBlock } from './ui/code-block'
 import { CardDescription, CardHeader, CardRow, CardTitle, SettingsCard } from './ui/card'
 import { TrashIcon } from './ui/icons'
+import { useMyWorkspaces, workspaceLimitText, WorkspaceLimitPicker } from './WorkspaceLimitPicker'
 
 /* same fixed-column-on-desktop rhythm as the other settings cards */
 
@@ -37,6 +38,9 @@ export function AgentKeys() {
   const [keys, setKeys] = useState<AgentKeyInfo[] | null>(null)
   const [name, setName] = useState('')
   const [scope, setScope] = useState<AgentKeyScope>('full')
+  const workspaces = useMyWorkspaces()
+  /* null reaches every canvas; a list limits the key to those workspaces */
+  const [limit, setLimit] = useState<string[] | null>(null)
   const [minting, setMinting] = useState(false)
   const [error, setError] = useState('')
   /* the one moment the full secret exists client-side */
@@ -62,9 +66,10 @@ export function AgentKeys() {
     setMinting(true)
     setError('')
     try {
-      const { secret, ...info } = await api.createAgentKey(name, scope)
+      const { secret, ...info } = await api.createAgentKey(name, scope, limit ?? undefined)
       posthog.capture('agent_key_created')
       setName('')
+      setLimit(null)
       setMinted({ id: info.id, secret })
       setKeys((current) => [info, ...(current ?? [])])
     } catch (e) {
@@ -95,7 +100,11 @@ export function AgentKeys() {
       <CardRow
         label={t('agentKeys.newKeyRow')}
         action={
-          <Button size="sm" disabled={minting || keys === null} onClick={mint}>
+          <Button
+            size="sm"
+            disabled={minting || keys === null || workspaces.list === null || limit?.length === 0}
+            onClick={mint}
+          >
             {minting ? t('agentKeys.creating') : t('agentKeys.createKey')}
           </Button>
         }
@@ -127,6 +136,22 @@ export function AgentKeys() {
         <Note>{t(scope === 'comment' ? 'agentKeys.scopeCommentHint' : 'agentKeys.scopeFullHint')}</Note>
       </CardRow>
 
+      <CardRow label={t('agentKeys.canvasesRow')}>
+        <WorkspaceLimitPicker
+          workspaces={workspaces}
+          value={limit}
+          onChange={setLimit}
+          labels={{
+            all: t('agentKeys.limitAll'),
+            some: t('agentKeys.limitSome'),
+            aria: t('agentKeys.limitAria'),
+            groupAria: t('agentKeys.limitGroupAria'),
+            pickOne: t('agentKeys.limitPickOne'),
+            loadFailed: t('agentKeys.limitLoadFailed'),
+          }}
+        />
+      </CardRow>
+
       {minted && (
         <CardRow label={t('agentKeys.yourNewKey')}>
           <div className="min-w-0 flex-1">
@@ -155,6 +180,13 @@ export function AgentKeys() {
         >
           <span className="font-mono text-body text-ink-soft">{key.start}…</span>
           <Note>{t(key.scope === 'comment' ? 'agentKeys.scopeComment' : 'agentKeys.scopeFull')}</Note>
+          <Note>
+            {workspaceLimitText(key.workspaces, {
+              all: t('agentKeys.limitAll'),
+              none: t('agentKeys.limitNone'),
+              some: (names) => t('agentKeys.limitedTo', { names }),
+            })}
+          </Note>
           <Note>
             {key.lastUsedAt
               ? t('agentKeys.createdLastUsed', { created: timeAgo(key.createdAt), used: timeAgo(key.lastUsedAt) })

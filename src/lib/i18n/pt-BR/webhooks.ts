@@ -29,13 +29,28 @@ export const webhooks: Catalog['webhooks'] = {
 
   title: 'Webhooks',
   descriptionBefore:
-    'O doop envia um POST com um evento JSON assinado para cada URL abaixo quando algo acontece em um canvas que é seu, para o qual você foi convidado ou que está em um dos seus workspaces — encaminhe para o Slack, n8n, um rastreador de issues, qualquer coisa com um endpoint HTTP. Cada entrega leva um cabeçalho ',
+    'O doop envia um POST com um evento JSON assinado para cada URL abaixo quando algo acontece em um canvas que é seu, para o qual você foi convidado ou que está em um dos seus workspaces. Um webhook limitado a alguns workspaces ouve só os canvases deles. Encaminhe para o Slack, n8n, um rastreador de issues, qualquer coisa com um endpoint HTTP. Cada entrega leva um cabeçalho ',
   descriptionAfter:
     ' (HMAC-SHA256 com o segredo do webhook) para que o destinatário possa confiar nela. Entregas que falham são tentadas de novo três vezes; um webhook que continua falhando se pausa sozinho.',
   newWebhookRow: 'Novo webhook',
   adding: 'Adicionando…',
   addWebhook: 'Adicionar webhook',
   urlAria: 'URL do webhook',
+
+  canvasesRow: 'Canvases',
+  limitAll: 'Todos os canvases',
+  limitSome: 'Só alguns workspaces',
+  limitAria: 'Canvases de que o webhook recebe eventos',
+  limitPickOne: 'Escolha pelo menos um workspace.',
+  limitedTo: 'Só em {names}',
+  limitGroupAria: 'Workspaces de que o webhook recebe eventos',
+  limitAriaFor: 'Canvases de que {host} recebe eventos',
+  limitGroupAriaFor: 'Workspaces de que {host} recebe eventos',
+  limitLoadFailed: 'Não foi possível carregar seus workspaces',
+  limitNone: 'Nenhum workspace disponível',
+  editLimit: 'Mudar canvases',
+  editLimitAria: 'Mudar canvases de {host}',
+  limitSaveFailed: 'Não foi possível mudar os canvases',
 
   signingSecretRow: 'Segredo de assinatura',
   copyNow: 'Copie agora — ele é mostrado uma única vez. Use-o para verificar as entregas do seu lado.',

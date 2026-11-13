@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { api, errorMessage } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { api, errorMessage, type WebhookListing } from '../lib/api'
 import { posthog } from '../lib/posthog'
 import { timeAgo } from '../lib/time'
-import { WEBHOOK_EVENTS, type WebhookEventType, type WebhookInfo } from '../../shared/webhooks'
+import { WEBHOOK_EVENTS, type WebhookEventType } from '../../shared/webhooks'
 import { t as translate, useT, type PlainMessageKey, type Translate } from '../lib/i18n'
 import { ConfirmDialog } from './ui/alert-dialog'
 import { Button } from './ui/button'
@@ -12,6 +12,7 @@ import { Checkbox } from './ui/checkbox'
 import { CodeBlock } from './ui/code-block'
 import { CardDescription, CardHeader, CardRow, CardTitle, SettingsCard } from './ui/card'
 import { TrashIcon } from './ui/icons'
+import { useMyWorkspaces, workspaceLimitText, WorkspaceLimitPicker } from './WorkspaceLimitPicker'
 
 function hostOf(url: string): string {
   try {
@@ -34,7 +35,7 @@ const EVENT_LABELS: Record<WebhookEventType, PlainMessageKey> = {
 }
 
 /** The one-line health of a hook, phrased for a person. */
-function health(hook: WebhookInfo, t: Translate): { text: string; tone?: 'error' | 'success' } {
+function health(hook: WebhookListing, t: Translate): { text: string; tone?: 'error' | 'success' } {
   /* a paused hook's reason is the server's own text */
   if (!hook.enabled && hook.lastError?.startsWith('paused')) return { text: hook.lastError, tone: 'error' }
   if (!hook.enabled) return { text: t('webhooks.healthOff') }
@@ -54,6 +55,20 @@ function health(hook: WebhookInfo, t: Translate): { text: string; tone?: 'error'
     tone: 'success',
   }
 }
+
+/** A row's own line in place of its health. `from` marks a failed action:
+ *  `'action'` goes when any action on the row next succeeds, `'limit'` (a
+ *  failed limit save) only when a limit save succeeds or that row's own
+ *  limit editor opens or is cancelled. A ping result has none and stays
+ *  until replaced. `id` is new for every note, so a repeated failure mounts
+ *  a fresh alert that is announced again. */
+interface RowNote {
+  id: number
+  text: string
+  tone?: 'error' | 'success'
+  from?: Failure
+}
+type Failure = 'limit' | 'action'
 
 /** Picks events with their labels; used for the new-hook form. */
 function EventPicker({ value, onChange }: { value: WebhookEventType[]; onChange: (next: WebhookEventType[]) => void }) {
@@ -85,9 +100,12 @@ function EventPicker({ value, onChange }: { value: WebhookEventType[]; onChange:
  *  on creation or rotation — the list never carries it. */
 export function Webhooks() {
   const t = useT()
-  const [hooks, setHooks] = useState<WebhookInfo[] | null>(null)
+  const [hooks, setHooks] = useState<WebhookListing[] | null>(null)
   const [url, setUrl] = useState('')
   const [events, setEvents] = useState<WebhookEventType[]>([...WEBHOOK_EVENTS])
+  const workspaces = useMyWorkspaces()
+  /* null delivers from every canvas; a list only from those workspaces */
+  const [limit, setLimit] = useState<string[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   /* the one moment a secret exists client-side */
@@ -95,8 +113,47 @@ export function Webhooks() {
   const [busy, setBusy] = useState<string | null>(null)
   /* the action awaiting "are you sure" — an in-app dialog, since
      window.confirm is a silent "cancel" in the desktop shell's webview */
-  const [confirming, setConfirming] = useState<{ kind: 'rotate' | 'remove'; hook: WebhookInfo } | null>(null)
-  const [rowNote, setRowNote] = useState<Record<string, { text: string; tone?: 'error' | 'success' }>>({})
+  const [confirming, setConfirming] = useState<{ kind: 'rotate' | 'remove'; hook: WebhookListing } | null>(null)
+  /* the hook whose limit is being changed, and the pick so far */
+  const [editing, setEditing] = useState<{ id: string; value: string[] | null } | null>(null)
+  const [rowNote, setRowNote] = useState<Record<string, RowNote>>({})
+  const noteIds = useRef(0)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  /* the hook whose "Change canvases" button gets focus back once it is enabled again */
+  const returnFocusTo = useRef<string | null>(null)
+  const editingId = editing?.id
+
+  /* the opened editor takes focus from its button, which it disables: the
+     chosen segment, which Radix then makes the picker's tab stop (this runs
+     before Radix's own re-render sets any tabindex to 0), or, with no choice
+     to offer, the first enabled button: Retry, Cancel while loading, Save.
+     Two queries, not one selector list: the segments are buttons too, and a
+     list matches the first in document order, "All canvases" even when unchosen */
+  useEffect(() => {
+    const editor = editingId ? editorRef.current : null
+    if (!editor) return
+    const target =
+      editor.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
+      editor.querySelector<HTMLElement>('button:not([disabled])')
+    target?.focus()
+  }, [editingId])
+
+  useEffect(() => {
+    const id = returnFocusTo.current
+    if (!id) return
+    /* another hook's editor is open and holds focus */
+    if (editing) {
+      returnFocusTo.current = null
+      return
+    }
+    /* still saving: the button is disabled until the save settles */
+    if (busy === id) return
+    returnFocusTo.current = null
+    const active = document.activeElement
+    /* only when closing the editor dropped focus, never over a control the person moved to */
+    if (!active || active === document.body || !active.isConnected) editButtons.current.get(id)?.focus()
+  }, [editing, busy])
 
   useEffect(() => {
     api.listWebhooks().then(setHooks, (e: unknown) => {
@@ -107,7 +164,35 @@ export function Webhooks() {
     })
   }, [])
 
-  function replace(next: WebhookInfo) {
+  /* the id is taken here, not in the updater, which StrictMode runs twice */
+  function writeNote(hookId: string, note: Omit<RowNote, 'id'>) {
+    const next = { ...note, id: ++noteIds.current }
+    setRowNote((notes) => ({ ...notes, [hookId]: next }))
+  }
+
+  /* a ping result has no `from`, so it stays until something replaces it */
+  function clearFailure(hookId: string, kinds: readonly Failure[]) {
+    setRowNote((notes) => {
+      const from = notes[hookId]?.from
+      if (!from || !kinds.includes(from)) return notes
+      const { [hookId]: _cleared, ...rest } = notes
+      return rest
+    })
+  }
+
+  function openEditor(hook: WebhookListing) {
+    returnFocusTo.current = null
+    clearFailure(hook.id, ['limit'])
+    setEditing({ id: hook.id, value: hook.workspaces?.map((w) => w.id) ?? null })
+  }
+
+  function closeEditor(id: string) {
+    returnFocusTo.current = id
+    clearFailure(id, ['limit'])
+    setEditing(null)
+  }
+
+  function replace(next: WebhookListing) {
     setHooks((current) => current?.map((h) => (h.id === next.id ? next : h)) ?? null)
   }
 
@@ -115,9 +200,14 @@ export function Webhooks() {
     setSaving(true)
     setError('')
     try {
-      const { secret: fresh, ...info } = await api.createWebhook({ url: url.trim(), events })
+      const { secret: fresh, ...info } = await api.createWebhook({
+        url: url.trim(),
+        events,
+        workspaceIds: limit ?? undefined,
+      })
       posthog.capture('webhook_created', { events })
       setUrl('')
+      setLimit(null)
       setSecret({ id: info.id, secret: fresh })
       setHooks((current) => [info, ...(current ?? [])])
     } catch (e) {
@@ -127,45 +217,62 @@ export function Webhooks() {
     }
   }
 
-  async function act(hook: WebhookInfo, work: () => Promise<void>, failure: string) {
+  /* a success clears the row's failed action, and a failed limit save only when
+     this was the limit save: a toggle succeeding has not saved the limit */
+  async function act(hook: WebhookListing, work: () => Promise<void>, failure: string, from: Failure = 'action') {
     setBusy(hook.id)
     try {
       await work()
+      clearFailure(hook.id, from === 'limit' ? ['action', 'limit'] : ['action'])
     } catch (e) {
-      setRowNote((n) => ({ ...n, [hook.id]: { text: errorMessage(e, failure), tone: 'error' } }))
+      writeNote(hook.id, { text: errorMessage(e, failure), tone: 'error', from })
     } finally {
       setBusy(null)
     }
   }
 
-  const test = (hook: WebhookInfo) =>
+  const test = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
         const result = await api.testWebhook(hook.id)
-        setRowNote((n) => ({
-          ...n,
-          [hook.id]: result.ok
+        writeNote(
+          hook.id,
+          result.ok
             ? { text: t('webhooks.pingAnswered', { status: String(result.status) }), tone: 'success' }
             : {
                 text: t('webhooks.pingFailed', { error: result.error ?? t('webhooks.pingNoResponse') }),
                 tone: 'error',
               },
-        }))
+        )
         const fresh = await api.listWebhooks()
         setHooks(fresh)
       },
       t('webhooks.testFailed'),
     )
 
-  const toggle = (hook: WebhookInfo) =>
+  const toggle = (hook: WebhookListing) =>
     act(
       hook,
       async () => replace(await api.updateWebhook(hook.id, { enabled: !hook.enabled })),
       t('webhooks.toggleFailed'),
     )
 
-  const rotate = (hook: WebhookInfo) =>
+  /* `value` is null (every canvas) or a non-empty list: Save is disabled at [] */
+  const saveLimit = (hook: WebhookListing, value: string[] | null) =>
+    act(
+      hook,
+      async () => {
+        replace(await api.updateWebhook(hook.id, { workspaceIds: value }))
+        returnFocusTo.current = hook.id
+        /* the person may have moved on to another hook's editor while this one saved */
+        setEditing((current) => (current?.id === hook.id ? null : current))
+      },
+      t('webhooks.limitSaveFailed'),
+      'limit',
+    )
+
+  const rotate = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
@@ -176,7 +283,7 @@ export function Webhooks() {
       t('webhooks.rotateFailed'),
     )
 
-  const remove = (hook: WebhookInfo) =>
+  const remove = (hook: WebhookListing) =>
     act(
       hook,
       async () => {
@@ -187,6 +294,15 @@ export function Webhooks() {
       },
       t('webhooks.removeFailed'),
     )
+
+  const limitLabels = {
+    all: t('webhooks.limitAll'),
+    some: t('webhooks.limitSome'),
+    aria: t('webhooks.limitAria'),
+    groupAria: t('webhooks.limitGroupAria'),
+    pickOne: t('webhooks.limitPickOne'),
+    loadFailed: t('webhooks.limitLoadFailed'),
+  }
 
   return (
     <SettingsCard>
@@ -202,7 +318,18 @@ export function Webhooks() {
       <CardRow
         label={t('webhooks.newWebhookRow')}
         action={
-          <Button size="sm" disabled={saving || hooks === null || !url.trim() || !events.length} onClick={create}>
+          <Button
+            size="sm"
+            disabled={
+              saving ||
+              hooks === null ||
+              workspaces.list === null ||
+              !url.trim() ||
+              !events.length ||
+              limit?.length === 0
+            }
+            onClick={create}
+          >
             {saving ? t('webhooks.adding') : t('webhooks.addWebhook')}
           </Button>
         }
@@ -227,6 +354,10 @@ export function Webhooks() {
         </div>
       </CardRow>
 
+      <CardRow label={t('webhooks.canvasesRow')}>
+        <WorkspaceLimitPicker workspaces={workspaces} value={limit} onChange={setLimit} labels={limitLabels} />
+      </CardRow>
+
       {secret && (
         <CardRow label={t('webhooks.signingSecretRow')}>
           <div className="min-w-0 flex-1">
@@ -238,11 +369,16 @@ export function Webhooks() {
       )}
 
       {hooks?.map((hook) => {
-        const status = rowNote[hook.id] ?? health(hook, t)
+        const note = rowNote[hook.id]
+        const status = note ?? health(hook, t)
+        const host = hostOf(hook.url)
+        /* with no workspace to pick, every canvas is the only answer: a limit
+           whose workspaces are all gone can then still be lifted */
+        const editValue = workspaces.list?.length === 0 ? null : (editing?.value ?? null)
         return (
           <CardRow
             key={hook.id}
-            label={hostOf(hook.url)}
+            label={host}
             action={
               <div className="flex flex-wrap items-center gap-1">
                 <Button size="sm" variant="ghost" disabled={busy === hook.id} onClick={() => void test(hook)}>
@@ -256,6 +392,19 @@ export function Webhooks() {
                 >
                   {t('webhooks.rotateSecret')}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  ref={(el) => {
+                    if (el) editButtons.current.set(hook.id, el)
+                    else editButtons.current.delete(hook.id)
+                  }}
+                  disabled={busy === hook.id || editing?.id === hook.id}
+                  aria-label={t('webhooks.editLimitAria', { host })}
+                  onClick={() => openEditor(hook)}
+                >
+                  {t('webhooks.editLimit')}
+                </Button>
                 <Button size="sm" variant="ghost" disabled={busy === hook.id} onClick={() => void toggle(hook)}>
                   {hook.enabled ? t('webhooks.turnOff') : t('webhooks.turnOn')}
                 </Button>
@@ -263,7 +412,7 @@ export function Webhooks() {
                   size="sm"
                   variant="ghost"
                   disabled={busy === hook.id}
-                  aria-label={t('webhooks.removeAria', { host: hostOf(hook.url) })}
+                  aria-label={t('webhooks.removeAria', { host })}
                   onClick={() => setConfirming({ kind: 'remove', hook })}
                 >
                   <TrashIcon /> {t('webhooks.remove')}
@@ -276,7 +425,47 @@ export function Webhooks() {
                 {hook.url}
               </div>
               <div className="mt-1 text-caption text-ink-faint">{hook.events.join(' · ')}</div>
-              <Note tone={status.tone}>{status.text}</Note>
+              <div className="mt-1 text-caption text-ink-faint">
+                {workspaceLimitText(hook.workspaces, {
+                  all: t('webhooks.limitAll'),
+                  none: t('webhooks.limitNone'),
+                  some: (names) => t('webhooks.limitedTo', { names }),
+                })}
+              </div>
+              {editing?.id === hook.id && (
+                <div ref={editorRef} className="mt-2 flex flex-wrap items-center gap-2.5">
+                  <WorkspaceLimitPicker
+                    workspaces={workspaces}
+                    value={editValue}
+                    onChange={(value) => setEditing({ id: hook.id, value })}
+                    labels={{
+                      ...limitLabels,
+                      aria: t('webhooks.limitAriaFor', { host }),
+                      groupAria: t('webhooks.limitGroupAriaFor', { host }),
+                    }}
+                  />
+                  <div className="flex basis-full flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      disabled={busy === hook.id || workspaces.list === null || editValue?.length === 0}
+                      onClick={() => void saveLimit(hook, editValue)}
+                    >
+                      {t('common.save')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => closeEditor(hook.id)}>
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {/* a failed action is announced; a failing hook's health line is not */}
+              <Note
+                key={note?.tone === 'error' ? note.id : 'status'}
+                tone={status.tone}
+                role={note?.tone === 'error' ? 'alert' : undefined}
+              >
+                {status.text}
+              </Note>
             </div>
           </CardRow>
         )

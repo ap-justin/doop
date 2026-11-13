@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from './db/index.ts'
 import { agentKeys } from './db/schema.ts'
+import { describeWorkspaceLimit, type LimitWorkspace, type WorkspaceLimit } from './workspaceLimit.ts'
 
 /**
  * Agent keys: account-scoped bearer credentials for the /mcp endpoint.
@@ -41,6 +42,8 @@ export interface AgentKeyInfo {
   /** the secret's first characters — enough to recognise, never to use */
   start: string
   scope: AgentKeyScope
+  /** the workspaces the key is limited to; null = every canvas the owner can reach */
+  workspaces: LimitWorkspace[] | null
   createdAt: number
   lastUsedAt: number | null
 }
@@ -50,6 +53,7 @@ const publicColumns = {
   name: agentKeys.name,
   start: agentKeys.start,
   scope: agentKeys.scope,
+  workspaceIds: agentKeys.workspaceIds,
   createdAt: agentKeys.createdAt,
   lastUsedAt: agentKeys.lastUsedAt,
 }
@@ -73,6 +77,7 @@ export async function createAgentKey(
   userId: string,
   name: string,
   scope: AgentKeyScope = 'full',
+  workspaceIds: string[] | null = null,
 ): Promise<(AgentKeyInfo & { secret: string }) | null> {
   const secret = PREFIX + nanoid(32)
   const info: AgentKeyInfo = {
@@ -80,6 +85,7 @@ export async function createAgentKey(
     name: name.trim().slice(0, 60) || 'Agent key',
     start: secret.slice(0, PREFIX.length + 4),
     scope,
+    workspaces: describeWorkspaceLimit(workspaceIds, userId),
     createdAt: Date.now(),
     lastUsedAt: null,
   }
@@ -87,7 +93,8 @@ export async function createAgentKey(
     .insert(agentKeys)
     .select(
       sql`select ${info.id}::text, ${hash(secret)}::text, ${userId}::text, ${info.name}::text, ${info.start}::text,
-          ${info.scope}::text, ${info.createdAt}::bigint, null::bigint
+          ${info.scope}::text, ${info.createdAt}::bigint, null::bigint,
+          ${workspaceIds ? JSON.stringify(workspaceIds) : null}::jsonb
           where (select count(*) from ${agentKeys} where ${agentKeys.userId} = ${userId}) < ${MAX_KEYS}`,
     )
     .returning({ id: agentKeys.id })
@@ -101,7 +108,11 @@ export async function listAgentKeys(userId: string): Promise<AgentKeyInfo[]> {
     .from(agentKeys)
     .where(eq(agentKeys.userId, userId))
     .orderBy(desc(agentKeys.createdAt))
-  return rows.map((row) => ({ ...row, scope: asScope(row.scope) }))
+  return rows.map(({ workspaceIds, ...row }) => ({
+    ...row,
+    scope: asScope(row.scope),
+    workspaces: describeWorkspaceLimit(workspaceIds, userId),
+  }))
 }
 
 /** Revocation is deletion: the next MCP request with the secret gets a 401. */
@@ -120,10 +131,17 @@ const touched = new Map<string, number>()
 const TOUCH_INTERVAL_MS = 60_000
 
 /** The MCP gate: a valid secret resolves to the account it acts as. */
-export async function verifyAgentKey(secret: string): Promise<{ userId: string; scope: AgentKeyScope } | null> {
+export async function verifyAgentKey(
+  secret: string,
+): Promise<{ userId: string; scope: AgentKeyScope; workspaceIds: WorkspaceLimit } | null> {
   if (!/^dpk_[\w-]{20,}$/.test(secret)) return null
   const [key] = await db
-    .select({ id: agentKeys.id, userId: agentKeys.userId, scope: agentKeys.scope })
+    .select({
+      id: agentKeys.id,
+      userId: agentKeys.userId,
+      scope: agentKeys.scope,
+      workspaceIds: agentKeys.workspaceIds,
+    })
     .from(agentKeys)
     .where(eq(agentKeys.secretHash, hash(secret)))
   if (!key) return null
@@ -135,5 +153,5 @@ export async function verifyAgentKey(secret: string): Promise<{ userId: string; 
       .where(eq(agentKeys.id, key.id))
       .catch((err: unknown) => console.error('[agent-keys] lastUsedAt write failed', err))
   }
-  return { userId: key.userId, scope: asScope(key.scope) }
+  return { userId: key.userId, scope: asScope(key.scope), workspaceIds: key.workspaceIds }
 }

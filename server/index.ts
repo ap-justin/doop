@@ -69,6 +69,7 @@ import {
 } from './assets.ts'
 import * as ingest from './ingest.ts'
 import * as agentKeys from './agentKeys.ts'
+import { parseWorkspaceLimit } from './workspaceLimit.ts'
 import * as backgrounds from './backgrounds.ts'
 import * as storage from './storage.ts'
 import * as github from './github.ts'
@@ -1150,11 +1151,19 @@ app.get('/api/agent-keys', async (req, res) => {
   res.json(await agentKeys.listAgentKeys(req.user!.id))
 })
 
+const AGENT_KEY_FIELDS = new Set(['name', 'scope', 'workspaceIds'])
+
 app.post('/api/agent-keys', async (req, res) => {
+  /* refused, not ignored: a misspelled workspaceIds would mint a key with no limit, for good */
+  const unknownField = Object.keys(req.body ?? {}).find((field) => !AGENT_KEY_FIELDS.has(field))
+  if (unknownField !== undefined) return res.status(400).json({ error: `unknown field: ${unknownField}` })
   const scope = req.body?.scope ?? 'full'
   if (!agentKeys.isAgentKeyScope(scope))
     return res.status(400).json({ error: `scope must be one of: ${agentKeys.AGENT_KEY_SCOPES.join(', ')}` })
-  const key = await agentKeys.createAgentKey(req.user!.id, String(req.body?.name ?? ''), scope)
+  /* fixed at creation: a key's reach never grows after its secret has left */
+  const limit = parseWorkspaceLimit(req.user!.id, req.body?.workspaceIds)
+  if (!limit.ok) return res.status(400).json({ error: limit.error })
+  const key = await agentKeys.createAgentKey(req.user!.id, String(req.body?.name ?? ''), scope, limit.limit)
   if (!key) return res.status(400).json({ error: 'agent key limit reached — revoke one you no longer use' })
   res.json(key)
 })
