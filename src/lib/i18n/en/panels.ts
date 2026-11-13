@@ -149,7 +149,7 @@ export const panels = {
   activityClosePanel: 'Close panel',
   activityRecentTasks: 'Recent tasks',
   activityNoTasks: 'No tasks yet. Ask the Doop Agent below, or connect your own — what agents work on shows up here.',
-  activityNoTasksLean: 'No tasks yet. Connect an agent — what agents work on shows up here.',
+  activityNoTasksLean: 'No tasks yet. Connect an agent. What agents work on shows up here.',
   activityWorkingOn: 'Working on',
   activityWorkedOn: 'Worked on',
   activityShowLess: 'Show less',
