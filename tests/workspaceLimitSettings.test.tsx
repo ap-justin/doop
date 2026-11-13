@@ -334,6 +334,7 @@ it('warns before saving every canvas over a limit with no workspace left', async
   )!
   await click(some)
   expect(container.textContent).not.toContain(widenNote)
+  expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
 })
 
 it('warns when no workspace is left to pick and every canvas is the only choice', async () => {
@@ -343,6 +344,9 @@ it('warns when no workspace is left to pick and every canvas is the only choice'
 
   await click(editButton('hooks.example.com'))
   expect(container.textContent).toContain(widenNote)
+  /* the editor focuses Save straight away here, so the warning has to ride on it */
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
 })
 
 it('stays quiet about widening for a hook that still has a workspace, or none limited', async () => {
