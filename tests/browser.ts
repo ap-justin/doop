@@ -51,16 +51,22 @@ const STEP_TIMEOUT_MS = 15_000
  *  server (measured: 345 of 395 requests were 304s). A test that reloads per
  *  case, with a dozen files doing the same side by side on a 2-vCPU runner,
  *  queued behind each other for seconds per load. Nothing is watched, so a
- *  module cannot change under a run and the browser may keep what it fetched:
- *  the fixture documents themselves stay uncached, everything they import is
- *  served from the page's cache. */
+ *  module cannot change under a run, and the browser may keep what it fetches
+ *  for an hour. Documents (fixtures, and app routes such as `/c/<id>` that
+ *  Vite answers with index.html) are left uncached, and so is anything the
+ *  `proxy` option forwards: the API's answers change as a test runs. */
 function cacheModulesForRun(): Plugin {
   return {
     name: 'doop-test-module-cache',
     configureServer(server) {
+      const proxied = Object.keys(server.config.server.proxy ?? {}).map((context) =>
+        context.startsWith('^') ? new RegExp(context) : { test: (url: string) => url.startsWith(context) },
+      )
       server.middlewares.use((req, res, next) => {
-        const path = (req.url ?? '').split('?')[0] ?? ''
-        if (!path.endsWith('.html') && path !== '/') {
+        const url = req.url ?? ''
+        const path = url.split('?')[0] ?? ''
+        const isDocument = path.endsWith('.html') || path === '/' || (req.headers.accept ?? '').includes('text/html')
+        if (!isDocument && !proxied.some((context) => context.test(url))) {
           const setHeader = res.setHeader.bind(res)
           res.setHeader = (name, value) =>
             setHeader(name, name.toLowerCase() === 'cache-control' ? 'max-age=3600' : value)
