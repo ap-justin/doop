@@ -129,7 +129,7 @@ export function Webhooks() {
      before Radix's own re-render sets any tabindex to 0), or, with no choice
      to offer, the first enabled button: Retry, Cancel while loading, Save.
      Two queries, not one selector list: the segments are buttons too, and a
-     list matches the first in document order, the unchosen "All" */
+     list matches the first in document order, "All canvases" even when unchosen */
   useEffect(() => {
     const editor = editingId ? editorRef.current : null
     if (!editor) return
