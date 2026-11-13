@@ -58,10 +58,10 @@ function health(hook: WebhookListing, t: Translate): { text: string; tone?: 'err
 
 /** A row's own line in place of its health. `from` marks a failed action:
  *  `'action'` goes when any action on the row next succeeds, `'limit'` (a
- *  failed limit save) only when a limit save succeeds or the limit editor
- *  opens or closes. A ping result has none and stays until replaced. `id` is
- *  new for every note, so a repeated failure mounts a fresh alert that is
- *  announced again. */
+ *  failed limit save) only when a limit save succeeds or that row's own
+ *  limit editor opens or is cancelled. A ping result has none and stays
+ *  until replaced. `id` is new for every note, so a repeated failure mounts
+ *  a fresh alert that is announced again. */
 interface RowNote {
   id: number
   text: string
