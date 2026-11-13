@@ -697,7 +697,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   MCP tools or guide lines), `unlessLean` (scheduler, live-activity delivery), `residentMention`
   (an `@mention` is plain text: no task, no meter), `billingEnabled` false (every workspace
   active), `localAgent.ts` and so `resident.ts` never loaded, no welcome canvas, first canvas or
-  demo, analytics capture off. The client reads `lean` from `GET /api/locale-config`. Tests:
+  demo, analytics capture off; MCP `generate_image` stays and is paid by the server's image key only
+  (`generatorFor` reads no connected accounts). The client reads `lean` from `GET /api/locale-config`. Tests:
   `lean.test.ts`, `leanHttp.test.ts`.
   Client: `initLocale` asks `/api/locale-config` once on every load (a failed or slow answer is
   lean off) and settles `src/lib/lean.ts` (`useLean()`, `isLean()`) before the first render.

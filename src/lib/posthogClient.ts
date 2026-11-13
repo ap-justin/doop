@@ -19,6 +19,7 @@ import 'posthog-js/dist/web-vitals'
 import 'posthog-js/dist/conversations'
 import posthog from 'posthog-js/dist/module.no-external'
 import { installFrameReplay } from './frameReplay'
+import { reportLandingUrl } from './posthog'
 import { desktopPlatform, isDesktopShell, shellVersion } from './shell'
 
 const key = import.meta.env.VITE_POSTHOG_KEY
@@ -52,6 +53,7 @@ if (!key) {
     /* api_host is our relay; links out to the PostHog app must not be */
     ui_host: 'https://us.posthog.com',
     capture_pageview: 'history_change',
+    before_send: reportLandingUrl,
     capture_exceptions: {
       capture_unhandled_errors: true,
       capture_unhandled_rejections: true,

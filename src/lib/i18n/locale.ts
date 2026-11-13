@@ -97,7 +97,8 @@ export async function initLocale(): Promise<void> {
   })
   const config = await fetchConfig()
   setLean(config.lean)
-  if (!getPicked()) serverDefault = config.defaultLocale ?? FALLBACK_LOCALE
+  /* kept even under a pick, so a pick cleared later falls back to it */
+  serverDefault = config.defaultLocale ?? FALLBACK_LOCALE
   snapshot = null
   mark()
 }

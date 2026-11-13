@@ -1,3 +1,5 @@
+import { createServer, type Server as HttpServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Client, startServer, type Server } from './harness.ts'
 
@@ -10,8 +12,31 @@ import { Client, startServer, type Server } from './harness.ts'
 /** No free resident tasks and no model keys: off, an @mention is refused by the meter. */
 const AGENT_OFF = { RESIDENT_TASK_LIMIT: '0', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' }
 
+/** Stands in for PostHog: answers 202 and remembers what the relay forwarded. */
+interface Upstream {
+  origin: string
+  hits: string[]
+  close(): void
+}
+
+async function startUpstream(): Promise<Upstream> {
+  const hits: string[] = []
+  const http: HttpServer = createServer((req, res) => {
+    hits.push(`${req.method} ${req.url}`)
+    res.statusCode = 202
+    res.end('relayed')
+  })
+  await new Promise((resolve) => http.listen(0, '127.0.0.1', () => resolve(undefined)))
+  return {
+    origin: `http://127.0.0.1:${(http.address() as AddressInfo).port}`,
+    hits,
+    close: () => http.close(),
+  }
+}
+
 interface Booted {
   server: Server
+  upstream: Upstream
   owner: Client
   canvasId: string
   pageId: string
@@ -20,7 +45,13 @@ interface Booted {
 }
 
 async function boot(env: Record<string, string>, email: string): Promise<Booted> {
-  const server = await startServer({ ...AGENT_OFF, ...env })
+  const upstream = await startUpstream()
+  const server = await startServer({
+    ...AGENT_OFF,
+    POSTHOG_INGEST_HOST: upstream.origin,
+    POSTHOG_ASSETS_HOST: upstream.origin,
+    ...env,
+  })
   const owner = await new Client(server).signUp(email, 'Owner')
   const canvas = await (await owner.post('/api/canvases', { name: 'Lean' })).json()
   const workspace = await (await owner.post('/api/workspaces', { name: 'Team' })).json()
@@ -29,6 +60,7 @@ async function boot(env: Record<string, string>, email: string): Promise<Booted>
   ).json()
   return {
     server,
+    upstream,
     owner,
     canvasId: canvas.id,
     pageId: canvas.pages[0].id,
@@ -37,42 +69,68 @@ async function boot(env: Record<string, string>, email: string): Promise<Booted>
   }
 }
 
-/** One request per disabled route family. */
-function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): [method: string, path: string][] {
-  return [
-    ['POST', '/stripe/webhook'],
-    ['POST', '/webhooks/slack'],
-    ['POST', '/webhooks/linear'],
-    ['POST', '/local-agent/mcp/run-1'],
-    ['POST', '/gemini-cloud/mcp/run-1'],
-    ['GET', '/api/live-activities/config'],
-    ['GET', '/api/community'],
-    ['GET', '/api/automations'],
-    ['GET', '/api/integrations'],
-    ['GET', '/api/integrations/linear/callback'],
-    ['GET', '/api/model-account'],
-    ['GET', '/api/model-account/models'],
-    ['GET', '/api/agent-runners'],
-    ['GET', '/api/agent-allowance'],
-    ['GET', '/api/local-agent'],
-    ['GET', '/api/image-model'],
-    ['PUT', '/api/image-model'],
-    ['GET', '/api/billing/plans'],
-    ['GET', '/api/github/app'],
-    ['GET', `/api/canvases/${canvasId}/github`],
-    ['POST', `/api/canvases/${canvasId}/cards`],
-    ['PUT', `/api/canvases/${canvasId}/publish`],
-    ['DELETE', `/api/canvases/${canvasId}/publish`],
-    ['POST', '/api/tasks/task-1/feedback'],
-    ['POST', '/api/feedback/fb-1/retry'],
-    ['POST', `/api/comments/${commentId}/retry`],
-    ['POST', `/api/workspaces/${workspaceId}/billing/checkout`],
-    ['POST', `/api/workspaces/${workspaceId}/billing/portal`],
-    ['POST', `/api/workspaces/${workspaceId}/billing/sync`],
-  ]
+/** One request per disabled route family, and the status the live handler
+ *  answers it with when lean is off: a 404 there would be a route that is
+ *  gone, not one that is served. */
+interface DisabledRoute {
+  method: string
+  path: string
+  served: number
 }
 
-async function mcp(server: Server, secret: string, method: string) {
+function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledRoute[] {
+  const routes: [method: string, path: string, served: number][] = [
+    ['POST', '/relay/e/', 202],
+    ['GET', '/relay/static/array.js', 202],
+    ['POST', '/stripe/webhook', 501],
+    ['POST', '/webhooks/slack', 503],
+    ['POST', '/webhooks/linear', 503],
+    ['POST', '/local-agent/mcp/run-1', 403],
+    ['POST', '/gemini-cloud/mcp/run-1', 403],
+    ['GET', '/api/live-activities/config', 200],
+    ['GET', '/api/community', 200],
+    ['GET', '/api/automations', 200],
+    ['GET', '/api/integrations', 200],
+    ['GET', '/api/integrations/linear/callback', 302],
+    ['GET', '/api/model-account', 200],
+    ['GET', '/api/model-account/models', 400],
+    ['PATCH', '/api/model-account/openai', 400],
+    ['DELETE', '/api/model-account/openai', 400],
+    ['POST', '/api/model-account/chatgpt/authorize', 200],
+    ['DELETE', '/api/model-account/chatgpt/device', 200],
+    ['GET', '/api/agent-runners', 200],
+    ['PUT', '/api/agent-runners/default', 400],
+    ['GET', '/api/agent-allowance', 200],
+    ['GET', '/api/local-agent', 200],
+    ['GET', '/api/image-model', 200],
+    ['PUT', '/api/image-model', 400],
+    ['GET', '/api/billing/plans', 200],
+    ['GET', '/api/github/app', 200],
+    ['GET', `/api/canvases/${canvasId}/github`, 200],
+    ['POST', `/api/canvases/${canvasId}/cards`, 400],
+    ['PUT', `/api/canvases/${canvasId}/publish`, 400],
+    ['DELETE', `/api/canvases/${canvasId}/publish`, 200],
+    ['POST', '/api/tasks/task-1/feedback', 404],
+    ['POST', '/api/feedback/fb-1/retry', 404],
+    ['POST', `/api/comments/${commentId}/retry`, 403],
+    ['POST', `/api/workspaces/${workspaceId}/billing/checkout`, 400],
+    ['POST', `/api/workspaces/${workspaceId}/billing/portal`, 400],
+    ['POST', `/api/workspaces/${workspaceId}/billing/sync`, 200],
+  ]
+  return routes.map(([method, path, served]) => ({ method, path, served }))
+}
+
+function send(b: Booted, { method, path }: DisabledRoute) {
+  return b.owner.req(path, { method, body: method === 'GET' ? undefined : '{}' })
+}
+
+interface McpResult {
+  tools?: { name: string; description?: string }[]
+  instructions?: string
+  content?: { text: string }[]
+}
+
+async function mcp(server: Server, secret: string, method: string, params?: Record<string, unknown>) {
   const res = await fetch(`${server.base}/mcp`, {
     method: 'POST',
     headers: {
@@ -80,15 +138,43 @@ async function mcp(server: Server, secret: string, method: string) {
       Accept: 'application/json, text/event-stream',
       Authorization: `Bearer ${secret}`,
     },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   })
-  return (await res.json()) as { result?: { tools?: { name: string }[] } }
+  return (await res.json()) as { result?: McpResult }
+}
+
+async function agentKey(b: Booted): Promise<string> {
+  const { secret } = (await (await b.owner.post('/api/agent-keys', { name: 'all' })).json()) as { secret: string }
+  return secret
 }
 
 async function toolNames(b: Booted): Promise<string[]> {
-  const { secret } = (await (await b.owner.post('/api/agent-keys', { name: 'all' })).json()) as { secret: string }
-  return ((await mcp(b.server, secret, 'tools/list')).result?.tools ?? []).map((t) => t.name)
+  return ((await mcp(b.server, await agentKey(b), 'tools/list')).result?.tools ?? []).map((t) => t.name)
 }
+
+/** Every text an MCP agent reads about comment replies: the initialize
+ *  instructions, the get_guide playbook and reply_to_comment's description. */
+async function commentReplyTexts(b: Booted): Promise<string[]> {
+  const secret = await agentKey(b)
+  const init = await mcp(b.server, secret, 'initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'lean-test', version: '1' },
+  })
+  const guide = await mcp(b.server, secret, 'tools/call', {
+    name: 'get_guide',
+    arguments: { topic: 'doop-instructions' },
+  })
+  const tools = (await mcp(b.server, secret, 'tools/list')).result?.tools ?? []
+  return [
+    init.result?.instructions ?? '',
+    guide.result?.content?.[0]?.text ?? '',
+    tools.find((t) => t.name === 'reply_to_comment')?.description ?? '',
+  ]
+}
+
+/** "meter" as a word, not inside "parameter". */
+const METER = /\bmeter/i
 
 const LINEAR_TOOLS = ['list_linear_issues', 'get_linear_issue']
 
@@ -99,14 +185,22 @@ describe('lean mode on', () => {
     b = await boot({ DOOP_LEAN: '1' }, 'lean-owner@test.dev')
   }, 70_000)
 
-  afterAll(() => b?.server.stop())
+  afterAll(() => {
+    b?.server.stop()
+    b?.upstream.close()
+  })
 
   it('answers every disabled route family as a route that does not exist', async () => {
-    for (const [method, path] of disabledRoutes(b)) {
-      const res = await b.owner.req(path, { method, body: method === 'GET' ? undefined : '{}' })
+    for (const route of disabledRoutes(b)) {
+      const { method, path } = route
+      const res = await send(b, route)
       expect({ method, path, status: res.status }).toEqual({ method, path, status: 404 })
       expect(await res.text()).toContain(`Cannot ${method} ${path}`)
     }
+  })
+
+  it('forwards nothing to PostHog', () => {
+    expect(b.upstream.hits).toEqual([])
   })
 
   it('refuses them before the session gate too', async () => {
@@ -150,8 +244,7 @@ describe('lean mode on', () => {
 
   it('creates no first canvas at sign-up and lands the new account on home', async () => {
     const fresh = await new Client(b.server).signUp('lean-fresh@test.dev', 'Fresh')
-    const canvases = await (await fresh.get('/api/canvases')).text()
-    expect(canvases).not.toContain('first canvas')
+    expect(await (await fresh.get('/api/canvases')).json()).toEqual([])
     const landing = await fresh.get('/api/welcome')
     expect(landing.status).toBe(302)
     expect(landing.headers.get('location')).toBe('/')
@@ -163,6 +256,12 @@ describe('lean mode on', () => {
     for (const tool of ['create_canvas', 'reply_to_comment', 'resolve_comment', 'generate_image', 'upload_asset'])
       expect(names).toContain(tool)
   })
+
+  it('never tells an MCP agent that an @mention reply is metered', async () => {
+    const texts = await commentReplyTexts(b)
+    for (const text of texts) expect(text).not.toHaveLength(0)
+    for (const text of texts) expect(text).not.toMatch(METER)
+  })
 })
 
 describe('lean mode off', () => {
@@ -172,13 +271,22 @@ describe('lean mode off', () => {
     b = await boot({ DOOP_LEAN: '' }, 'full-owner@test.dev')
   }, 70_000)
 
-  afterAll(() => b?.server.stop())
+  afterAll(() => {
+    b?.server.stop()
+    b?.upstream.close()
+  })
 
-  it('serves every route family lean mode disables', async () => {
-    for (const [method, path] of disabledRoutes(b)) {
-      const res = await b.owner.req(path, { method, body: method === 'GET' ? undefined : '{}' })
+  it('serves every route family lean mode disables, each with its own handler', async () => {
+    for (const route of disabledRoutes(b)) {
+      const { method, path, served } = route
+      const res = await send(b, route)
       expect(await res.text(), `${method} ${path}`).not.toContain(`Cannot ${method}`)
+      expect({ method, path, status: res.status }).toEqual({ method, path, status: served })
     }
+  })
+
+  it('forwards the analytics relay to PostHog, ingestion and assets alike', () => {
+    expect(b.upstream.hits).toEqual(['POST /e/', 'GET /static/array.js'])
   })
 
   it('says lean is off in the locale config', async () => {
@@ -197,13 +305,21 @@ describe('lean mode off', () => {
     expect((await res.json()).error).toBe('resident_limit')
   })
 
-  it('creates the first canvas at sign-up', async () => {
-    const canvases = await (await b.owner.get('/api/canvases')).text()
-    expect(canvases).toContain('first canvas')
+  it('creates the first canvas at sign-up and lands the new account on it', async () => {
+    const fresh = await new Client(b.server).signUp('full-fresh@test.dev', 'Fresh')
+    const canvases = (await (await fresh.get('/api/canvases')).json()) as { id: string; name: string }[]
+    expect(canvases.map((c) => c.name)).toEqual(["Fresh's first canvas"])
+    const landing = await fresh.get('/api/welcome')
+    expect(landing.status).toBe(302)
+    expect(landing.headers.get('location')).toBe(`/c/${canvases[0]!.id}`)
   })
 
   it('lists the Linear tools to an unlimited agent key', async () => {
     const names = await toolNames(b)
     for (const tool of LINEAR_TOOLS) expect(names).toContain(tool)
+  })
+
+  it('tells MCP agents that an @mention reply is metered', async () => {
+    for (const text of await commentReplyTexts(b)) expect(text).toMatch(METER)
   })
 })

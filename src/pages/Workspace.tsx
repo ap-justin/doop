@@ -155,9 +155,10 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
   const admin = ws ? ws.role !== 'member' : false
   const isOwner = ws?.role === 'owner'
   /* billing and settings are for the owner and admins; anyone else asking
-     for them (a stale link) sees the people */
+     for them (a stale link) sees the people; until the role is known every
+     pane but what lean turns off is kept */
   const panes = workspacePanesFor(ws?.role, lean)
-  const pane: Pane = !ws || panes.includes(picked) ? picked : 'members'
+  const pane: Pane = panes.includes(picked) ? picked : 'members'
 
   if (missing) {
     return (

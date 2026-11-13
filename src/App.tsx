@@ -1,5 +1,5 @@
 import { startLocalAgent } from './lib/localAgent'
-import { navigate } from './lib/navigate'
+import { currentRoute, navigate } from './lib/navigate'
 import { useEffect, useRef, useState } from 'react'
 import { Home } from './pages/Home'
 import { Community } from './pages/Community'
@@ -37,9 +37,6 @@ import { useLean } from './lib/lean'
 
 export { navigate }
 
-/* the pages of features lean mode turns off, matched as the router below matches them */
-const LEAN_OFF_PATHS = ['/community', '/integrations', '/automations']
-
 /* A provider sign-in that created the account lands here carrying
    ?signup=<method> (shared/firstCanvas.ts); the email form reports its own
    signups at submit. Report it once the person is identified, then take the
@@ -54,7 +51,7 @@ function reportProviderSignup() {
 }
 
 export function App() {
-  const [route, setRoute] = useState(location.pathname + location.search)
+  const [route, setRoute] = useState(currentRoute)
   const path = route.split('?')[0]!
   const { data: session, isPending } = authClient.useSession()
   /* a signed-out guest on a share link asked for the sign-in form */
@@ -65,7 +62,7 @@ export function App() {
   const identifiedUserId = useRef<string | null>(null)
 
   useEffect(() => {
-    const onPop = () => setRoute(location.pathname + location.search)
+    const onPop = () => setRoute(currentRoute())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -217,9 +214,6 @@ export function App() {
     <Admin />
   ) : path.startsWith('/settings') ? (
     <Settings />
-  ) : lean && LEAN_OFF_PATHS.some((off) => path.startsWith(off)) ? (
-    /* in lean mode they land home, as an unknown path does */
-    <Home />
   ) : path.startsWith('/community') ? (
     <Community />
   ) : path.startsWith('/integrations') ? (

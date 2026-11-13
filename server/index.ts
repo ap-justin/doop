@@ -2812,11 +2812,18 @@ server.listen(PORT, () => {
         ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
         : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
     )
-  console.log(
-    serverImageGenEnabled()
-      ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
-      : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
-  )
+  if (leanMode())
+    console.log(
+      serverImageGenEnabled()
+        ? '⟡ image generation  on for MCP agents — this server’s OPENAI_API_KEY'
+        : '⟡ image generation  off (set OPENAI_API_KEY to let MCP agents generate images)',
+    )
+  else
+    console.log(
+      serverImageGenEnabled()
+        ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
+        : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
+    )
   /* automations fire from here: one tick a minute over the due rows */
   unlessLean(startScheduler)
   startMcpTokenPrune()

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import type { AddressInfo } from 'node:net'
 import {
@@ -16,6 +16,8 @@ import { stubEnv, unstubAllEnvs } from './envStub.ts'
  * routes that do not exist, and their background work never starts.
  */
 
+/* lean is off unless a test turns it on, whatever the shell running the suite exports */
+beforeEach(() => stubEnv('DOOP_LEAN', undefined))
 afterEach(unstubAllEnvs)
 
 describe('leanMode', () => {
