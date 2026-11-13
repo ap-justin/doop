@@ -479,3 +479,51 @@ it('focuses the chosen "All canvases" segment when an unlimited hook opens its e
   expect(document.activeElement).toBe(checkedSegment('hooks.example.com'))
   expect(document.activeElement?.textContent?.trim()).toBe('All canvases')
 })
+
+it('keeps a failed limit save on the row through a successful toggle', async () => {
+  const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  mocks.listWebhooks.mockResolvedValue([limited])
+  mocks.updateWebhook.mockRejectedValueOnce(new Error('500')).mockResolvedValueOnce({ ...limited, enabled: false })
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  expect(container.textContent).toContain('The canvases could not be changed')
+
+  /* the editor is still open after the failed save; the toggle is a different action */
+  await click(button('Turn off'))
+  expect(mocks.updateWebhook).toHaveBeenLastCalledWith('h1', { enabled: false })
+  expect(container.textContent).toContain('The canvases could not be changed')
+})
+
+it('clears a failed toggle from the row once a limit save succeeds', async () => {
+  const limited = hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])
+  mocks.listWebhooks.mockResolvedValue([limited])
+  mocks.updateWebhook
+    .mockRejectedValueOnce(new Error('500'))
+    .mockResolvedValueOnce({ ...limited, workspaces: [{ id: 'w2', name: 'Studio' }] })
+  await mount(<Webhooks />)
+
+  await click(button('Turn off'))
+  expect(container.textContent).toContain('That could not be saved')
+
+  await click(editButton('hooks.example.com'))
+  await click(checkbox('Studio'))
+  await click(button('Save'))
+  expect(container.textContent).toContain('Only in Studio')
+  expect(container.textContent).not.toContain('That could not be saved')
+})
+
+it('focuses the first enabled button of the limit editor when its workspaces failed to load', async () => {
+  mocks.listWorkspaces.mockRejectedValue(new Error('500'))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [{ id: 'w1', name: 'Acme' }])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  /* no segment to choose; the new-webhook form's Try again comes first, the row editor's second */
+  const retries = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Try again')
+  expect(retries).toHaveLength(2)
+  expect(document.activeElement).toBe(retries[1])
+})
