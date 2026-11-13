@@ -48,9 +48,9 @@ const STEP_TIMEOUT_MS = 15_000
 
 /** Vite answers every source module with `Cache-Control: no-cache`, so each
  *  reload of a fixture revalidates all ~350 modules of the app against the one
- *  server (measured: 345 of 395 requests were 304s). A test that reloads per
- *  case, with a dozen files doing the same side by side on a 2-vCPU runner,
- *  queued behind each other for seconds per load. Nothing is watched, so a
+ *  server (measured: 345 of 395 requests were 304s). With a dozen files
+ *  reloading per case side by side on a 2-vCPU runner, those revalidations
+ *  queue behind each other for seconds per load. Nothing is watched, so a
  *  module cannot change under a run, and the browser may keep what it fetches
  *  for an hour. Documents (fixtures, and app routes such as `/c/<id>` that
  *  Vite answers with index.html) are left uncached, and so is anything the
