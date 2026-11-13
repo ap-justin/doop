@@ -332,6 +332,8 @@ it('warns before saving every canvas over a limit with no workspace left', async
   expect(container.textContent).not.toContain(widenNote)
   await click(showAll())
   expect(container.textContent).toContain(widenNote)
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
   await click(segment('hooks.example.com', 'Only some workspaces'))
   expect(container.textContent).not.toContain(widenNote)
   expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
@@ -361,6 +363,7 @@ it('warns when no workspace is left to pick and every canvas is the only choice'
   await click(editButton('hooks.example.com'))
   expect(container.textContent).toContain(widenNote)
   /* the editor focuses Save straight away here, so the warning has to ride on it */
+  expect(document.activeElement).toBe(button('Save'))
   const describedBy = button('Save').getAttribute('aria-describedby')
   expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
 })
@@ -397,6 +400,25 @@ it('keeps the widening warning off while the workspaces failed to load', async (
   expect(retries).toHaveLength(2)
   expect(container.textContent).not.toContain(widenNote)
   expect(button('Save').hasAttribute('aria-describedby')).toBe(false)
+})
+
+it('shows the widening warning once a failed workspace load is retried and no workspace is left', async () => {
+  mocks.listWorkspaces.mockRejectedValueOnce(new Error('500'))
+  mocks.listWorkspaces.mockResolvedValue(workspaces([]))
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  mocks.listWebhooks.mockResolvedValue([hook('h1', 'https://hooks.example.com/doop', [])])
+  await mount(<Webhooks />)
+
+  await click(editButton('hooks.example.com'))
+  expect(container.textContent).not.toContain(widenNote)
+  /* the new-webhook form's Try again comes first, the row editor's second */
+  const retries = Array.from(container.querySelectorAll('button')).filter((b) => b.textContent?.trim() === 'Try again')
+  expect(retries).toHaveLength(2)
+  await click(retries[1]!)
+
+  expect(container.textContent).toContain(widenNote)
+  const describedBy = button('Save').getAttribute('aria-describedby')
+  expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(widenNote)
 })
 
 it('clears a failed limit save from the row once a retry succeeds', async () => {
