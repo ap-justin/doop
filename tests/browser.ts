@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs'
 import puppeteer, { type Browser, type Page, type Permission } from 'puppeteer-core'
-import { createServer, type InlineConfig, type ServerOptions } from 'vite'
+import { createServer, type InlineConfig, type Plugin, type ServerOptions } from 'vite'
 import { inject } from 'vitest'
 import { findBrowserPath, launchBrowser } from '../server/screenshot.ts'
 
@@ -46,6 +46,38 @@ const NAVIGATION_TIMEOUT_MS = 30_000
  *  nothing but its title. */
 const STEP_TIMEOUT_MS = 15_000
 
+/** Vite answers every source module with `Cache-Control: no-cache`, so each
+ *  reload of a fixture revalidates all ~350 modules of the app against the one
+ *  server (measured: 345 of 395 requests were 304s). With a dozen files
+ *  reloading per case side by side on a 2-vCPU runner, those revalidations
+ *  queue behind each other for seconds per load. Nothing is watched, so a
+ *  module cannot change under a run, and the browser may keep what it fetches
+ *  for an hour. Documents (fixtures, and app routes such as `/c/<id>` that
+ *  Vite answers with index.html) keep Vite's `no-cache`, and anything the
+ *  `proxy` option forwards keeps the API's own headers: its answers change as
+ *  a test runs. */
+function cacheModulesForRun(): Plugin {
+  return {
+    name: 'doop-test-module-cache',
+    configureServer(server) {
+      const proxied = Object.keys(server.config.server.proxy ?? {}).map((context) =>
+        context.startsWith('^') ? new RegExp(context) : { test: (url: string) => url.startsWith(context) },
+      )
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? ''
+        const path = url.split('?')[0] ?? ''
+        const isDocument = path.endsWith('.html') || path === '/' || (req.headers.accept ?? '').includes('text/html')
+        if (!isDocument && !proxied.some((context) => context.test(url))) {
+          const setHeader = res.setHeader.bind(res)
+          res.setHeader = (name, value) =>
+            setHeader(name, name.toLowerCase() === 'cache-control' ? 'max-age=3600' : value)
+        }
+        next()
+      })
+    },
+  }
+}
+
 /**
  * The Vite config every fixture server uses. One `optimizeDeps` for all of
  * them: the dependency hash covers `include`, and a server whose hash differs
@@ -59,6 +91,7 @@ const STEP_TIMEOUT_MS = 15_000
 export function fixtureServerConfig(server: ServerOptions = {}): InlineConfig {
   return {
     logLevel: 'error',
+    plugins: [cacheModulesForRun()],
     cacheDir: 'node_modules/.vite-test',
     optimizeDeps: {
       entries: ['index.html', `${FIXTURES}/*.html`],
