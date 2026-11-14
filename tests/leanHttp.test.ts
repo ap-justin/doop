@@ -9,7 +9,7 @@ import { Client, startServer, type Server } from './harness.ts'
  * works, and MCP agents get no Linear tools.
  */
 
-/** No free resident tasks and no model keys: off, an @mention is refused by the meter. */
+/** No free resident tasks and no model keys: with lean off, the meter refuses an @mention. */
 const AGENT_OFF = { RESIDENT_TASK_LIMIT: '0', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' }
 
 /** Stands in for PostHog: answers 202 and remembers what the relay forwarded. */

@@ -693,14 +693,18 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
-  The code stays; `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear
-  ones) and guide lines, and `unlessLean` skips the automations scheduler and live-activity delivery.
-  The client reads `lean` from `GET /api/locale-config` (`initLocale` asks on every load and settles
-  `src/lib/lean.ts`, `useLean()`, before the first render) and hides the entry points to what the
-  server refused: the Settings Doop Agent pane (`?pane=agent` falls back to General), the canvas
-  `PromptBar` and the home hero composer, the rail's Community / Automations / Integrations, the
-  share dialog's community listing and the GitHub and integration import cards. Tests:
-  `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`.
+  The code stays. `resident.onFeedback` returns early, so no resident run starts, and
+  `residentMention` makes an @mention a plain comment (not queued, metered or refused);
+  `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
+  lines, and `inAppAgentText` drops the guide's task-feedback line and metered-@mention sentence;
+  `unlessLean` skips the automations scheduler, live-activity delivery and the boot log's Doop
+  Agent, image-generation and Stripe lines. The client reads `lean` from `GET /api/locale-config`
+  (`initLocale` asks on every load and settles `src/lib/lean.ts`, `useLean()`, before the first
+  render) and hides the entry points to what the server refused: the Settings Doop Agent pane
+  (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
+  Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
+  Automations / Integrations, the share dialog's community listing and the GitHub and integration
+  import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`.
 - Docker - `Dockerfile` + `docker-compose.yml`; `docker compose up` runs the app container
   (port 4400) and a `postgres:16-alpine` db container for self-hosting.
 

@@ -149,7 +149,7 @@ export const panels: Catalog['panels'] = {
   activityRecentTasks: 'Tarefas recentes',
   activityNoTasks:
     'Nenhuma tarefa ainda. Peça ao Doop Agent abaixo ou conecte o seu — o que os agentes fazem aparece aqui.',
-  activityNoTasksLean: 'Nenhuma tarefa ainda. Conecte um agente MCP — o que os agentes fazem aparece aqui.',
+  activityNoTasksLean: 'Nenhuma tarefa ainda. Conecte um agente MCP, e o que ele fizer aparece aqui.',
   activityWorkingOn: 'Em andamento',
   activityWorkedOn: 'Concluídas',
   activityShowLess: 'Mostrar menos',
