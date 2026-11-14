@@ -75,8 +75,8 @@ export function setLocale(locale: Locale): void {
 
 type ServerConfig = { defaultLocale: Locale | null; lean: boolean }
 
-/** The server's answer, or null when it gave none (before `signal` aborts,
- *  when one is given). Never rejects. */
+/** The server's answer, or null when it gave none or `signal` aborted first.
+ *  Never rejects. */
 async function fetchConfig(signal?: AbortSignal): Promise<ServerConfig | null> {
   try {
     const res = await fetch('/api/locale-config', { signal })
