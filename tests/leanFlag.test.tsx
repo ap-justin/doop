@@ -88,6 +88,45 @@ describe('initLocale', () => {
 
   it.each([
     ['a failed answer', () => serverSays({}, false)],
+    ['an unreachable server', () => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))],
+  ])('keeps the cached lean value when no language is picked and the config request gets %s', async (_name, arrange) => {
+    localStorage.setItem('doop-lean', '1')
+    arrange()
+    const { initLocale } = await import('../src/lib/i18n')
+    const { isLean } = await import('../src/lib/lean')
+    await initLocale()
+    expect(isLean()).toBe(true)
+    expect(localStorage.getItem('doop-lean')).toBe('1')
+  })
+
+  it('keeps the cached lean value when no language is picked and the config request times out', async () => {
+    localStorage.setItem('doop-lean', '1')
+    const timeout = new AbortController()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, init?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+            }),
+        ),
+      )
+      const { initLocale } = await import('../src/lib/i18n')
+      const { isLean } = await import('../src/lib/lean')
+      const init = initLocale()
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+      timeout.abort()
+      await init
+      expect(isLean()).toBe(true)
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+  })
+
+  it.each([
+    ['a failed answer', () => serverSays({}, false)],
     ['a missing field', () => serverSays({ defaultLocale: 'en' })],
     ['an unreachable server', () => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))],
   ])('leaves lean off on %s', async (_name, arrange) => {

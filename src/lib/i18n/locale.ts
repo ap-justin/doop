@@ -99,7 +99,7 @@ function cachedLean(): boolean | null {
 }
 
 function applyConfig(config: ServerConfig | null): void {
-  setLean(config?.lean ?? false)
+  setLean(config?.lean ?? cachedLean() ?? false)
   /* kept even under a pick, so a pick cleared later falls back to it */
   serverDefault = config?.defaultLocale ?? FALLBACK_LOCALE
   try {
@@ -114,7 +114,8 @@ function applyConfig(config: ServerConfig | null): void {
 /** Settles the language and lean mode before React mounts. A browser with a
  *  picked language and a cached lean value renders at once and refreshes both
  *  from the server's answer; any other waits for that one short request (the
- *  server's default language, otherwise English; lean only when it says so).
+ *  server's default language, otherwise English; lean as it says, or as it
+ *  last said when it gives no answer).
  *  Then follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
