@@ -179,7 +179,7 @@ describe('initLocale', () => {
     ['a failed answer', (fetchMock) => fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) })],
     ['an unreachable server', (fetchMock) => fetchMock.mockRejectedValueOnce(new Error('offline'))],
   ]
-  const [firstWait = 0, secondWait = 0] = RETRY_WAITS_MS
+  const [firstWait = 0, secondWait = 0, thirdWait = 0] = RETRY_WAITS_MS
 
   it.each(noAnswer)(
     'leaves lean off on %s, retries only after each wait, and turns it on when a later retry says lean',
@@ -189,9 +189,10 @@ describe('initLocale', () => {
       first(fetchMock)
       /* the first retry fails as fast as the first request did; the second answers */
       fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) })
-      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ defaultLocale: 'en', lean: true }) })
+      /* the late answer names another language: only its lean is taken */
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ defaultLocale: 'pt-BR', lean: true }) })
       vi.stubGlobal('fetch', fetchMock)
-      const { initLocale } = await import('../src/lib/i18n')
+      const { initLocale, getLocale } = await import('../src/lib/i18n')
       const { isLean, setLean } = await import('../src/lib/lean')
       /* module state only, no cache: initLocale has to turn it off itself */
       setLean(true)
@@ -211,6 +212,9 @@ describe('initLocale', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3)
       expect(isLean()).toBe(true)
       expect(localStorage.getItem('doop-lean')).toBe('1')
+      /* the page already rendered in English: a late answer does not switch it */
+      expect(getLocale()).toBe('en')
+      expect(document.documentElement.lang).toBe('en')
 
       /* answered: the last wait schedules nothing */
       await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
@@ -238,6 +242,25 @@ describe('initLocale', () => {
     /* the retries are spent: nothing more is asked */
     await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
     expect(fetchMock).toHaveBeenCalledTimes(1 + RETRY_WAITS_MS.length)
+  })
+
+  it('asks the third time only after the third wait', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'))
+    vi.stubGlobal('fetch', fetchMock)
+    const { initLocale } = await import('../src/lib/i18n')
+    await initLocale()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(firstWait)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(secondWait)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    await vi.advanceTimersByTimeAsync(thirdWait - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
   /* AbortSignal.timeout is stubbed at the boundary (a controller the test aborts), since fake timers do not drive it */
