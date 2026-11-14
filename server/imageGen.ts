@@ -2,7 +2,6 @@ import { env } from './env.ts'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { getAccounts, withFreshToken } from './modelAccounts.ts'
-import { leanMode } from './lean.ts'
 import type { ModelAccount } from './modelAccounts.ts'
 import { getImagePref } from './imagePrefs.ts'
 import { IMAGE_MODELS } from '../shared/modelMenu.ts'
@@ -443,14 +442,12 @@ function providerGenerator(option: ImageModelOption, accounts: PayerAccounts): G
 export async function generatorFor(payerId?: string): Promise<Generator> {
   /* a lookup failure must not read as "no account": that would quietly move
      the charge from the user's own account onto the server key */
-  /* lean mode has no way to connect an account, so only the server key pays */
-  const accounts =
-    payerId && !leanMode()
-      ? await payerAccounts(payerId).catch((err) => {
-          console.error('[image-gen] could not read the connected model accounts', err)
-          throw new Error('could not read your connected model accounts — try again in a moment')
-        })
-      : NO_ACCOUNTS
+  const accounts = payerId
+    ? await payerAccounts(payerId).catch((err) => {
+        console.error('[image-gen] could not read the connected model accounts', err)
+        throw new Error('could not read your connected model accounts — try again in a moment')
+      })
+    : NO_ACCOUNTS
   const option = await chosenImageModel(payerId, accounts)
   if (!option) return { ok: false, reason: NO_GENERATOR }
   return providerGenerator(option, accounts)

@@ -10,7 +10,6 @@ import { Textarea } from './ui/textarea'
 import { CheckIcon, CommentIcon, SparkIcon, SyncIcon } from './ui/icons'
 import { RoleMark } from './RoleMark'
 import { useT, type Translate } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 
 /* The comment UI — pins, the composer, an open thread — is shared by the
    frames (element comments, FrameView) and the canvas itself (canvas
@@ -168,10 +167,8 @@ export function CommentComposer({
   useEffect(() => taRef.current?.focus(), [])
   const send = () => text.trim() && onSubmit(text)
   /* @mention a resident agent to route the comment to it; without one the
-     comment is a note for the humans in the room. Lean mode has no resident
-     agents, so every comment is a note. */
-  const lean = useLean()
-  const mentioned = lean ? undefined : mentionedRole(text)
+     comment is a note for the humans in the room */
+  const mentioned = mentionedRole(text)
   return (
     <div className="w-[240px] rounded-[10px] border border-line bg-surface p-2 shadow-pop animate-[chip-in_0.18s_ease]">
       <Textarea
@@ -186,7 +183,7 @@ export function CommentComposer({
           if (e.key === 'Escape') onCancel()
         }}
       />
-      {!lean && !mentioned && (
+      {!mentioned && (
         <div className="mb-2 flex flex-wrap gap-1">
           {AGENT_ROLES.map((role) => (
             <Button
@@ -264,7 +261,6 @@ export function CommentThread({
      access, and re-running an agent needs edit (the server holds both) */
   const canComment = useStore(canCommentOpenCanvas)
   const canEdit = useStore(canEditOpenCanvas)
-  const lean = useLean()
   const listRef = useRef<HTMLDivElement>(null)
   /* a long conversation opens (and grows) scrolled to its newest message */
   useEffect(() => {
@@ -281,7 +277,7 @@ export function CommentThread({
       .catch(() => setFailed(true))
       .finally(() => setSending(false))
   }
-  const mentioned = lean ? undefined : mentionedRole(reply)
+  const mentioned = mentionedRole(reply)
   return (
     <div
       data-comment-popover
@@ -305,7 +301,7 @@ export function CommentThread({
               {c.failedAt ? (
                 <div className="mt-1 flex items-center gap-2 text-[11px] leading-[1.4] text-accent-ink">
                   <span>{c.failureReason ?? t('stage.agentDidNotFinish')}</span>
-                  {canEdit && !lean && (
+                  {canEdit && (
                     <Button
                       variant="danger-solid"
                       size="pill"
@@ -325,7 +321,7 @@ export function CommentThread({
       {canComment && (
         <ThreadReply
           reply={reply}
-          placeholder={canEdit && !lean ? t('stage.replyAskAgent') : t('stage.replyEllipsis')}
+          placeholder={canEdit ? t('stage.replyAskAgent') : t('stage.replyEllipsis')}
           failed={failed}
           sending={sending}
           mentioned={mentioned}

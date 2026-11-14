@@ -693,26 +693,14 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
-  The code stays; guards sit where things start: `activeExtensions` (no extension routes, workers,
-  MCP tools or guide lines), `unlessLean` (scheduler, live-activity delivery), `residentMention`
-  (an `@mention` is plain text: no task, no meter), `billingEnabled` false (every workspace
-  active), `localAgent.ts` and so `resident.ts` never loaded, no welcome canvas, first canvas or
-  demo, analytics capture off; MCP `generate_image` stays and is paid by the server's image key only
-  (`generatorFor` reads no connected accounts). The client reads `lean` from `GET /api/locale-config`. Tests:
-  `lean.test.ts`, `leanHttp.test.ts`.
-  Client: `initLocale` asks `/api/locale-config` once on every load (a failed or slow answer is
-  lean off) and settles `src/lib/lean.ts` (`useLean()`, `isLean()`) before the first render.
-  `src/lib/posthog.ts` is a facade that loads `posthogClient.ts` on its own chunk only when not
-  lean; until then calls queue, and in lean they do nothing. Lean hides each entry point to what
-  the server refused, at its own render site: `/community`, `/integrations` and `/automations*`
-  land on Home; the rail drops Explore and Resources (both widths) and the workspace billing pane
-  (`workspacePanesFor`, so `?pane=billing` falls back); Settings drops the Doop Agent pane
-  (`?pane=agent` falls back, General is the default) and the prompt-box switch; the home hero,
-  the canvas `PromptBar`, ⌘K and ⌘/, comment @agent chips and retries, queued-card Stop / Retry,
-  the welcome checklist, the share dialog's community listing, the account menu's plan line and
-  desktop download, plan labels on Home and Workspace, the support chat item, GitHub and
-  integration import sources, and Doop Desktop prompts in Connect AI (browser only) go;
-  `useAllowance` and the local Claude poller never ask. Tests: `leanClient.test.tsx`.
+  The code stays; `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear
+  ones) and guide lines, and `unlessLean` skips the automations scheduler and live-activity delivery.
+  The client reads `lean` from `GET /api/locale-config` (`initLocale` asks on every load and settles
+  `src/lib/lean.ts`, `useLean()`, before the first render) and hides the entry points to what the
+  server refused: the Settings Doop Agent pane (`?pane=agent` falls back to General), the canvas
+  `PromptBar` and the home hero composer, the rail's Community / Automations / Integrations, the
+  share dialog's community listing and the GitHub and integration import cards. Tests:
+  `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`.
 - Docker - `Dockerfile` + `docker-compose.yml`; `docker compose up` runs the app container
   (port 4400) and a `postgres:16-alpine` db container for self-hosting.
 

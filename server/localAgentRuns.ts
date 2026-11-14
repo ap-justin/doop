@@ -1,7 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type Anthropic from '@anthropic-ai/sdk'
 import type { LocalAgentJob, LocalAgentPreference, LocalAgentResult } from '../shared/localAgent.ts'
-import { leanMode } from './lean.ts'
 
 export interface LocalHarnessRequest {
   canvasId: string
@@ -162,5 +161,3 @@ const cleanup = setInterval(() => {
   void localAgentRuns.expire()
 }, 5_000)
 cleanup.unref()
-/* only the resident agent queues local runs, and lean mode has none */
-if (leanMode()) clearInterval(cleanup)

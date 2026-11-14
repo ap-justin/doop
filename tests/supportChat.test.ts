@@ -16,7 +16,7 @@ vi.mock('posthog-js/dist/module.no-external', () => ({
 const containerId = 'ph-conversations-widget-container'
 const launcher = () => document.querySelector<HTMLButtonElement>('button[aria-label="Open chat"]')
 const closeButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')
-let support: typeof import('../src/lib/posthogClient')
+let support: typeof import('../src/lib/posthog')
 let savedOpen = false
 
 // The SDK mounts on show(), removes on hide(), and restores the saved panel state.
@@ -39,7 +39,7 @@ function mountWidget() {
 
 beforeEach(async () => {
   vi.stubEnv('VITE_POSTHOG_KEY', 'test-key')
-  support ??= await import('../src/lib/posthogClient')
+  support ??= await import('../src/lib/posthog')
   savedOpen = false
   vi.mocked(support.posthog.conversations.show).mockImplementation(mountWidget)
   vi.mocked(support.posthog.conversations.hide).mockImplementation(() => {

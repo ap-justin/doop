@@ -6,28 +6,24 @@ import { isLean } from '@/lib/lean'
 
 /** The sources the import picker offers, in order — the canvas page's modal
  *  and Home's Import button show the same list, so it lives once. Lean mode
- *  turns integrations and GitHub import off, which leaves the website and the
- *  live app. */
+ *  turns integrations and GitHub import off, leaving the website and the live app. */
 export function importSources(t: Translate = translate, lean: boolean = isLean()): ImportSource[] {
-  const website: ImportSource = {
-    id: 'website',
-    title: t('panels.importWebsite'),
-    blurb: t('panels.importWebsiteBlurb'),
-    icon: <AppIcon brand="website" />,
-  }
-  const liveApp: ImportSource = {
-    id: 'liveapp',
-    title: t('panels.importLiveApp'),
-    blurb: t('panels.importLiveAppBlurb'),
-    icon: <AppIcon brand="live-app" />,
-  }
-  if (lean) return [website, liveApp]
-  return [
-    website,
+  const sources: ImportSource[] = [
+    {
+      id: 'website',
+      title: t('panels.importWebsite'),
+      blurb: t('panels.importWebsiteBlurb'),
+      icon: <AppIcon brand="website" />,
+    },
     ...clientIntegrations
       .filter((i) => i.ImportSection && i.importSource)
       .map((i) => ({ id: i.id, ...i.importSource! })),
-    liveApp,
+    {
+      id: 'liveapp',
+      title: t('panels.importLiveApp'),
+      blurb: t('panels.importLiveAppBlurb'),
+      icon: <AppIcon brand="live-app" />,
+    },
     {
       id: 'github',
       title: t('panels.importGithub'),
@@ -35,4 +31,5 @@ export function importSources(t: Translate = translate, lean: boolean = isLean()
       icon: <AppIcon brand="github" />,
     },
   ]
+  return lean ? sources.filter((source) => source.id === 'website' || source.id === 'liveapp') : sources
 }

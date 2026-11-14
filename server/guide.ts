@@ -4,7 +4,6 @@
  */
 
 import { AGENT_ROLES } from '../shared/agents.ts'
-import { leanMode } from './lean.ts'
 
 export const GUIDE_TOPICS = ['doop-instructions'] as const
 
@@ -94,9 +93,7 @@ only run in the player):
   and flags targets that do not exist — call it after wiring and fix what it flags. The player
   lives at /c/<canvasId>/proto (append ?frame=<id> to open on a specific screen).`
 
-/** Built per call, so lean mode is read when an agent asks. */
-export function doopGuide(): string {
-  return `# Doop Agent Guide
+export const DOOP_GUIDE = `# Doop Agent Guide
 
 ## The room you're in
 
@@ -133,7 +130,8 @@ Answer a thread with reply_to_comment({ canvas_id, comment_id, text, agent_name 
 reply inherits the root's element anchor, so an @mention reaches the resident agent with
 the same context the conversation is about. Close the thread with resolve_comment once the
 request is carried out; resolving an @mention thread also records the exchange in the
-canvas Memory.${leanMode() ? '' : ' Writing is metered only when a reply @mentions a resident role, exactly like a comment left in the browser.'} Reading does not claim work or resolve it; task
+canvas Memory. Writing is metered only when a reply @mentions a resident role, exactly
+like a comment left in the browser. Reading does not claim work or resolve it; task
 feedback is separate (get_feedback).
 
 ## Narrate your work — set_status
@@ -465,4 +463,3 @@ Two tools reach the Doop team, never the humans on the canvas, and change no can
 
 Never include secrets. A human's design feedback is not this: record that with save_decision.
 `
-}

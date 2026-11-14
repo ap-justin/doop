@@ -6,7 +6,7 @@ import { Client, startServer, type Server } from './harness.ts'
 /**
  * DOOP_LEAN=1 end to end, beside the same server with lean off: the disabled
  * features' routes answer as routes that do not exist, everything kept still
- * works, an @mention queues nothing, and MCP agents get no Linear tools.
+ * works, and MCP agents get no Linear tools.
  */
 
 /** No free resident tasks and no model keys: off, an @mention is refused by the meter. */
@@ -152,30 +152,6 @@ async function toolNames(b: Booted): Promise<string[]> {
   return ((await mcp(b.server, await agentKey(b), 'tools/list')).result?.tools ?? []).map((t) => t.name)
 }
 
-/** Every text an MCP agent reads about comment replies: the initialize
- *  instructions, the get_guide playbook and reply_to_comment's description. */
-async function commentReplyTexts(b: Booted): Promise<string[]> {
-  const secret = await agentKey(b)
-  const init = await mcp(b.server, secret, 'initialize', {
-    protocolVersion: '2025-06-18',
-    capabilities: {},
-    clientInfo: { name: 'lean-test', version: '1' },
-  })
-  const guide = await mcp(b.server, secret, 'tools/call', {
-    name: 'get_guide',
-    arguments: { topic: 'doop-instructions' },
-  })
-  const tools = (await mcp(b.server, secret, 'tools/list')).result?.tools ?? []
-  return [
-    init.result?.instructions ?? '',
-    guide.result?.content?.[0]?.text ?? '',
-    tools.find((t) => t.name === 'reply_to_comment')?.description ?? '',
-  ]
-}
-
-/** "meter" as a word, not inside "parameter". */
-const METER = /\bmeter/i
-
 const LINEAR_TOOLS = ['list_linear_issues', 'get_linear_issue']
 
 describe('lean mode on', () => {
@@ -225,42 +201,11 @@ describe('lean mode on', () => {
     expect((await b.owner.post(`/api/comments/${b.commentId}/resolve`)).status).toBe(200)
   })
 
-  it('stores an @mention as a plain comment: no task, no meter, no refusal', async () => {
-    const res = await b.owner.post(`/api/canvases/${b.canvasId}/comments`, {
-      pageId: b.pageId,
-      x: 5,
-      y: 5,
-      text: '@Doop make the hero blue',
-    })
-    expect(res.status).toBe(200)
-    const comment = await res.json()
-    expect(comment.text).toBe('@Doop make the hero blue')
-    expect(comment.forAgent).toBeUndefined()
-    expect(comment.targetAgent).toBeUndefined()
-    const reply = await b.owner.post(`/api/comments/${comment.id}/replies`, { text: '@Doop and the footer' })
-    expect(reply.status).toBe(200)
-    expect((await reply.json()).forAgent).toBeUndefined()
-  })
-
-  it('creates no first canvas at sign-up and lands the new account on home', async () => {
-    const fresh = await new Client(b.server).signUp('lean-fresh@test.dev', 'Fresh')
-    expect(await (await fresh.get('/api/canvases')).json()).toEqual([])
-    const landing = await fresh.get('/api/welcome')
-    expect(landing.status).toBe(302)
-    expect(landing.headers.get('location')).toBe('/')
-  })
-
   it('lists no Linear tools to an unlimited agent key, and keeps the design tools', async () => {
     const names = await toolNames(b)
     for (const tool of LINEAR_TOOLS) expect(names).not.toContain(tool)
     for (const tool of ['create_canvas', 'reply_to_comment', 'resolve_comment', 'generate_image', 'upload_asset'])
       expect(names).toContain(tool)
-  })
-
-  it('never tells an MCP agent that an @mention reply is metered', async () => {
-    const texts = await commentReplyTexts(b)
-    for (const text of texts) expect(text).not.toHaveLength(0)
-    for (const text of texts) expect(text).not.toMatch(METER)
   })
 })
 
@@ -294,32 +239,8 @@ describe('lean mode off', () => {
     expect(await res.json()).toEqual({ defaultLocale: 'en', lean: false })
   })
 
-  it('meters an @mention as a task for the resident agent', async () => {
-    const res = await b.owner.post(`/api/canvases/${b.canvasId}/comments`, {
-      pageId: b.pageId,
-      x: 5,
-      y: 5,
-      text: '@Doop make the hero blue',
-    })
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('resident_limit')
-  })
-
-  it('creates the first canvas at sign-up and lands the new account on it', async () => {
-    const fresh = await new Client(b.server).signUp('full-fresh@test.dev', 'Fresh')
-    const canvases = (await (await fresh.get('/api/canvases')).json()) as { id: string; name: string }[]
-    expect(canvases.map((c) => c.name)).toEqual(["Fresh's first canvas"])
-    const landing = await fresh.get('/api/welcome')
-    expect(landing.status).toBe(302)
-    expect(landing.headers.get('location')).toBe(`/c/${canvases[0]!.id}`)
-  })
-
   it('lists the Linear tools to an unlimited agent key', async () => {
     const names = await toolNames(b)
     for (const tool of LINEAR_TOOLS) expect(names).toContain(tool)
-  })
-
-  it('tells MCP agents that an @mention reply is metered', async () => {
-    for (const text of await commentReplyTexts(b)) expect(text).toMatch(METER)
   })
 })

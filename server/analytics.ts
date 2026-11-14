@@ -1,5 +1,4 @@
 import { env } from './env.ts'
-import { leanMode } from './lean.ts'
 /* Server-side PostHog capture — for events that happen where posthog-js
  * can't see them (MCP agents, background work). Events use the user's id
  * as distinct_id, the same id the web client identifies with, so they land
@@ -14,7 +13,7 @@ const PH_INGEST = env.POSTHOG_INGEST_HOST
 const PH_KEY = env.POSTHOG_KEY ?? env.VITE_POSTHOG_KEY
 
 export function capture(distinctId: string, event: string, properties: Record<string, unknown> = {}) {
-  if (!PH_KEY || leanMode()) return
+  if (!PH_KEY) return
   fetch(`${PH_INGEST}/capture/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

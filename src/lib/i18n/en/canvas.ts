@@ -85,9 +85,6 @@ export const canvas = {
   changeDisplayName: 'Change your display name',
   agents: 'Agents · ⌘K to ask the Doop Agent',
   agentsWorking: 'Agents · {working} working · ⌘K to ask the Doop Agent',
-  /* lean mode has no Doop Agent to ask */
-  agentsLean: 'Agents',
-  agentsWorkingLean: 'Agents · {working} working',
   comments: 'Comments',
   commentsOpen: 'Comments · {open} open',
   activity: 'Activity',

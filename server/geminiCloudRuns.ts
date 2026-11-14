@@ -14,8 +14,7 @@ export function geminiCloudWorkerFor(userId: string): GeminiCloudWorker | undefi
      environment and must not validate it */
   // eslint-disable-next-line no-restricted-syntax
   const raw = process.env.DOOP_GEMINI_CLOUD_WORKERS
-  // eslint-disable-next-line no-restricted-syntax
-  if (!raw || process.env.DOOP_LEAN === '1') return undefined
+  if (!raw) return undefined
   try {
     const workers = z.record(workerSchema).parse(JSON.parse(raw))
     const entries = Object.values(workers)

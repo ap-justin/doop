@@ -10,7 +10,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { openSupportChat } from '../lib/posthog'
 import { PresenceFace } from './PeerAvatars'
 import { useT } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 
 const island = 'pointer-events-auto absolute z-[38]'
 /* docked, both islands share one full-height column instead */
@@ -53,7 +52,6 @@ export function SideRail({
   onRenameSelf: () => void
 }) {
   const t = useT()
-  const lean = useLean()
   const setPanelTab = useStore((s) => s.setPanelTab)
   const openTab = (tab: PanelTab) => {
     setPanelTab(tab)
@@ -110,12 +108,9 @@ export function SideRail({
                 <BookOpenIcon /> {t('canvas.docs')}
               </a>
             </DropdownMenuItem>
-            {/* the support chat rides on analytics, which lean mode leaves out */}
-            {!lean && (
-              <DropdownMenuItem onSelect={() => openSupportChat()}>
-                <CommentIcon /> {t('canvas.contactSupport')}
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onSelect={() => openSupportChat()}>
+              <CommentIcon /> {t('canvas.contactSupport')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {!guest && (
@@ -164,7 +159,6 @@ export function PanelTabButtons({
   tooltipSide?: 'left' | 'bottom'
 }) {
   const t = useT()
-  const lean = useLean()
   const working = useStore((s) => s.tasks.filter((t) => t.agentName && !t.endedAt && !t.failedAt).length)
   const proposalPending = useStore((s) => s.proposals.some((p) => p.status === 'pending'))
   const openThreads = useOpenThreadCount()
@@ -184,15 +178,7 @@ export function PanelTabButtons({
     <>
       <ToolbarControl
         side={tooltipSide}
-        label={
-          lean
-            ? working
-              ? t('canvas.agentsWorkingLean', { working })
-              : t('canvas.agentsLean')
-            : working
-              ? t('canvas.agentsWorking', { working })
-              : t('canvas.agents')
-        }
+        label={working ? t('canvas.agentsWorking', { working }) : t('canvas.agents')}
         onClick={() => onOpen('tasks')}
       >
         <SparkIcon />

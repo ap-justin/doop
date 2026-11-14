@@ -35,9 +35,6 @@ export const connect: Catalog['connect'] = {
   claudeDesktopAddTitle: 'Adicione o Doop ao Claude Desktop',
   claudeDesktopAddBody:
     'Clique em Adicionar ao Claude no app desktop do Doop e confirme a instalação no Claude. O endereço do seu servidor Doop já vem preenchido.',
-  claudeDesktopLedeLean: 'Instale a extensão do Doop no Claude Desktop, entre e comecem a desenhar juntos.',
-  claudeDesktopAddBodyLean:
-    'Baixe a extensão abaixo e abra com o Claude Desktop; depois confirme a instalação no Claude.',
   claudeDesktopConnectTitle: 'Conecte sua conta Doop',
   claudeDesktopConnectBody: 'Ative a extensão no Claude. Entre no Doop no navegador que se abrir e aprove a conexão.',
   claudeDesktopPointWithPrompt:
@@ -88,9 +85,6 @@ export const connect: Catalog['connect'] = {
   codexAddTitle: 'Adicione o Doop ao Codex',
   codexAddBody:
     'O Doop Desktop configura o Codex para você. Funciona com o Codex CLI e com a aba Codex no app desktop do ChatGPT.',
-  codexLedeLean: 'Adicione o Doop ao Codex, entre e comece a desenhar com o Codex.',
-  codexAddBodyLean:
-    'Adicione o Doop com o Codex CLI. Isso também o configura para a aba Codex no app desktop do ChatGPT.',
   codexSignInTitle: 'Entre pelo Codex',
   codexSignInBody:
     'Abra um novo chat no Codex. Se o Doop pedir autenticação, entre pelas configurações de MCP dele. No Codex CLI, execute o comando abaixo e aprove a conexão no navegador.',

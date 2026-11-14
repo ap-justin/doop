@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { DRAFT_OPTIONS, DRAFTS_STORAGE_KEY, isDraftCount, readStoredDrafts, type DraftCount } from '../lib/homePrompt'
 import { setPromptBoxHidden, usePromptBoxHidden } from '../lib/homePreferences'
+import { useLean } from '../lib/lean'
 import { DoopMark } from './Logo'
 import { ModelPicker } from './ModelPicker'
 import { BrandMark } from './ui/brand-mark'
@@ -34,7 +35,6 @@ import {
   XIcon,
 } from './ui/icons'
 import { useT, type PlainMessageKey } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 
 /**
  * The home page's front door: the hopping Disc-D, a greeting, a strip of
@@ -129,7 +129,7 @@ export function HomeHero({
   /** a timestamp — the rail's "Ask Doop" and ⌘/ ask for the keyboard */
   focusAt: number
 }) {
-  /* lean mode has no in-app agent for the composer to brief, so the hero
+  /* the composer briefs the Doop Agent, which lean mode turns off: the hero
      steps aside as it does when the person hides it */
   const lean = useLean()
   const hidden = usePromptBoxHidden() || lean

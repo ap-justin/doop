@@ -15,7 +15,6 @@ import { CheckIcon } from './ui/icons'
 import { Disclosure } from './ui/collapsible'
 import { isResidentLimit } from './TeamAllowance'
 import { useT } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 
 const emptyNote = 'px-4 py-6 text-center text-[12px] leading-[1.45] text-ink-faint'
 
@@ -105,8 +104,6 @@ function ThreadRow({ thread }: { thread: CommentThreadGroup }) {
   const resolved = threadState(thread) === 'resolved'
   /* a view link reads threads; it neither replies nor resolves */
   const canComment = useStore(canCommentOpenCanvas)
-  /* lean mode has no agent for an @mention to ask */
-  const lean = useLean()
   const t = useT()
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -228,7 +225,7 @@ function ThreadRow({ thread }: { thread: CommentThreadGroup }) {
             variant="bare"
             inputSize="auto"
             className="h-7 min-w-0 flex-1 rounded-[7px] bg-surface px-2.5 shadow-ring focus:shadow-elevation-1-focus md:text-[12px]"
-            placeholder={lean ? t('stage.replyEllipsis') : t('stage.replyPanelPlaceholder')}
+            placeholder={t('stage.replyPanelPlaceholder')}
             aria-label={t('stage.replyTo', { name: root.from })}
             value={draft}
             disabled={sending}

@@ -25,7 +25,6 @@ import { FontLibrary } from '../components/FontLibrary'
 import { DashContent, DashHeader, DashLayout, DashMain, DashSubtitle, DashTitle } from '../components/ui/dash'
 import { timeAgo } from '../lib/time'
 import { getLocale, t as translate, useT, type PlainMessageKey } from '../lib/i18n'
-import { isLean, useLean } from '../lib/lean'
 
 type Pane = WorkspacePane
 
@@ -71,7 +70,6 @@ function dateText(at: number): string {
  */
 export function Workspace({ workspaceId }: { workspaceId: string }) {
   const t = useT()
-  const lean = useLean()
   const { data: session } = authClient.useSession()
   const meId = session?.user.id
   const [ws, setWs] = useState<WorkspaceDetail | null>(() => cachedWorkspace(workspaceId))
@@ -84,8 +82,7 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
     const q = new URLSearchParams(location.search)
     const pane = q.get('pane')
     return {
-      /* lean mode has no checkout to come back from */
-      checkout: isLean() ? null : q.get('checkout'),
+      checkout: q.get('checkout'),
       sessionId: q.get('session_id') ?? undefined,
       pane: isPane(pane) ? pane : undefined,
     }
@@ -155,10 +152,9 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
   const admin = ws ? ws.role !== 'member' : false
   const isOwner = ws?.role === 'owner'
   /* billing and settings are for the owner and admins; anyone else asking
-     for them (a stale link) sees the people; until the role is known every
-     pane but what lean turns off is kept */
-  const panes = workspacePanesFor(ws?.role, lean)
-  const pane: Pane = panes.includes(picked) ? picked : 'members'
+     for them (a stale link) sees the people */
+  const panes = workspacePanesFor(ws?.role)
+  const pane: Pane = !ws || panes.includes(picked) ? picked : 'members'
 
   if (missing) {
     return (
@@ -207,7 +203,7 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
                 {ws
                   ? `${t('workspace.memberCount', { count: ws.memberCount })} · ${t('workspace.canvasCount', {
                       count: ws.canvasCount,
-                    })}${lean ? '' : ` · ${ws.billing.enabled ? t(STATUS_LABEL[ws.status]) : t('workspace.selfHostedIncluded')}`}`
+                    })} · ${ws.billing.enabled ? t(STATUS_LABEL[ws.status]) : t('workspace.selfHostedIncluded')}`
                   : '…'}
               </DashSubtitle>
             </div>
@@ -236,7 +232,7 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
               )}
             </Callout>
           )}
-          {!lean && ws && ws.status === 'past_due' && (
+          {ws && ws.status === 'past_due' && (
             <Callout tone="error" className="mt-4">
               <b>{t('workspace.paymentFailed')}</b> {t('workspace.paymentFailedBody')}
             </Callout>

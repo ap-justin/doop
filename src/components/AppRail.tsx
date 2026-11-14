@@ -7,8 +7,8 @@ import { navigate } from '../lib/navigate'
 import { useRailDrawer } from '../lib/railDrawer'
 import { timeAgo } from '../lib/time'
 import { openCanvasTab } from '../lib/desktop'
-import { useT } from '../lib/i18n'
 import { useLean } from '../lib/lean'
+import { useT } from '../lib/i18n'
 import { cn } from '@/lib/utils'
 import { AgentIcon } from './AgentIcon'
 import { AccountMenu } from './DashShell'
@@ -68,12 +68,9 @@ export type WorkspacePane = 'members' | 'fonts' | 'billing' | 'general'
 
 const WORKSPACE_PANES: readonly WorkspacePane[] = ['members', 'fonts', 'billing', 'general']
 
-/** the panes a workspace role may open: billing and settings are for its owner and admins,
- *  and lean mode, which bills nothing, has no billing pane */
-export function workspacePanesFor(role: WorkspaceSummary['role'] | undefined, lean: boolean): WorkspacePane[] {
-  return WORKSPACE_PANES.filter(
-    (p) => (role !== 'member' || p === 'members' || p === 'fonts') && !(lean && p === 'billing'),
-  )
+/** the panes a workspace role may open: billing and settings are for its owner and admins */
+export function workspacePanesFor(role: WorkspaceSummary['role'] | undefined): WorkspacePane[] {
+  return WORKSPACE_PANES.filter((p) => role !== 'member' || p === 'members' || p === 'fonts')
 }
 
 /** an agent that worked this recently is treated as still at the desk */
@@ -123,6 +120,7 @@ export function AppRail({
   children?: ReactNode
 }) {
   const t = useT()
+  /* Community, Automations and Integrations are routes lean mode turns off */
   const lean = useLean()
   const [own, setOwn] = useState<RailLists | null>(() => lastLists)
   const needsOwn = canvases === undefined || workspaces === undefined
@@ -315,7 +313,7 @@ export function AppRail({
             <BuildingIcon size="rail" />
           </IconButton>
           {openWorkspace === w.id &&
-            workspacePanesFor(w.role, lean).map((p) => (
+            workspacePanesFor(w.role).map((p) => (
               <IconButton
                 key={p}
                 aria-label={`${w.name}: ${paneRows[p].label}`}
@@ -330,10 +328,9 @@ export function AppRail({
       <IconButton aria-label={t('rail.newWorkspace')} onClick={createWorkspace}>
         <FolderPlusIcon size="rail" />
       </IconButton>
-      <Rule />
-      {/* explore and resources lead to pages lean mode turns off */}
       {!lean && (
         <>
+          <Rule />
           <IconButton aria-label={t('rail.community')} on={active === 'community'} onClick={() => go('/community')}>
             <WebIcon size="rail" />
           </IconButton>
@@ -351,9 +348,9 @@ export function AppRail({
           >
             <BlocksIcon size="rail" />
           </IconButton>
-          <Rule />
         </>
       )}
+      <Rule />
       {agents.map((a) => (
         <span key={a.name} className="grid size-8 place-items-center" title={a.name}>
           <AgentIcon name={a.name} size={14} color={colorFor(a.name)} />
@@ -461,7 +458,7 @@ export function AppRail({
                 >
                   {t('rail.workspaceCanvases')}
                 </DashNavItem>
-                {workspacePanesFor(w.role, lean).map((p) => (
+                {workspacePanesFor(w.role).map((p) => (
                   <DashNavItem
                     key={p}
                     density="rail"
@@ -481,7 +478,6 @@ export function AppRail({
         </DashNavItem>
       </nav>
 
-      {/* explore and resources lead to pages lean mode turns off */}
       {!lean && (
         <>
           <DashSectionLabel density="rail">{t('rail.explore')}</DashSectionLabel>

@@ -6,7 +6,6 @@ import { useMe } from '../lib/me'
 import { isDesktopShell } from '../lib/shell'
 import { isTheme, useTheme } from '../lib/theme'
 import { useT } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 import { colorFor } from '../../shared/types'
 import { avatarUrl } from '../../shared/avatar'
 import { themeOptions } from './ThemePicker'
@@ -46,7 +45,6 @@ export function AccountMenu({
   const me = useMe(session?.user.id)
   const { theme, setTheme } = useTheme()
   const t = useT()
-  const lean = useLean()
   const name = session?.user.name ?? ''
   const image = avatarUrl(session?.user.image)
 
@@ -97,21 +95,18 @@ export function AccountMenu({
           />
         </DropdownMenuLabel>
         {/* the plan is a workspace thing; this line says which side of it the
-            account is on — a member of a live paid workspace is on Team.
-            Lean mode bills nothing, so it has no plan to name. */}
-        {!lean && (
-          <div className="mx-2.5 mb-2 flex items-center gap-[7px] text-caption text-ink-soft">
-            {me?.plan === 'team' ? (
-              <>
-                <Badge tone="accent">team</Badge> {t('shell.teamPlan')}
-              </>
-            ) : (
-              <>
-                <Badge>free</Badge> {t('shell.personalPlan')}
-              </>
-            )}
-          </div>
-        )}
+            account is on — a member of a live paid workspace is on Team */}
+        <div className="mx-2.5 mb-2 flex items-center gap-[7px] text-caption text-ink-soft">
+          {me?.plan === 'team' ? (
+            <>
+              <Badge tone="accent">team</Badge> {t('shell.teamPlan')}
+            </>
+          ) : (
+            <>
+              <Badge>free</Badge> {t('shell.personalPlan')}
+            </>
+          )}
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate('/settings')}>
           <GearIcon size="rail" /> {t('shell.settings')}
@@ -127,9 +122,8 @@ export function AccountMenu({
           </a>
         </DropdownMenuItem>
         {/* new tabs, which the desktop shell hands to the system browser
-            (initDesktopShell); the desktop app has nothing to download, and
-            lean mode offers no desktop app */}
-        {!lean && !isDesktopShell() && (
+            (initDesktopShell); the desktop app has nothing to download */}
+        {!isDesktopShell() && (
           <DropdownMenuItem asChild>
             <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer">
               <DesktopIcon size="rail" /> {t('shell.desktopApp')}

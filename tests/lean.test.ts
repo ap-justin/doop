@@ -1,14 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import type { AddressInfo } from 'node:net'
-import {
-  activeExtensions,
-  isLeanDisabledPath,
-  leanGate,
-  leanMode,
-  residentMention,
-  unlessLean,
-} from '../server/lean.ts'
+import { activeExtensions, isLeanDisabledPath, leanGate, leanMode, unlessLean } from '../server/lean.ts'
 import { stubEnv, unstubAllEnvs } from './envStub.ts'
 
 /**
@@ -124,15 +117,6 @@ describe('activeExtensions', () => {
     expect(activeExtensions(all)).toBe(all)
     stubEnv('DOOP_LEAN', '1')
     expect(activeExtensions(all)).toEqual([])
-  })
-})
-
-describe('residentMention', () => {
-  it('reads an @mention as a call to the resident agent only when lean is off', () => {
-    expect(residentMention('@Doop make it blue')?.name).toBe('Doop')
-    expect(residentMention('make it blue')).toBeUndefined()
-    stubEnv('DOOP_LEAN', '1')
-    expect(residentMention('@Doop make it blue')).toBeUndefined()
   })
 })
 

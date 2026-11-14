@@ -176,7 +176,6 @@ function RecentTasks() {
   const claimed = useMemo(() => tasks.filter((t) => t.agentName), [tasks])
   const working = useMemo(() => claimed.filter((t) => !t.endedAt && !t.failedAt), [claimed])
   const finished = useMemo(() => claimed.filter((t) => t.endedAt || t.failedAt), [claimed])
-  const lean = useLean()
   const t = useT()
 
   return (
@@ -185,9 +184,7 @@ function RecentTasks() {
         {t('panels.activityRecentTasks')}
       </h3>
       {claimed.length === 0 ? (
-        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">
-          {lean ? t('panels.activityNoTasksLean') : t('panels.activityNoTasks')}
-        </p>
+        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">{t('panels.activityNoTasks')}</p>
       ) : all ? (
         <>
           {working.length > 0 && <TaskGroup label={t('panels.activityWorkingOn')} tasks={working} />}
@@ -239,8 +236,6 @@ function RecentTaskRow({ task }: { task: AgentTask }) {
   const canEdit = useStore(canEditOpenCanvas)
   const frameId = useStore((s) => taskFrameId(task, s))
   const frameName = useStore((s) => s.canvas?.frames.find((f) => f.id === frameId)?.name)
-  /* a queued card is the Doop Agent's to stop or retry; lean mode has none */
-  const lean = useLean()
   const goToFrame = () => {
     if (!frameId) return
     const s = useStore.getState()
@@ -291,7 +286,7 @@ function RecentTaskRow({ task }: { task: AgentTask }) {
         >
           {task.status}
         </span>
-        {running && task.queuedBy && canvasId && canEdit && !lean && (
+        {running && task.queuedBy && canvasId && canEdit && (
           <Button
             variant="ghost"
             size="pill"
@@ -313,7 +308,7 @@ function RecentTaskRow({ task }: { task: AgentTask }) {
               {reason}
             </span>
           )}
-          {task.queuedBy && canvasId && canEdit && !lean && (
+          {task.queuedBy && canvasId && canEdit && (
             <Button
               variant="danger-solid"
               size="pill"

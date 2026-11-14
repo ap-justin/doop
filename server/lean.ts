@@ -1,16 +1,15 @@
 import type { RequestHandler } from 'express'
-import { mentionedRole, type AgentRole } from '../shared/agents.ts'
 import { env } from './env.ts'
 
 /**
  * Lean mode (DOOP_LEAN=1): Doop as a shared canvas for MCP agents, without
  * the in-app Doop Agent and model accounts, in-app image generation, billing,
  * Slack and Linear, automations, GitHub and Meta import, Community, the
- * desktop connect relay, iOS live activities, Gemini cloud workers, the
- * welcome canvas and demo, and PostHog. Off, the server is unchanged.
+ * desktop connect relay, iOS live activities, Gemini cloud workers and the
+ * PostHog relay. Off, the server is unchanged.
  *
  * The features stay in the code: their routes are refused here, and their
- * background work and boot steps are skipped at the points that start them.
+ * background workers are skipped at the points that start them.
  */
 
 /** Read per call, so a test can flip it (tests/envStub.ts). */
@@ -49,12 +48,6 @@ export const leanGate: RequestHandler = (req, _res, next) => {
 /** The server extensions the core offers its hooks to: none in lean mode. */
 export function activeExtensions<T>(all: readonly T[]): readonly T[] {
   return leanMode() ? [] : all
-}
-
-/** The resident agent an @mention calls on. In lean mode there is none to
- *  call: a mention is plain text, so it queues no task and spends no meter. */
-export function residentMention(text: string): AgentRole | undefined {
-  return leanMode() ? undefined : mentionedRole(text)
 }
 
 /** Starts background work that lean mode leaves off. */

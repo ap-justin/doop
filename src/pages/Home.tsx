@@ -57,7 +57,6 @@ import { ConfirmDialog } from '../components/ui/alert-dialog'
 import { Toast } from '../components/ui/toast'
 import { DashContent, DashHeader, DashLayout, DashMain } from '../components/ui/dash'
 import { useT, type PlainMessageKey } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 import { prefetchWorkspace } from '../lib/workspaceCache'
 import { cn } from '@/lib/utils'
 
@@ -105,7 +104,6 @@ export function Home() {
   /* the rail's "Ask Doop" and ⌘/ hand the keyboard to the composer */
   const [composerFocusAt, setComposerFocusAt] = useState(0)
   const { data: session } = authClient.useSession()
-  const lean = useLean()
   const t = useT()
 
   useEffect(() => {
@@ -126,10 +124,8 @@ export function Home() {
     if (event.type === 'canvases') reload()
   })
 
-  /* ⌘/ hands the keyboard to the composer; ⌘K opens the rail's search.
-     Lean mode has no composer to hand it to. */
+  /* ⌘/ hands the keyboard to the composer; ⌘K opens the rail's search */
   useEffect(() => {
-    if (lean) return
     function onKey(e: KeyboardEvent) {
       if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
@@ -138,7 +134,7 @@ export function Home() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [lean])
+  }, [])
 
   /* inside a workspace view the new canvas is filed there — and a workspace
      without a plan answers with the wall instead */
@@ -386,18 +382,12 @@ export function Home() {
                 {currentWorkspace && listTitle}
                 {currentWorkspace && (
                   <span className="ml-2 font-normal text-ink-faint">
-                    {t('home.people', { count: currentWorkspace.memberCount })}
-                    {/* lean mode bills nothing, so it has no plan to name */}
-                    {!lean && (
-                      <>
-                        {' · '}
-                        {currentWorkspace.plan === 'team' && currentWorkspace.active
-                          ? t('home.teamPlan')
-                          : currentWorkspace.active
-                            ? t('home.sharedWorkspace')
-                            : t('home.noPlanYet')}
-                      </>
-                    )}
+                    {t('home.people', { count: currentWorkspace.memberCount })} ·{' '}
+                    {currentWorkspace.plan === 'team' && currentWorkspace.active
+                      ? t('home.teamPlan')
+                      : currentWorkspace.active
+                        ? t('home.sharedWorkspace')
+                        : t('home.noPlanYet')}
                   </span>
                 )}
               </h2>

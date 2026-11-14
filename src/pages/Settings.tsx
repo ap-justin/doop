@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { navigate } from '../App'
 import { useT, type PlainMessageKey } from '../lib/i18n'
 import { isLean, useLean } from '../lib/lean'
@@ -41,66 +41,26 @@ import {
 
 type Pane = 'general' | 'agent' | 'fonts' | 'keys' | 'webhooks' | 'account' | 'appearance'
 
-/* the heading over each pane, the line under it, and its glyph and label in
-   the rail and the phone's tabs, in the order both list them */
-const panes: Record<Pane, { title: PlainMessageKey; blurb: PlainMessageKey; tab: PlainMessageKey; icon: ReactNode }> = {
-  general: {
-    title: 'settings.generalTitle',
-    blurb: 'settings.generalBlurb',
-    tab: 'settings.generalTitle',
-    icon: <GearIcon size="rail" />,
-  },
-  agent: {
-    title: 'settings.agentTitle',
-    blurb: 'settings.agentBlurb',
-    tab: 'settings.agentTitle',
-    icon: <SparkIcon size="rail" />,
-  },
-  fonts: {
-    title: 'settings.fontsTitle',
-    blurb: 'settings.fontsBlurb',
-    tab: 'settings.fontsTitle',
-    icon: <TextIcon size="rail" />,
-  },
-  keys: {
-    title: 'settings.keysTitle',
-    blurb: 'settings.keysBlurb',
-    tab: 'settings.keysTitle',
-    icon: <KeyIcon size="rail" />,
-  },
-  webhooks: {
-    title: 'settings.webhooksTitle',
-    blurb: 'settings.webhooksBlurb',
-    tab: 'settings.webhooksTitle',
-    icon: <BellIcon size="rail" />,
-  },
-  account: {
-    title: 'settings.accountTitle',
-    blurb: 'settings.accountBlurb',
-    tab: 'settings.accountTab',
-    icon: <UserIcon size="rail" />,
-  },
-  appearance: {
-    title: 'settings.appearanceTitle',
-    blurb: 'settings.appearanceBlurb',
-    tab: 'settings.appearanceTitle',
-    icon: <MoonIcon size="rail" />,
-  },
+/* the heading over each pane, and the line under it */
+const panes: Record<Pane, { title: PlainMessageKey; blurb: PlainMessageKey }> = {
+  general: { title: 'settings.generalTitle', blurb: 'settings.generalBlurb' },
+  agent: { title: 'settings.agentTitle', blurb: 'settings.agentBlurb' },
+  fonts: { title: 'settings.fontsTitle', blurb: 'settings.fontsBlurb' },
+  keys: { title: 'settings.keysTitle', blurb: 'settings.keysBlurb' },
+  webhooks: { title: 'settings.webhooksTitle', blurb: 'settings.webhooksBlurb' },
+  account: { title: 'settings.accountTitle', blurb: 'settings.accountBlurb' },
+  appearance: { title: 'settings.appearanceTitle', blurb: 'settings.appearanceBlurb' },
 }
 
-const PANE_ORDER = Object.keys(panes) as Pane[]
-
-/** the panes this server offers: lean mode has no in-app agent to set up */
-function settingsPanes(lean: boolean): Pane[] {
-  return lean ? PANE_ORDER.filter((pane) => pane !== 'agent') : PANE_ORDER
+function isPane(value: string | null): value is Pane {
+  return value !== null && value in panes
 }
 
 /** ?pane= deep-links a section — the connect modal sends people to ?pane=keys. */
 function initialPane(): Pane {
-  const lean = isLean()
   const pane = new URLSearchParams(location.search).get('pane')
-  const offered = settingsPanes(lean)
-  return offered.find((p) => p === pane) ?? (lean ? 'general' : 'agent')
+  /* lean mode has no in-app agent to set up, so General opens instead */
+  return isPane(pane) && !(pane === 'agent' && isLean()) ? pane : isLean() ? 'general' : 'agent'
 }
 
 /**
@@ -118,7 +78,6 @@ export function Settings() {
   const [pane, setPane] = useState<Pane>(initialPane)
   const t = useT()
   const lean = useLean()
-  const offered = settingsPanes(lean)
   const { allowance, refresh } = useAllowance()
   const left = allowance ? Math.max(0, allowance.limit - allowance.used) : null
   /* arriving from a canvas (the free-tier wall) should not cost you your
@@ -152,11 +111,64 @@ export function Settings() {
         </nav>
         <DashSectionLabel density="rail">{t('settings.sectionLabel')}</DashSectionLabel>
         <nav className="flex flex-col gap-0.5">
-          {offered.map((p) => (
-            <DashNavItem key={p} density="rail" icon={panes[p].icon} active={pane === p} onClick={() => setPane(p)}>
-              {t(panes[p].title)}
+          <DashNavItem
+            density="rail"
+            icon={<GearIcon size="rail" />}
+            active={pane === 'general'}
+            onClick={() => setPane('general')}
+          >
+            {t('settings.generalTitle')}
+          </DashNavItem>
+          {!lean && (
+            <DashNavItem
+              density="rail"
+              icon={<SparkIcon size="rail" />}
+              active={pane === 'agent'}
+              onClick={() => setPane('agent')}
+            >
+              {t('settings.agentTitle')}
             </DashNavItem>
-          ))}
+          )}
+          <DashNavItem
+            density="rail"
+            icon={<TextIcon size="rail" />}
+            active={pane === 'fonts'}
+            onClick={() => setPane('fonts')}
+          >
+            {t('settings.fontsTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<KeyIcon size="rail" />}
+            active={pane === 'keys'}
+            onClick={() => setPane('keys')}
+          >
+            {t('settings.keysTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<BellIcon size="rail" />}
+            active={pane === 'webhooks'}
+            onClick={() => setPane('webhooks')}
+          >
+            {t('settings.webhooksTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<UserIcon size="rail" />}
+            active={pane === 'account'}
+            onClick={() => setPane('account')}
+          >
+            {t('settings.accountTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<MoonIcon size="rail" />}
+            active={pane === 'appearance'}
+            onClick={() => setPane('appearance')}
+          >
+            {t('settings.appearanceTitle')}
+          </DashNavItem>
         </nav>
         <div className="mt-auto flex items-center gap-2.5 px-1 pt-4">
           <AccountMenu face side="top" align="start" />
@@ -185,11 +197,29 @@ export function Settings() {
               variant="card"
               className="grid h-auto grid-cols-2 group-data-horizontal/tabs:h-auto sm:grid-cols-3 [&>*]:h-8"
             >
-              {offered.map((p) => (
-                <TabsTrigger key={p} value={p}>
-                  {panes[p].icon} {t(panes[p].tab)}
+              <TabsTrigger value="general">
+                <GearIcon size="rail" /> {t('settings.generalTitle')}
+              </TabsTrigger>
+              {!lean && (
+                <TabsTrigger value="agent">
+                  <SparkIcon size="rail" /> {t('settings.agentTitle')}
                 </TabsTrigger>
-              ))}
+              )}
+              <TabsTrigger value="fonts">
+                <TextIcon size="rail" /> {t('settings.fontsTitle')}
+              </TabsTrigger>
+              <TabsTrigger value="keys">
+                <KeyIcon size="rail" /> {t('settings.keysTitle')}
+              </TabsTrigger>
+              <TabsTrigger value="webhooks">
+                <BellIcon size="rail" /> {t('settings.webhooksTitle')}
+              </TabsTrigger>
+              <TabsTrigger value="account">
+                <UserIcon size="rail" /> {t('settings.accountTab')}
+              </TabsTrigger>
+              <TabsTrigger value="appearance">
+                <MoonIcon size="rail" /> {t('settings.appearanceTitle')}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
 

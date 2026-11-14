@@ -6,11 +6,9 @@ import { Button } from './ui/button'
 import { CodeBlock } from './ui/code-block'
 import { InstallBlock } from './ui/install-block'
 import { useT } from '../lib/i18n'
-import { useLean } from '../lib/lean'
 
 export function CodexInstall({ mcpUrl, canvasId }: { mcpUrl: string; canvasId?: string }) {
   const t = useT()
-  const lean = useLean()
   const [state, setState] = useState<'idle' | 'adding' | 'added'>('idle')
   const [error, setError] = useState('')
 
@@ -55,8 +53,6 @@ export function CodexInstall({ mcpUrl, canvasId }: { mcpUrl: string; canvasId?: 
   if (isDesktopShell()) {
     return <InstallBlock action={<p>{t('workspace.codexUpdateDesktop')}</p>} manual={manual} />
   }
-  /* lean mode does not offer the desktop app, so a browser gets the manual setup */
-  if (lean) return <InstallBlock action={manual} />
   return (
     <InstallBlock
       action={

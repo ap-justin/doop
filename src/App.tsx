@@ -1,5 +1,5 @@
 import { startLocalAgent } from './lib/localAgent'
-import { currentRoute, navigate } from './lib/navigate'
+import { navigate } from './lib/navigate'
 import { useEffect, useRef, useState } from 'react'
 import { Home } from './pages/Home'
 import { Community } from './pages/Community'
@@ -33,7 +33,6 @@ import { setTabsUser } from './lib/desktop'
 import { isDesktopShell } from './lib/shell'
 import { SIGNUP_PARAM, parseSignupMethod } from '../shared/firstCanvas'
 import { useT } from './lib/i18n'
-import { useLean } from './lib/lean'
 
 export { navigate }
 
@@ -51,18 +50,17 @@ function reportProviderSignup() {
 }
 
 export function App() {
-  const [route, setRoute] = useState(currentRoute)
+  const [route, setRoute] = useState(location.pathname + location.search)
   const path = route.split('?')[0]!
   const { data: session, isPending } = authClient.useSession()
   /* a signed-out guest on a share link asked for the sign-in form */
   const [guestAuth, setGuestAuth] = useState<'signin' | 'signup' | null>(null)
   const signInRequired = useStore((s) => s.signInRequired)
   const me = useMe(session?.user.id)
-  const lean = useLean()
   const identifiedUserId = useRef<string | null>(null)
 
   useEffect(() => {
-    const onPop = () => setRoute(currentRoute())
+    const onPop = () => setRoute(location.pathname + location.search)
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -127,8 +125,7 @@ export function App() {
     if (!isPending) setTabsUser(session?.user?.id ?? null)
   }, [isPending, session?.user?.id])
 
-  /* lean mode has no in-app agent for a desktop Claude to run tasks for */
-  const localAgentUser = !lean && !isPending && me && !me.impersonating ? session?.user.id : undefined
+  const localAgentUser = !isPending && me && !me.impersonating ? session?.user.id : undefined
   useEffect(() => {
     if (localAgentUser) return startLocalAgent(localAgentUser)
   }, [localAgentUser])

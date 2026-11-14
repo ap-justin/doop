@@ -135,7 +135,6 @@ import { NO_CANVAS, onViewCommand, syncViewMenu } from '../lib/viewMenu'
 import { AGENTS_MIN, LAYERS_MIN, fitPanelWidths } from '../lib/panelWidths'
 import { loadCanvasFonts } from '../lib/customFonts'
 import { t as translate, useT } from '../lib/i18n'
-import { isLean, useLean } from '../lib/lean'
 import { NO_INSETS, type StageInsets } from '../lib/viewFit'
 import { usePanelLayout } from '../lib/panelLayout'
 
@@ -259,7 +258,6 @@ export function CanvasPage({
   onSignIn?: () => void
 }) {
   const t = useT()
-  const lean = useLean()
   const canvas = useStore((s) => s.canvas)
   const connected = useStore((s) => s.connected)
   const presences = useStore((s) => s.presences)
@@ -397,9 +395,8 @@ export function CanvasPage({
     function onKey(e: KeyboardEvent) {
       /* ⌘K from anywhere, fields included: open the side panel on the Agents
          tab and put the keyboard in its "Design it" composer. Asking for the
-         composer ends ⌘. hide-UI — a field under `hidden` cannot take focus.
-         Lean mode has no composer, so the key is left alone. */
-      if (!isLean() && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+         composer ends ⌘. hide-UI — a field under `hidden` cannot take focus. */
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         /* the composer is an editor's: readers (and guests) have none */
         const state = useStore.getState()
@@ -1060,8 +1057,7 @@ export function CanvasPage({
           {/* the presence pill in the bar already carries each agent's status
               line; this per-agent stack is only for windows too narrow for it */}
           <WorkingNow style={{ left: chrome.left }} className="min-[1180px]:hidden" />
-          {/* the welcome checklist is not part of lean mode */}
-          {!readOnly && !lean && <Onboarding canvasId={canvasId} />}
+          {!readOnly && <Onboarding canvasId={canvasId} />}
           <AccessBanner guest={guest} onSignUp={onSignUp} onSignIn={onSignIn} />
           {!isMobile &&
             (layersOpen ? (
@@ -1374,11 +1370,7 @@ function ImportModal({
   /* which source's screen is open — null is the picker; landing back from
      GitHub's install flow jumps straight to that screen */
   const t = useT()
-  const [source, setSource] = useState<string | null>(() => {
-    const wanted = installPass || installError ? 'github' : initialSource
-    /* in lean mode a source it turned off opens the picker instead */
-    return isLean() && !importSources(t).some((s) => s.id === wanted) ? null : wanted
-  })
+  const [source, setSource] = useState<string | null>(installPass || installError ? 'github' : initialSource)
   const [url, setUrl] = useState('')
   const [wholeSite, setWholeSite] = useState(false)
   const [discovery, setDiscovery] = useState<DiscoveredSite | null>(null)
