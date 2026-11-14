@@ -123,31 +123,45 @@ describe('initLocale', () => {
     },
   )
 
-  it('keeps the cached lean value when no language is picked and the config request times out', async () => {
-    localStorage.setItem('doop-lean', '1')
-    const timeout = new AbortController()
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
-    try {
+  /* the cached path renders at once, so its refresh is unbounded: no abort signal, and a failure changes nothing */
+  it.each(['a failed answer', 'an unreachable server'])(
+    'refreshes a cached lean value without an abort signal and keeps it when the refresh gets %s',
+    async (failure) => {
+      vi.useFakeTimers()
+      localStorage.setItem('doop-locale', 'en')
+      localStorage.setItem('doop-lean', '1')
+      let resolveFetch: (value: unknown) => void = () => {}
+      let rejectFetch: (error: Error) => void = () => {}
       vi.stubGlobal(
         'fetch',
         vi.fn(
-          (_url: string, init?: { signal?: AbortSignal }) =>
-            new Promise((_resolve, reject) => {
-              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+          () =>
+            new Promise((resolve, reject) => {
+              resolveFetch = resolve
+              rejectFetch = reject
             }),
         ),
       )
+      const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
       const { initLocale } = await import('../src/lib/i18n')
       const { isLean } = await import('../src/lib/lean')
-      const init = initLocale()
-      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-      timeout.abort()
-      await init
+      await initLocale()
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(fetch).mock.calls[0]?.[1]?.signal).toBeUndefined()
+      expect(timeoutSpy).not.toHaveBeenCalled()
       expect(isLean()).toBe(true)
-    } finally {
+
+      /* the entry gone before the refresh fails: a failure that fell back to the cache would read nothing and turn lean off */
+      localStorage.removeItem('doop-lean')
+      if (failure === 'a failed answer') resolveFetch({ ok: false, json: async () => ({}) })
+      else rejectFetch(new Error('offline'))
+      await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+      expect(isLean()).toBe(true)
+      expect(localStorage.getItem('doop-lean')).toBeNull()
+      expect(fetch).toHaveBeenCalledTimes(1)
       timeoutSpy.mockRestore()
-    }
-  })
+    },
+  )
 
   it('leaves lean off on a missing field, without asking again', async () => {
     vi.useFakeTimers()

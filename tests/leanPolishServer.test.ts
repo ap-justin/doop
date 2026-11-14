@@ -81,6 +81,18 @@ describe('lean image generation with no server key', () => {
   })
 })
 
+describe('lean image model with only a Gemini server key', () => {
+  it('falls past the default model, which the server keys cannot run, to the Gemini one', async () => {
+    stubEnv('DOOP_LEAN', '1')
+    stubEnv('OPENAI_API_KEY', '')
+    stubEnv('GEMINI_API_KEY', 'server-gemini-key')
+    stubEnv('ARK_API_KEY', '')
+    /* the default (gpt-image-2) is not runnable here: the first runnable model is the only candidate */
+    expect(await generatorFor('user-1')).toMatchObject({ ok: true, label: 'server', authHint: 'GEMINI_API_KEY' })
+    expect(getAccounts).not.toHaveBeenCalled()
+  })
+})
+
 describe('image generation', () => {
   const connected = [{ kind: 'gemini-key', apiKey: 'g-key', enabled: true }] as never
   const gptImage = async () => (await imageModelAvailability('user-1')).find((m) => m.id === 'gpt-image-2')
