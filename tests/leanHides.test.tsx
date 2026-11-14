@@ -19,12 +19,25 @@ vi.mock('../src/lib/auth', () => ({ authClient: { useSession: () => ({ data: { u
 vi.mock('../src/lib/frameClipboard', () => ({ uploadImageFrames: () => Promise.resolve([]) }))
 vi.mock('../src/components/ChatPanel', () => ({ ChatPanel: () => null }))
 vi.mock('../src/components/MemoryPanel', () => ({ MemoryPanel: () => null }))
+vi.mock('../src/components/ModelAccount', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ModelAccountPanel: () => null,
+}))
+vi.mock('../src/components/ImageModelCard', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ImageModelCard: () => null,
+}))
+vi.mock('../src/components/DashShell', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  AccountMenu: () => null,
+}))
 
 const { useStore } = await import('../src/lib/store')
 const { setLean } = await import('../src/lib/lean')
 const { ActivityPanel } = await import('../src/components/ActivityPanel')
 const { TooltipProvider } = await import('../src/components/ui/tooltip')
 const { GeneralSettings } = await import('../src/components/GeneralSettings')
+const { Settings } = await import('../src/pages/Settings')
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -86,5 +99,19 @@ describe('Settings → General', () => {
     await act(async () => root.render(<GeneralSettings />))
     expect(promptBoxSwitch()).toBeNull()
     expect(container.textContent).not.toContain('Show Prompt Box')
+  })
+})
+
+describe('Settings opened on the Doop Agent pane', () => {
+  const heading = () => container.querySelector('h1')?.textContent
+
+  it('falls back to General when lean turns on after it opened', async () => {
+    await act(async () => root.render(<Settings />))
+    expect(heading()).toBe('Doop Agent')
+
+    await act(async () => setLean(true))
+    expect(heading()).toBe('General')
+    expect(container.textContent).toContain('Make Doop work the way you like in this browser.')
+    expect(container.textContent).not.toContain('Your connections, and the one the agent runs on')
   })
 })

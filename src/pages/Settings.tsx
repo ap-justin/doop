@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { navigate } from '../App'
 import { useT, type PlainMessageKey } from '../lib/i18n'
-import { isLean, useLean } from '../lib/lean'
+import { useLean } from '../lib/lean'
 import { ModelAccountPanel } from '../components/ModelAccount'
 import { ImageModelCard } from '../components/ImageModelCard'
 import { useAllowance } from '../components/TeamAllowance'
@@ -59,8 +59,7 @@ function isPane(value: string | null): value is Pane {
 /** ?pane= deep-links a section — the connect modal sends people to ?pane=keys. */
 function initialPane(): Pane {
   const pane = new URLSearchParams(location.search).get('pane')
-  /* lean mode has no in-app agent to set up, so General opens instead */
-  return isPane(pane) && !(pane === 'agent' && isLean()) ? pane : isLean() ? 'general' : 'agent'
+  return isPane(pane) ? pane : 'agent'
 }
 
 /**
@@ -75,9 +74,12 @@ function initialPane(): Pane {
 export function Settings() {
   /* the sub-nav switches panes rather than scrolling to an anchor — on a page
      this short an anchor jump looks like nothing happened */
-  const [pane, setPane] = useState<Pane>(initialPane)
+  const [chosen, setPane] = useState<Pane>(initialPane)
   const t = useT()
   const lean = useLean()
+  /* lean mode has no in-app agent to set up, so General shows instead, also
+     when lean is settled after the page opened on the agent pane */
+  const pane = lean && chosen === 'agent' ? 'general' : chosen
   const { allowance, refresh } = useAllowance()
   const left = allowance ? Math.max(0, allowance.limit - allowance.used) : null
   /* arriving from a canvas (the free-tier wall) should not cost you your
