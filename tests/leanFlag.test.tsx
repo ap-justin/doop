@@ -72,7 +72,9 @@ describe('initLocale', () => {
     const { isLean } = await import('../src/lib/lean')
     await initLocale()
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-    await Promise.resolve()
+    await vi.mocked(fetch).mock.results[0]?.value.catch(() => {})
+    /* a macrotask: runs every microtask the failed refresh queued behind that rejection */
+    await new Promise((resolve) => setTimeout(resolve))
     expect(isLean()).toBe(true)
     expect(localStorage.getItem('doop-lean')).toBe('1')
   })
@@ -132,7 +134,9 @@ describe('initLocale', () => {
   ])('leaves lean off on %s', async (_name, arrange) => {
     arrange()
     const { initLocale } = await import('../src/lib/i18n')
-    const { isLean } = await import('../src/lib/lean')
+    const { isLean, setLean } = await import('../src/lib/lean')
+    /* module state only, no cache: initLocale has to turn it off itself */
+    setLean(true)
     await initLocale()
     expect(isLean()).toBe(false)
   })

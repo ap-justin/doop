@@ -69,55 +69,54 @@ async function boot(env: Record<string, string>, email: string): Promise<Booted>
   }
 }
 
-/** One request per disabled route family, and the status the live handler
- *  answers it with when lean is off: a 404 there would be a route that is
- *  gone, not one that is served. */
+/** One request per disabled route family. With lean off each is served by its
+ *  own handler, whose status depends on the environment's keys and the
+ *  request, so only Express's own "Cannot METHOD path" counts as not served. */
 interface DisabledRoute {
   method: string
   path: string
-  served: number
 }
 
 function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledRoute[] {
-  const routes: [method: string, path: string, served: number][] = [
-    ['POST', '/relay/e/', 202],
-    ['GET', '/relay/static/array.js', 202],
-    ['POST', '/stripe/webhook', 501],
-    ['POST', '/webhooks/slack', 503],
-    ['POST', '/webhooks/linear', 503],
-    ['POST', '/local-agent/mcp/run-1', 403],
-    ['POST', '/gemini-cloud/mcp/run-1', 403],
-    ['GET', '/api/live-activities/config', 200],
-    ['GET', '/api/community', 200],
-    ['GET', '/api/automations', 200],
-    ['GET', '/api/integrations', 200],
-    ['GET', '/api/integrations/linear/callback', 302],
-    ['GET', '/api/model-account', 200],
-    ['GET', '/api/model-account/models', 400],
-    ['PATCH', '/api/model-account/openai', 400],
-    ['DELETE', '/api/model-account/openai', 400],
-    ['POST', '/api/model-account/chatgpt/authorize', 200],
-    ['DELETE', '/api/model-account/chatgpt/device', 200],
-    ['GET', '/api/agent-runners', 200],
-    ['PUT', '/api/agent-runners/default', 400],
-    ['GET', '/api/agent-allowance', 200],
-    ['GET', '/api/local-agent', 200],
-    ['GET', '/api/image-model', 200],
-    ['PUT', '/api/image-model', 400],
-    ['GET', '/api/billing/plans', 200],
-    ['GET', '/api/github/app', 200],
-    ['GET', `/api/canvases/${canvasId}/github`, 200],
-    ['POST', `/api/canvases/${canvasId}/cards`, 400],
-    ['PUT', `/api/canvases/${canvasId}/publish`, 400],
-    ['DELETE', `/api/canvases/${canvasId}/publish`, 200],
-    ['POST', '/api/tasks/task-1/feedback', 404],
-    ['POST', '/api/feedback/fb-1/retry', 404],
-    ['POST', `/api/comments/${commentId}/retry`, 403],
-    ['POST', `/api/workspaces/${workspaceId}/billing/checkout`, 400],
-    ['POST', `/api/workspaces/${workspaceId}/billing/portal`, 400],
-    ['POST', `/api/workspaces/${workspaceId}/billing/sync`, 200],
+  const routes: [method: string, path: string][] = [
+    ['POST', '/relay/e/'],
+    ['GET', '/relay/static/array.js'],
+    ['POST', '/stripe/webhook'],
+    ['POST', '/webhooks/slack'],
+    ['POST', '/webhooks/linear'],
+    ['POST', '/local-agent/mcp/run-1'],
+    ['POST', '/gemini-cloud/mcp/run-1'],
+    ['GET', '/api/live-activities/config'],
+    ['GET', '/api/community'],
+    ['GET', '/api/automations'],
+    ['GET', '/api/integrations'],
+    ['GET', '/api/integrations/linear/callback'],
+    ['GET', '/api/model-account'],
+    ['GET', '/api/model-account/models'],
+    ['PATCH', '/api/model-account/openai'],
+    ['DELETE', '/api/model-account/openai'],
+    ['POST', '/api/model-account/chatgpt/authorize'],
+    ['DELETE', '/api/model-account/chatgpt/device'],
+    ['GET', '/api/agent-runners'],
+    ['PUT', '/api/agent-runners/default'],
+    ['GET', '/api/agent-allowance'],
+    ['GET', '/api/local-agent'],
+    ['GET', '/api/image-model'],
+    ['PUT', '/api/image-model'],
+    ['GET', '/api/billing/plans'],
+    ['GET', '/api/github/app'],
+    ['GET', `/api/canvases/${canvasId}/github`],
+    ['POST', `/api/canvases/${canvasId}/cards`],
+    ['PUT', `/api/canvases/${canvasId}/publish`],
+    ['DELETE', `/api/canvases/${canvasId}/publish`],
+    ['POST', '/api/tasks/task-1/feedback'],
+    ['POST', '/api/feedback/fb-1/retry'],
+    ['POST', `/api/comments/${commentId}/retry`],
+    ['POST', `/api/workspaces/${workspaceId}/billing/checkout`],
+    ['POST', `/api/workspaces/${workspaceId}/billing/portal`],
+    ['POST', `/api/workspaces/${workspaceId}/billing/sync`],
   ]
-  return routes.map(([method, path, served]) => ({ method, path, served }))
+  return routes.map(([method, path]) => ({ method, path }))
 }
 
 function send(b: Booted, { method, path }: DisabledRoute) {
@@ -199,6 +198,20 @@ describe('lean mode on', () => {
     }
   })
 
+  it('leaves the core routes to their own handlers', async () => {
+    const core: [method: string, path: string][] = [
+      ['GET', '/healthz'],
+      ['GET', '/a/missing.png'],
+      ['PUT', '/u/no-such-ticket'],
+      ['GET', `/api/canvases/${b.canvasId}`],
+      ['GET', '/.well-known/oauth-protected-resource'],
+    ]
+    for (const [method, path] of core) {
+      const res = await b.owner.req(path, { method, body: method === 'GET' ? undefined : '{}' })
+      expect(await res.text(), `${method} ${path}`).not.toContain(`Cannot ${method} ${path}`)
+    }
+  })
+
   it('forwards nothing to PostHog', async () => {
     await sendRelay(b)
     expect(b.upstream.hits).toEqual([])
@@ -273,10 +286,9 @@ describe('lean mode off', () => {
 
   it('serves every route family lean mode disables, each with its own handler', async () => {
     for (const route of disabledRoutes(b)) {
-      const { method, path, served } = route
+      const { method, path } = route
       const res = await send(b, route)
-      expect(await res.text(), `${method} ${path}`).not.toContain(`Cannot ${method}`)
-      expect({ method, path, status: res.status }).toEqual({ method, path, status: served })
+      expect(await res.text(), `${method} ${path}`).not.toContain(`Cannot ${method} ${path}`)
     }
   })
 
