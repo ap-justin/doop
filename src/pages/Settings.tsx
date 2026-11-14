@@ -77,8 +77,8 @@ export function Settings() {
   const [chosen, setPane] = useState<Pane>(initialPane)
   const t = useT()
   const lean = useLean()
-  /* lean mode has no in-app agent to set up, so General shows instead, also
-     when lean is settled after the page opened on the agent pane */
+  /* lean mode has no in-app agent to set up, so General shows in its place,
+     even when lean is settled after the page opened on the agent pane */
   const pane = lean && chosen === 'agent' ? 'general' : chosen
   const { allowance, refresh } = useAllowance()
   const left = allowance ? Math.max(0, allowance.limit - allowance.used) : null

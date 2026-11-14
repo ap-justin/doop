@@ -115,8 +115,7 @@ function applyConfig(config: ServerConfig | null): void {
  *  picked language and a cached lean value renders at once and refreshes both
  *  from the server's answer; any other waits for that one short request (the
  *  server's default language, otherwise English; lean as it says, or as it
- *  last said when it gives no answer).
- *  Then follows picks made in other tabs. */
+ *  last said when it gives no answer). Then follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
     if (event.key !== null && event.key !== LOCALE_STORAGE_KEY) return
