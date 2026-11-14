@@ -11,11 +11,16 @@ function serverSays(body: unknown, ok = true) {
   )
 }
 
+/* the retry waits in src/lib/i18n/locale.ts, summed: past this no retry is left */
+const RETRY_WAITS_MS = [2000, 5000, 15000]
+const ALL_RETRY_WAITS_MS = RETRY_WAITS_MS.reduce((sum, wait) => sum + wait, 0)
+
 beforeEach(() => {
   vi.resetModules()
   localStorage.clear()
 })
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -65,6 +70,7 @@ describe('initLocale', () => {
   })
 
   it('keeps the cached value when the refresh fails', async () => {
+    vi.useFakeTimers()
     localStorage.setItem('doop-locale', 'en')
     localStorage.setItem('doop-lean', '1')
     let fail: (error: Error) => void = () => {}
@@ -81,8 +87,8 @@ describe('initLocale', () => {
        that fell back to the cache would read nothing there and turn lean off */
     localStorage.removeItem('doop-lean')
     fail(new Error('offline'))
-    /* a macrotask: runs every microtask the failed refresh queued behind that rejection */
-    await new Promise((resolve) => setTimeout(resolve))
+    /* past every retry wait: the failed refresh has settled, and no retry follows it */
+    await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
     expect(isLean()).toBe(true)
     expect(localStorage.getItem('doop-lean')).toBeNull()
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -103,6 +109,7 @@ describe('initLocale', () => {
   ])(
     'keeps the cached lean value when no language is picked and the config request gets %s',
     async (_name, arrange) => {
+      vi.useFakeTimers()
       localStorage.setItem('doop-lean', '1')
       arrange()
       const { initLocale } = await import('../src/lib/i18n')
@@ -111,7 +118,7 @@ describe('initLocale', () => {
       expect(isLean()).toBe(true)
       expect(localStorage.getItem('doop-lean')).toBe('1')
       /* the cache stands in for the answer: no retry */
-      await new Promise((resolve) => setTimeout(resolve))
+      await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
       expect(fetch).toHaveBeenCalledTimes(1)
     },
   )
@@ -143,6 +150,7 @@ describe('initLocale', () => {
   })
 
   it('leaves lean off on a missing field, without asking again', async () => {
+    vi.useFakeTimers()
     serverSays({ defaultLocale: 'en' })
     const { initLocale } = await import('../src/lib/i18n')
     const { isLean, setLean } = await import('../src/lib/lean')
@@ -150,57 +158,91 @@ describe('initLocale', () => {
     setLean(true)
     await initLocale()
     expect(isLean()).toBe(false)
-    await new Promise((resolve) => setTimeout(resolve))
+    /* an answer without the field is still an answer: no retry */
+    await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  /* each queues the first answer; the retry's answer is queued by the test */
+  it('does not ask again after an answer', async () => {
+    vi.useFakeTimers()
+    serverSays({ defaultLocale: 'en', lean: false })
+    const { initLocale } = await import('../src/lib/i18n')
+    const { isLean } = await import('../src/lib/lean')
+    await initLocale()
+    expect(isLean()).toBe(false)
+    await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  /* each queues the first answer; the retries' answers are queued by the test */
   const noAnswer: Array<[string, (fetchMock: Mock) => void]> = [
     ['a failed answer', (fetchMock) => fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) })],
     ['an unreachable server', (fetchMock) => fetchMock.mockRejectedValueOnce(new Error('offline'))],
   ]
+  const [firstWait = 0, secondWait = 0] = RETRY_WAITS_MS
 
-  it.each(noAnswer)('leaves lean off on %s, then turns it on when the one retry says lean', async (_name, first) => {
+  it.each(noAnswer)(
+    'leaves lean off on %s, retries only after each wait, and turns it on when a later retry says lean',
+    async (_name, first) => {
+      vi.useFakeTimers()
+      const fetchMock = vi.fn()
+      first(fetchMock)
+      /* the first retry fails as fast as the first request did; the second answers */
+      fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) })
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ defaultLocale: 'en', lean: true }) })
+      vi.stubGlobal('fetch', fetchMock)
+      const { initLocale } = await import('../src/lib/i18n')
+      const { isLean, setLean } = await import('../src/lib/lean')
+      /* module state only, no cache: initLocale has to turn it off itself */
+      setLean(true)
+      await initLocale()
+      expect(isLean()).toBe(false)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(firstWait - 1)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(isLean()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(secondWait - 1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(isLean()).toBe(true)
+      expect(localStorage.getItem('doop-lean')).toBe('1')
+
+      /* answered: the last wait schedules nothing */
+      await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    },
+  )
+
+  it.each(noAnswer)('leaves lean off on %s when every retry fails too', async (_name, first) => {
+    vi.useFakeTimers()
     const fetchMock = vi.fn()
     first(fetchMock)
-    let answer: (value: unknown) => void = () => {}
-    fetchMock.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    fetchMock.mockRejectedValue(new Error('offline'))
     vi.stubGlobal('fetch', fetchMock)
     const { initLocale } = await import('../src/lib/i18n')
     const { isLean, setLean } = await import('../src/lib/lean')
-    /* module state only, no cache: initLocale has to turn it off itself */
-    setLean(true)
-    await initLocale()
-    expect(isLean()).toBe(false)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-
-    answer({ ok: true, json: async () => ({ defaultLocale: 'en', lean: true }) })
-    await vi.waitFor(() => expect(isLean()).toBe(true))
-    expect(localStorage.getItem('doop-lean')).toBe('1')
-    await new Promise((resolve) => setTimeout(resolve))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
-  it.each(noAnswer)('leaves lean off on %s when the one retry fails too', async (_name, first) => {
-    const fetchMock = vi.fn()
-    first(fetchMock)
-    fetchMock.mockRejectedValueOnce(new Error('offline'))
-    vi.stubGlobal('fetch', fetchMock)
-    const { initLocale } = await import('../src/lib/i18n')
-    const { isLean, setLean } = await import('../src/lib/lean')
     setLean(true)
     await initLocale()
     expect(isLean()).toBe(false)
 
-    /* a macrotask: the failed retry has settled behind it */
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(1 + RETRY_WAITS_MS.length)
     expect(isLean()).toBe(false)
     expect(localStorage.getItem('doop-lean')).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    /* the retries are spent: nothing more is asked */
+    await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(1 + RETRY_WAITS_MS.length)
   })
 
   /* AbortSignal.timeout is stubbed at the boundary (a controller the test aborts), since fake timers do not drive it */
   it('leaves lean off when the config request hangs until its timeout aborts it, then follows the retry', async () => {
+    vi.useFakeTimers()
     const timeout = new AbortController()
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
     try {
@@ -223,7 +265,7 @@ describe('initLocale', () => {
       const init = initLocale().then(() => {
         settled = true
       })
-      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+      expect(fetch).toHaveBeenCalledTimes(1)
       expect(timeoutSpy).toHaveBeenCalledWith(1500)
       await Promise.resolve()
       expect(settled).toBe(false)
@@ -231,12 +273,20 @@ describe('initLocale', () => {
       timeout.abort()
       await init
       expect(isLean()).toBe(false)
+      expect(fetch).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(firstWait)
       expect(fetch).toHaveBeenCalledTimes(2)
       expect(vi.mocked(fetch).mock.calls[1]?.[1]?.signal).toBeUndefined()
 
+      /* the retry hangs: no further retry starts behind it */
+      await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
+      expect(fetch).toHaveBeenCalledTimes(2)
+
       answer({ ok: true, json: async () => ({ defaultLocale: 'en', lean: true }) })
-      await vi.waitFor(() => expect(isLean()).toBe(true))
-      await new Promise((resolve) => setTimeout(resolve))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(isLean()).toBe(true)
+      await vi.advanceTimersByTimeAsync(ALL_RETRY_WAITS_MS)
       expect(fetch).toHaveBeenCalledTimes(2)
       expect(timeoutSpy).toHaveBeenCalledTimes(1)
     } finally {
