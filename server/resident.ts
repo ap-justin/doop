@@ -1,4 +1,5 @@
 import { env } from './env.ts'
+import { leanMode } from './lean.ts'
 import type Anthropic from '@anthropic-ai/sdk'
 import { store } from './store.ts'
 import { fontsForCanvas } from './fonts.ts'
@@ -90,7 +91,10 @@ export function onCardStopped(canvasId: string) {
   for (const check of stopChecks.get(canvasId) ?? []) check()
 }
 
+/** Every start of a resident run goes through here, so lean mode, which turns
+ *  the in-app agent off, stops them all at once. */
 export function onFeedback(canvasId: string) {
+  if (leanMode()) return
   if (running.has(canvasId)) {
     queued.add(canvasId)
     return

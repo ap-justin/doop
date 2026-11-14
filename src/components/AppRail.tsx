@@ -7,6 +7,7 @@ import { navigate } from '../lib/navigate'
 import { useRailDrawer } from '../lib/railDrawer'
 import { timeAgo } from '../lib/time'
 import { openCanvasTab } from '../lib/desktop'
+import { useLean } from '../lib/lean'
 import { useT } from '../lib/i18n'
 import { cn } from '@/lib/utils'
 import { AgentIcon } from './AgentIcon'
@@ -119,6 +120,8 @@ export function AppRail({
   children?: ReactNode
 }) {
   const t = useT()
+  /* Community, Automations and Integrations are routes lean mode turns off */
+  const lean = useLean()
   const [own, setOwn] = useState<RailLists | null>(() => lastLists)
   const needsOwn = canvases === undefined || workspaces === undefined
   useEffect(() => {
@@ -325,20 +328,28 @@ export function AppRail({
       <IconButton aria-label={t('rail.newWorkspace')} onClick={createWorkspace}>
         <FolderPlusIcon size="rail" />
       </IconButton>
-      <Rule />
-      <IconButton aria-label={t('rail.community')} on={active === 'community'} onClick={() => go('/community')}>
-        <WebIcon size="rail" />
-      </IconButton>
-      <IconButton aria-label={t('rail.automations')} on={active === 'automations'} onClick={() => go('/automations')}>
-        <WorkflowIcon size="rail" />
-      </IconButton>
-      <IconButton
-        aria-label={t('rail.integrations')}
-        on={active === 'integrations'}
-        onClick={() => go('/integrations')}
-      >
-        <BlocksIcon size="rail" />
-      </IconButton>
+      {!lean && (
+        <>
+          <Rule />
+          <IconButton aria-label={t('rail.community')} on={active === 'community'} onClick={() => go('/community')}>
+            <WebIcon size="rail" />
+          </IconButton>
+          <IconButton
+            aria-label={t('rail.automations')}
+            on={active === 'automations'}
+            onClick={() => go('/automations')}
+          >
+            <WorkflowIcon size="rail" />
+          </IconButton>
+          <IconButton
+            aria-label={t('rail.integrations')}
+            on={active === 'integrations'}
+            onClick={() => go('/integrations')}
+          >
+            <BlocksIcon size="rail" />
+          </IconButton>
+        </>
+      )}
       <Rule />
       {agents.map((a) => (
         <span key={a.name} className="grid size-8 place-items-center" title={a.name}>
@@ -467,37 +478,41 @@ export function AppRail({
         </DashNavItem>
       </nav>
 
-      <DashSectionLabel density="rail">{t('rail.explore')}</DashSectionLabel>
-      <nav className="flex flex-col gap-0.5">
-        <DashNavItem
-          density="rail"
-          icon={<WebIcon size="rail" />}
-          active={active === 'community'}
-          onClick={() => go('/community')}
-        >
-          {t('rail.community')}
-        </DashNavItem>
-      </nav>
+      {!lean && (
+        <>
+          <DashSectionLabel density="rail">{t('rail.explore')}</DashSectionLabel>
+          <nav className="flex flex-col gap-0.5">
+            <DashNavItem
+              density="rail"
+              icon={<WebIcon size="rail" />}
+              active={active === 'community'}
+              onClick={() => go('/community')}
+            >
+              {t('rail.community')}
+            </DashNavItem>
+          </nav>
 
-      <DashSectionLabel density="rail">{t('rail.resources')}</DashSectionLabel>
-      <nav className="flex flex-col gap-0.5">
-        <DashNavItem
-          density="rail"
-          icon={<WorkflowIcon size="rail" />}
-          active={active === 'automations'}
-          onClick={() => go('/automations')}
-        >
-          {t('rail.automations')}
-        </DashNavItem>
-        <DashNavItem
-          density="rail"
-          icon={<BlocksIcon size="rail" />}
-          active={active === 'integrations'}
-          onClick={() => go('/integrations')}
-        >
-          {t('rail.integrations')}
-        </DashNavItem>
-      </nav>
+          <DashSectionLabel density="rail">{t('rail.resources')}</DashSectionLabel>
+          <nav className="flex flex-col gap-0.5">
+            <DashNavItem
+              density="rail"
+              icon={<WorkflowIcon size="rail" />}
+              active={active === 'automations'}
+              onClick={() => go('/automations')}
+            >
+              {t('rail.automations')}
+            </DashNavItem>
+            <DashNavItem
+              density="rail"
+              icon={<BlocksIcon size="rail" />}
+              active={active === 'integrations'}
+              onClick={() => go('/integrations')}
+            >
+              {t('rail.integrations')}
+            </DashNavItem>
+          </nav>
+        </>
+      )}
 
       {/* a page's own group keeps the drawer's contract: a pick puts it away */}
       <div

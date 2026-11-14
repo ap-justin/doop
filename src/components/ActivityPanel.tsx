@@ -28,6 +28,7 @@ import { PromptBar } from './PromptBar'
 import { taskFrameId } from '../lib/taskFrame'
 import { useOpenThreadCount } from '../lib/comments'
 import { useT } from '@/lib/i18n'
+import { useLean } from '@/lib/lean'
 
 const emptyNote = 'px-4 py-6 text-center text-[12px] text-ink-faint'
 
@@ -75,6 +76,7 @@ export function ActivityPanel({
   const [, tick] = useState(0)
   const openThreads = useOpenThreadCount()
   const working = useStore((s) => s.tasks.filter((t) => t.agentName && !t.endedAt && !t.failedAt).length)
+  const lean = useLean()
   const t = useT()
 
   /* refresh relative timestamps and running durations */
@@ -143,8 +145,9 @@ export function ActivityPanel({
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             <RecentTasks />
           </div>
-          {/* the composer briefs agents to change frames: editors only */}
-          {canEdit && <PromptBar canvasId={canvasId} />}
+          {/* the composer briefs the Doop Agent to change frames: editors only,
+              and only where there is one (lean mode has none) */}
+          {canEdit && !lean && <PromptBar canvasId={canvasId} />}
         </PanelTabPanel>
         <PanelTabPanel value="comments" className={tabEnter}>
           <CommentsPanel />
@@ -173,6 +176,7 @@ function RecentTasks() {
   const claimed = useMemo(() => tasks.filter((t) => t.agentName), [tasks])
   const working = useMemo(() => claimed.filter((t) => !t.endedAt && !t.failedAt), [claimed])
   const finished = useMemo(() => claimed.filter((t) => t.endedAt || t.failedAt), [claimed])
+  const lean = useLean()
   const t = useT()
 
   return (
@@ -181,7 +185,10 @@ function RecentTasks() {
         {t('panels.activityRecentTasks')}
       </h3>
       {claimed.length === 0 ? (
-        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">{t('panels.activityNoTasks')}</p>
+        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">
+          {/* lean has no composer below to point at */}
+          {t(lean ? 'panels.activityNoTasksLean' : 'panels.activityNoTasks')}
+        </p>
       ) : all ? (
         <>
           {working.length > 0 && <TaskGroup label={t('panels.activityWorkingOn')} tasks={working} />}

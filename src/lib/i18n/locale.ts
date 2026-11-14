@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react'
 import { FALLBACK_LOCALE, isLocale, type Locale, type LocaleConfig } from '../../../shared/locales'
+import { setLean } from '../lean'
 
 export { LOCALES, LOCALE_NAMES, isLocale, type Locale } from '../../../shared/locales'
 
 /* Per browser, not per account, like the theme: it is how this device reads. */
 export const LOCALE_STORAGE_KEY = 'doop-locale'
+const LEAN_STORAGE_KEY = 'doop-lean'
 
 /* A slow or unreachable server must not hold the first paint for long. */
 const CONFIG_TIMEOUT_MS = 1500
@@ -71,29 +73,83 @@ export function setLocale(locale: Locale): void {
   notify()
 }
 
-async function fetchServerDefault(): Promise<Locale | null> {
+type ServerConfig = { defaultLocale: Locale | null; lean: boolean }
+
+/** The server's answer, or null when it gave none or `signal` aborted first.
+ *  Never rejects. */
+async function fetchConfig(signal?: AbortSignal): Promise<ServerConfig | null> {
   try {
-    const res = await fetch('/api/locale-config', { signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS) })
+    const res = await fetch('/api/locale-config', { signal })
     if (!res.ok) return null
     const config = (await res.json()) as Partial<LocaleConfig>
-    return isLocale(config.defaultLocale) ? config.defaultLocale : null
+    return { defaultLocale: isLocale(config.defaultLocale) ? config.defaultLocale : null, lean: config.lean === true }
   } catch {
     return null
   }
 }
 
-/** Settles the language before React mounts: the browser's own pick when it
- *  has one, otherwise the server's default (one short request), otherwise
- *  English. Then follows picks made in other tabs. */
+/** The last lean value the server reported to this origin, kept so a return
+ *  visit can render at once. */
+function cachedLean(): boolean | null {
+  try {
+    const value = localStorage.getItem(LEAN_STORAGE_KEY)
+    return value === '1' ? true : value === '0' ? false : null
+  } catch {
+    return null
+  }
+}
+
+function storeLean(value: boolean): void {
+  try {
+    localStorage.setItem(LEAN_STORAGE_KEY, value ? '1' : '0')
+  } catch {
+    /* nowhere to keep it: the next visit asks again */
+  }
+}
+
+function applyConfig(config: ServerConfig | null): void {
+  setLean(config?.lean ?? cachedLean() ?? false)
+  /* kept even under a pick, so a pick cleared later falls back to it */
+  serverDefault = config?.defaultLocale ?? FALLBACK_LOCALE
+  if (config) storeLean(config.lean)
+  snapshot = null
+  mark()
+}
+
+/** Lean from an answer that arrives after the first render; the language
+ *  stays as it rendered. */
+function applyLateLean(config: ServerConfig | null): void {
+  if (!config) return
+  setLean(config.lean)
+  storeLean(config.lean)
+}
+
+/** Settles the language and lean mode before React mounts. A browser with a
+ *  picked language and a cached lean value renders at once and refreshes both
+ *  from the server's answer; any other waits for that one short request (the
+ *  server's default language, otherwise English; lean as it says, or as it
+ *  last said when it gives no answer). With no answer and nothing cached, lean
+ *  starts off and the server is asked once more, unbounded, in the background.
+ *  Then follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
     if (event.key !== null && event.key !== LOCALE_STORAGE_KEY) return
     picked = undefined
     notify()
   })
-  if (!getPicked()) serverDefault = (await fetchServerDefault()) ?? FALLBACK_LOCALE
-  snapshot = null
-  mark()
+  const lean = cachedLean()
+  if (getPicked() && lean !== null) {
+    setLean(lean)
+    snapshot = null
+    mark()
+    void fetchConfig(AbortSignal.timeout(CONFIG_TIMEOUT_MS)).then((config) => {
+      if (config) applyConfig(config)
+    })
+    return
+  }
+  const config = await fetchConfig(AbortSignal.timeout(CONFIG_TIMEOUT_MS))
+  applyConfig(config)
+  if (!config && lean === null) void fetchConfig().then(applyLateLean)
 }
 
 /** The active language, whether this browser picked it (rather than taking

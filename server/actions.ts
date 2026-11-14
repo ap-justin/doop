@@ -4,7 +4,7 @@ import * as persist from './db/persist.ts'
 import * as thumbs from './thumbs.ts'
 import { colorFor } from '../shared/types.ts'
 import type { StackWrite } from '../shared/frameStack.ts'
-import { DEFAULT_ROLE_ID, mentionedRole, normalizePipeline, roleByAgentName, roleName } from '../shared/agents.ts'
+import { DEFAULT_ROLE_ID, normalizePipeline, roleByAgentName, roleName } from '../shared/agents.ts'
 import { canvasPages } from '../shared/pages.ts'
 import { FRAME_COMMENT_SELECTOR, isCanvasComment, type CommentAnchorInput } from '../shared/comments.ts'
 import { isElementId } from '../shared/elementId.ts'
@@ -34,6 +34,7 @@ import {
   type TokenType,
 } from '../shared/designTokens.ts'
 import { emitCanvasEvent } from './events.ts'
+import { residentMention } from './lean.ts'
 import type {
   Actor,
   CanvasGuide,
@@ -906,7 +907,7 @@ function postComment(
   const clean = text.trim()
   if (!clean) return undefined
   /* @Doop, @brand, @a11y… — whichever resident agent is mentioned picks it up */
-  const mentioned = mentionedRole(clean)
+  const mentioned = residentMention(clean)
   const list = commentLog.get(canvasId) ?? []
   /* strictly increasing per canvas: thread order is reconstructed from `at`
      after a restart, so two messages must never share a timestamp */

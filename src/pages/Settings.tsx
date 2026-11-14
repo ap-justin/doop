@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { navigate } from '../App'
 import { useT, type PlainMessageKey } from '../lib/i18n'
+import { useLean } from '../lib/lean'
 import { ModelAccountPanel } from '../components/ModelAccount'
 import { ImageModelCard } from '../components/ImageModelCard'
 import { useAllowance } from '../components/TeamAllowance'
@@ -73,8 +74,12 @@ function initialPane(): Pane {
 export function Settings() {
   /* the sub-nav switches panes rather than scrolling to an anchor — on a page
      this short an anchor jump looks like nothing happened */
-  const [pane, setPane] = useState<Pane>(initialPane)
+  const [chosen, setPane] = useState<Pane>(initialPane)
   const t = useT()
+  const lean = useLean()
+  /* lean mode has no in-app agent to set up, so General shows in its place,
+     even when lean is settled after the page opened on the agent pane */
+  const pane = lean && chosen === 'agent' ? 'general' : chosen
   const { allowance, refresh } = useAllowance()
   const left = allowance ? Math.max(0, allowance.limit - allowance.used) : null
   /* arriving from a canvas (the free-tier wall) should not cost you your
@@ -116,14 +121,16 @@ export function Settings() {
           >
             {t('settings.generalTitle')}
           </DashNavItem>
-          <DashNavItem
-            density="rail"
-            icon={<SparkIcon size="rail" />}
-            active={pane === 'agent'}
-            onClick={() => setPane('agent')}
-          >
-            {t('settings.agentTitle')}
-          </DashNavItem>
+          {!lean && (
+            <DashNavItem
+              density="rail"
+              icon={<SparkIcon size="rail" />}
+              active={pane === 'agent'}
+              onClick={() => setPane('agent')}
+            >
+              {t('settings.agentTitle')}
+            </DashNavItem>
+          )}
           <DashNavItem
             density="rail"
             icon={<TextIcon size="rail" />}
@@ -195,9 +202,11 @@ export function Settings() {
               <TabsTrigger value="general">
                 <GearIcon size="rail" /> {t('settings.generalTitle')}
               </TabsTrigger>
-              <TabsTrigger value="agent">
-                <SparkIcon size="rail" /> {t('settings.agentTitle')}
-              </TabsTrigger>
+              {!lean && (
+                <TabsTrigger value="agent">
+                  <SparkIcon size="rail" /> {t('settings.agentTitle')}
+                </TabsTrigger>
+              )}
               <TabsTrigger value="fonts">
                 <TextIcon size="rail" /> {t('settings.fontsTitle')}
               </TabsTrigger>

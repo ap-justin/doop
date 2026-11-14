@@ -72,7 +72,7 @@ import { createImportedWebpageFrame } from './webpageImport.ts'
 import { normalizeImportUrl } from './importer.ts'
 import { extensions, type McpToolHelpers } from './extensions.ts'
 import { websiteAccessErrorMessage } from './websiteAccess.ts'
-import { mentionedRole } from '../shared/agents.ts'
+import { activeExtensions, leanMode, residentMention } from './lean.ts'
 import * as allowance from './allowance.ts'
 import { previewOf, previewToolMeta, registerFramePreview, type CanvasPreview } from './chatgptApp.ts'
 import * as persist from './db/persist.ts'
@@ -103,15 +103,19 @@ You MUST call get_guide({ topic: "doop-instructions" }) once before using other 
 - History: every replace and stream files the design it overwrote. list_frame_versions shows a frame's earlier states; restore_frame_version brings one back (HTML and size) when a human asks for the previous version or your rework turned out worse.
 - Images: real imagery makes designs. search_images finds stock photos (you SEE thumbnails and pick), search_icons finds 200k+ UI icons as hotlinkable SVGs, search_logos finds real company logos by brand name or domain — call it once per brand BEFORE writing any logo wall, integration row, press bar or testimonial, and never ship a placeholder tile, "LOGO" text or an invented wordmark in its place, list_backgrounds shows a page of curated hero/section/bento backgrounds (glows, grainy meshes, aurora, painterly scenes) as thumbnails — browse it when a section wants atmosphere rather than defaulting to a flat CSS gradient, judge by eye whether one fits the frame, and draw your own when none does, upload_asset stores your own file (remote file → source_url; local file → local_file=true, returns a curl command) and returns a permanent URL. generate_image makes a new image from a prompt (a full-bleed hero background in the frame's exact palette, illustration, a product render, brand-specific hero art that stock cannot supply) and stores it as a permanent asset — reach for it when search_images cannot deliver the exact visual, or when the human asks for a generated image; it costs the human money or quota, so one considered prompt beats five drafts. Never inline images as data: URIs.
 - Websites: when a request names an existing site or URL — a redesign of it, or "like acme.com" — call import_webpage FIRST so an editable HTML snapshot lands on the canvas. Leave that source frame unchanged and design in a separate frame. view_website is only for read-only inspection when the page should not be added. If Doop cannot capture the site, do not retry with view_website because it uses the same capture path. Use your own browser or web tool and work only from content you actually observe; if that is unavailable, ask the user for screenshots or an HTML export rather than inventing content.
-${extensionGuideLines()}- Feedback: humans reply to your tasks; their notes arrive inside your tool results as HUMAN FEEDBACK blocks (read-only tools only announce them: claim those with get_feedback) — address them before continuing.
-- Comments: call get_comments to read comments and replies on a canvas — pinned to an element inside a frame, or to a point on the canvas (pageId, x, y) — optionally filtered by frame; reply_to_comment answers a thread and resolve_comment closes it. Reading does not claim feedback or comments. A reply that @mentions a resident role is metered like a comment left in the browser.
+${extensionGuideLines()}${inAppAgentText('- Feedback: humans reply to your tasks; their notes arrive inside your tool results as HUMAN FEEDBACK blocks (read-only tools only announce them: claim those with get_feedback) — address them before continuing.\n')}- Comments: call get_comments to read comments and replies on a canvas — pinned to an element inside a frame, or to a point on the canvas (pageId, x, y) — optionally filtered by frame; reply_to_comment answers a thread and resolve_comment closes it. Reading does not claim feedback or comments.${inAppAgentText(' A reply that @mentions a resident role is metered like a comment left in the browser.')}
 - Guidelines: canvases can carry named style guides (brand rules, style recipes). get_canvas lists them with one-line summaries — read the relevant ones with get_guidelines BEFORE designing and follow them.
 - Design tokens: canvases can carry typed design tokens (colour, spacing, radius, type scale — CSS custom properties), each with a value per theme (light, dark, …) where it differs. get_canvas lists them; use one by writing var(--name) in CSS, never the literal, so a token change restyles every frame; switch a frame's theme with data-doop-theme="dark" on its <html>. create_tokens adds them when a brief names a palette or scale; set_tokens changes, renames or deletes; set_token_themes declares the themes; get_tokens exports them as JSON, CSS or a Tailwind @theme block.
 - Memory: canvases can also carry pinned style references — exemplar designs humans marked as "more like this". get_canvas lists them; read the relevant one with get_reference and match its look. When your human gives you design feedback in conversation and you address it, record it with save_decision so the canvas remembers their taste.
 - Problems with Doop itself: when a Doop tool errors, misbehaves or lacks something you need, or the guide leaves you guessing, call report_issue with what you tried and what happened, then carry on. Ideas for making Doop better for agents, or something that worked well, go to share_feedback. Both reach the Doop team, not the humans on the canvas.`
 
+/** Guide text about the in-app Doop Agent, which lean mode turns off. */
+function inAppAgentText(text: string): string {
+  return leanMode() ? '' : text
+}
+
 function extensionGuideLines(): string {
-  const lines = extensions.flatMap((extension) => extension.mcpGuideLines ?? [])
+  const lines = activeExtensions(extensions).flatMap((extension) => extension.mcpGuideLines ?? [])
   return lines.length ? lines.join('\n') + '\n' : ''
 }
 
@@ -1108,7 +1112,7 @@ export function buildMcpServer(
       if (!body.trim() || !actions.openThread(comment_id)) return err('thread resolved or empty text')
       /* an @mention commands the resident agent to change frames — the REST
          reply route holds comment-only visitors to the same rule */
-      if (mentionedRole(body) && !canvasFor(canvas_id, 'edit'))
+      if (residentMention(body) && !canvasFor(canvas_id, 'edit'))
         return err('asking an agent to change the canvas needs edit access')
       const actor = actorFrom(agent_name)
       arrive(canvas_id, agent_name)
@@ -1116,7 +1120,7 @@ export function buildMcpServer(
          metered like a card; plain replies stay free. Mirrors the REST reply
          route so the meter is spent exactly once either way. */
       let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-      if (mentionedRole(body) && ownerId) {
+      if (residentMention(body) && ownerId) {
         gate = await allowance.consumeResidentTask(ownerId)
         if (!gate.ok)
           return err(
@@ -2047,7 +2051,8 @@ export function buildMcpServer(
      account's whole workspace), which a workspace limit cannot bound, so a
      limited key is never given them: unregistered, they are absent from
      tools/list and a call gets the SDK's unknown-tool error. */
-  if (!workspaceLimit) for (const extension of extensions) extension.registerMcpTools?.(server, extensionHelpers)
+  if (!workspaceLimit)
+    for (const extension of activeExtensions(extensions)) extension.registerMcpTools?.(server, extensionHelpers)
 
   server.registerTool(
     'get_frame_screenshot',

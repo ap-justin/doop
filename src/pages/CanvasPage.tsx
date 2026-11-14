@@ -137,6 +137,7 @@ import { loadCanvasFonts } from '../lib/customFonts'
 import { t as translate, useT } from '../lib/i18n'
 import { NO_INSETS, type StageInsets } from '../lib/viewFit'
 import { usePanelLayout } from '../lib/panelLayout'
+import { isLean } from '../lib/lean'
 
 /* The floating chrome's geometry, in px from the canvas area's edges. The
    panels sit 14px in from the edge; on the right the resizable Agents panel
@@ -394,8 +395,9 @@ export function CanvasPage({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       /* ⌘K from anywhere, fields included: open the side panel on the Agents
-         tab and put the keyboard in its "Design it" composer. Asking for the
-         composer ends ⌘. hide-UI — a field under `hidden` cannot take focus. */
+         tab and put the keyboard in its "Design it" composer (lean mounts no
+         composer, so the tab just opens). Asking for the composer ends ⌘.
+         hide-UI — a field under `hidden` cannot take focus. */
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         /* the composer is an editor's: readers (and guests) have none */
@@ -404,7 +406,7 @@ export function CanvasPage({
         setShowActivity(true)
         if (useStore.getState().uiHidden) useStore.getState().toggleUiHidden()
         useStore.getState().setPanelTab('tasks')
-        useStore.getState().requestComposerFocus()
+        if (!isLean()) useStore.getState().requestComposerFocus()
         return
       }
       if (isTypingTarget(e.target)) return
