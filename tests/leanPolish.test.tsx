@@ -53,20 +53,20 @@ describe('the comment composer', () => {
   })
 
   it('says the agent will pick a typed @doop mention up only when lean is off', async () => {
-    const type = async () => {
+    const type = async (value: string) => {
       const field = container.querySelector('textarea')!
       await act(async () => {
         const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
-        set.call(field, '@doop make it bolder')
+        set.call(field, value)
         field.dispatchEvent(new Event('input', { bubbles: true }))
       })
     }
     await render()
-    await type()
+    await type('@doop make it bolder')
     expect(container.textContent).toContain('will pick this up')
     setLean(true)
     await act(async () => {})
-    await type()
+    await type('@doop make it bolder still')
     expect(container.textContent).not.toContain('will pick this up')
   })
 })
@@ -93,6 +93,54 @@ describe('a comment thread', () => {
     setLean(true)
     await act(async () => {})
     expect(container.querySelector('textarea')?.getAttribute('placeholder')).toBe('Reply…')
+  })
+
+  it('says the agent will pick a typed @doop reply up only when lean is off', async () => {
+    const type = async (value: string) => {
+      const field = container.querySelector('textarea')!
+      await act(async () => {
+        const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+        set.call(field, value)
+        field.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const hint = () => container.querySelector('[title$="will pick this up"]')
+    await render()
+    await type('@doop make it bolder')
+    expect(hint()).not.toBeNull()
+    setLean(true)
+    await act(async () => {})
+    await type('@doop make it bolder still')
+    expect(hint()).toBeNull()
+  })
+
+  describe('whose agent run failed', () => {
+    const failed = [{ ...thread[0], failedAt: 2, failureReason: 'Doop stopped' }] as typeof thread
+    const retryButton = () => [...container.querySelectorAll('button')].find((b) => b.textContent === 'Retry')
+    const renderFailed = (onRetry: (id: string) => void) => {
+      useStore.setState({ canvas: { id: 'c1', role: 'edit' } as never })
+      return act(async () =>
+        root.render(
+          <TooltipProvider>
+            <CommentThread thread={failed} onReply={() => Promise.resolve()} onResolve={() => {}} onRetry={onRetry} />
+          </TooltipProvider>,
+        ),
+      )
+    }
+
+    it('offers Retry when lean is off', async () => {
+      const onRetry = vi.fn()
+      await renderFailed(onRetry)
+      await act(async () => retryButton()!.click())
+      expect(onRetry).toHaveBeenCalledWith('k1')
+    })
+
+    it('shows the failure but no Retry when lean is on, since the server refuses the retry', async () => {
+      setLean(true)
+      await renderFailed(() => {})
+      expect(container.textContent).toContain('Doop stopped')
+      expect(retryButton()).toBeUndefined()
+    })
   })
 })
 

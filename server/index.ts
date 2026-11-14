@@ -91,7 +91,7 @@ import { isPeerViewport } from '../shared/viewport.ts'
 import { exportScaleSuffix, fitExportScale, parseExportScale } from '../shared/exportScale.ts'
 import { emailShare } from './canvasShares.ts'
 import * as userEvents from './userEvents.ts'
-import { activeExtensions, leanGate, leanMode, residentMention, unlessLean } from './lean.ts'
+import { activeExtensions, leanGate, leanMode, residentMention, unlessLean, unrecognisedLeanValue } from './lean.ts'
 import type { Canvas, ClientMessage, Presence, ServerMessage } from '../shared/types.ts'
 
 const PORT = env.PORT
@@ -2768,6 +2768,11 @@ server.listen(PORT, () => {
   console.log(`⟡ doop server     http://localhost:${PORT}`)
   if (leanMode())
     console.log('⟡ lean mode         on: the in-app Doop Agent, billing, automations and integrations are off')
+  const ignoredLean = unrecognisedLeanValue()
+  if (ignoredLean !== undefined)
+    console.warn(
+      `⟡ lean mode         off: DOOP_LEAN=${JSON.stringify(ignoredLean)} is not 1 or true, so it was ignored`,
+    )
   /* comments anchored before element ids: stamped now, while serving, so a
      slow or failing row can never keep the server from coming up */
   if (data.legacyCommentSelectors.size > 0) {

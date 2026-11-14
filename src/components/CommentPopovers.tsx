@@ -304,7 +304,7 @@ export function CommentThread({
               {c.failedAt ? (
                 <div className="mt-1 flex items-center gap-2 text-[11px] leading-[1.4] text-accent-ink">
                   <span>{c.failureReason ?? t('stage.agentDidNotFinish')}</span>
-                  {canEdit && (
+                  {canEdit && !lean && (
                     <Button
                       variant="danger-solid"
                       size="pill"

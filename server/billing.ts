@@ -28,7 +28,13 @@ const ORIGIN = env.BETTER_AUTH_URL
 
 /** Off in lean mode, whatever the Stripe keys: workspace writes never wait on a plan. */
 export function billingEnabled(): boolean {
-  return !leanMode() && !!SECRET_KEY
+  return !leanMode() && stripeConfigured()
+}
+
+/** Whether this server can reach Stripe at all. Lean mode or not, a subscription
+ *  Stripe already charges for is still cancelled and kept at the member count. */
+export function stripeConfigured(): boolean {
+  return !!SECRET_KEY
 }
 
 let client: Stripe | null = null

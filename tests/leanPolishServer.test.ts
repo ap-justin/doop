@@ -10,11 +10,75 @@ vi.mock('../server/modelAccounts.ts', () => ({
 vi.mock('../server/imagePrefs.ts', () => ({ getImagePref: vi.fn(() => Promise.resolve(undefined)) }))
 
 import { getAccounts } from '../server/modelAccounts.ts'
-import { imageModelAvailability } from '../server/imageGen.ts'
+import { getImagePref } from '../server/imagePrefs.ts'
+import { generatorFor, imageModelAvailability } from '../server/imageGen.ts'
+import { doopGuide } from '../server/guide.ts'
 
 afterEach(() => {
   vi.mocked(getAccounts).mockReset()
+  vi.mocked(getImagePref).mockResolvedValue(undefined)
   unstubAllEnvs()
+})
+
+/** Only the server's OpenAI key is set: GPT Image runs, Nano Banana and Seedream cannot. */
+function onlyServerOpenAiKey() {
+  stubEnv('OPENAI_API_KEY', 'server-key')
+  stubEnv('GEMINI_API_KEY', '')
+  stubEnv('ARK_API_KEY', '')
+}
+
+function noServerImageKeys() {
+  stubEnv('OPENAI_API_KEY', '')
+  stubEnv('GEMINI_API_KEY', '')
+  stubEnv('ARK_API_KEY', '')
+}
+
+describe('a saved image-model pick', () => {
+  it('still decides the model when lean is off, refusing when it cannot run', async () => {
+    onlyServerOpenAiKey()
+    vi.mocked(getAccounts).mockResolvedValue([])
+    vi.mocked(getImagePref).mockResolvedValue('gemini-3.1-flash-image')
+    expect(await generatorFor('user-1')).toMatchObject({ ok: false })
+  })
+
+  it('is ignored when lean is on, so a model the server keys run is used', async () => {
+    stubEnv('DOOP_LEAN', '1')
+    onlyServerOpenAiKey()
+    vi.mocked(getImagePref).mockResolvedValue('gemini-3.1-flash-image')
+    expect(await generatorFor('user-1')).toMatchObject({ ok: true, label: 'server' })
+  })
+})
+
+describe('lean image refusals', () => {
+  it('name the server operator, not Settings or a connected account', async () => {
+    stubEnv('DOOP_LEAN', '1')
+    noServerImageKeys()
+    vi.mocked(getImagePref).mockResolvedValue('gpt-image-2')
+    const generator = await generatorFor('user-1')
+    expect(generator.ok).toBe(false)
+    const reason = generator.ok ? '' : generator.reason
+    expect(reason).toContain('operator')
+    expect(reason).not.toMatch(/Settings|connect/i)
+  })
+})
+
+describe('lean image generation with no server key', () => {
+  it('refuses even when the user connected an account of their own, and never reaches for it', async () => {
+    stubEnv('DOOP_LEAN', '1')
+    noServerImageKeys()
+    vi.mocked(getAccounts).mockResolvedValue([{ kind: 'gemini-key', apiKey: 'g-key', enabled: true }] as never)
+    const generator = await generatorFor('user-1')
+    expect(generator.ok).toBe(false)
+    expect(generator.ok ? '' : generator.reason).toContain('operator')
+    const models = await imageModelAvailability('user-1')
+    expect(models.filter((m) => m.available)).toEqual([])
+  })
+
+  it('lets the same connected account generate when lean is off', async () => {
+    noServerImageKeys()
+    vi.mocked(getAccounts).mockResolvedValue([{ kind: 'gemini-key', apiKey: 'g-key', enabled: true }] as never)
+    expect(await generatorFor('user-1')).toMatchObject({ ok: true })
+  })
 })
 
 describe('image generation', () => {
@@ -33,6 +97,35 @@ describe('image generation', () => {
     vi.mocked(getAccounts).mockResolvedValue(connected)
     expect(await gptImage()).toMatchObject({ available: true })
     expect(getAccounts).not.toHaveBeenCalled()
+  })
+})
+
+/** One `## ` section of the guide, heading included. */
+function guideSection(heading: string): string {
+  const text = doopGuide()
+  const start = text.indexOf(`## ${heading}`)
+  return start < 0 ? '' : text.slice(start, text.indexOf('\n## ', start + 1))
+}
+
+describe('the agent guide', () => {
+  it('keeps the resident-agent reason a comment reply inherits its anchor when lean is off', () => {
+    expect(doopGuide()).toContain(
+      "reply inherits the root's element anchor, so an @mention reaches the resident agent with\nthe same context the conversation is about.",
+    )
+  })
+
+  it('says a human reply is an open request for any MCP agent when lean is on, not one routed to the task’s agent', () => {
+    stubEnv('DOOP_LEAN', '1')
+    const feedback = guideSection('Human feedback')
+    expect(feedback).toContain('not mail for one agent')
+    expect(feedback).not.toContain('reaches the MCP agent that ran the task')
+  })
+
+  it('sends nobody to Settings or a connected account for generated images when lean is on', () => {
+    stubEnv('DOOP_LEAN', '1')
+    const images = doopGuide().slice(doopGuide().indexOf('**Generated imagery'), doopGuide().indexOf('**Your own file'))
+    expect(images).toContain('generate_image')
+    expect(images).not.toMatch(/Settings|connected account/)
   })
 })
 

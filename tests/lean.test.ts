@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import type { AddressInfo } from 'node:net'
-import { activeExtensions, isLeanDisabledPath, leanGate, leanMode, unlessLean } from '../server/lean.ts'
+import {
+  activeExtensions,
+  isLeanDisabledPath,
+  leanGate,
+  leanMode,
+  unlessLean,
+  unrecognisedLeanValue,
+} from '../server/lean.ts'
 import { stubEnv, unstubAllEnvs } from './envStub.ts'
 
 /**
@@ -21,10 +28,33 @@ describe('leanMode', () => {
     }
   })
 
+  it('ignores whitespace around the value, as a compose environment list leaves it', () => {
+    for (const on of ['true ', ' 1', '\tTRUE\n']) {
+      stubEnv('DOOP_LEAN', on)
+      expect(leanMode()).toBe(true)
+    }
+  })
+
   it('is off for anything else', () => {
-    for (const off of [undefined, '', '0', 'false', 'yes', ' 2', 'truee']) {
+    for (const off of [undefined, '', '0', 'false', 'yes', 'on', ' 2', 'truee']) {
       stubEnv('DOOP_LEAN', off)
       expect(leanMode()).toBe(false)
+    }
+  })
+})
+
+describe('unrecognisedLeanValue', () => {
+  it('names a value that is set but neither on nor off, so the boot log can say it was ignored', () => {
+    for (const value of ['yes', 'on', 'enabled', ' 2']) {
+      stubEnv('DOOP_LEAN', value)
+      expect(unrecognisedLeanValue()).toBe(value)
+    }
+  })
+
+  it('is undefined for every spelling of on and off', () => {
+    for (const value of [undefined, '', ' ', '1', 'true', 'TRUE ', '0', 'false', 'False']) {
+      stubEnv('DOOP_LEAN', value)
+      expect(unrecognisedLeanValue()).toBeUndefined()
     }
   })
 })

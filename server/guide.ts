@@ -143,12 +143,14 @@ conversation context; include_resolved: false returns only unresolved entries. T
 is newest first and covers the retained history (up to 100 entries per canvas).
 
 Answer a thread with reply_to_comment({ canvas_id, comment_id, text, agent_name }) — the
-reply inherits the root's element anchor, so it keeps the context the conversation is
-about. Close the thread with resolve_comment once the request is carried out;
 ${
   lean
-    ? 'a reply that mentions @Doop is plain text, not a queued task.'
-    : `resolving an @mention thread also records the exchange in the
+    ? `reply inherits the root's element anchor, so it keeps the context the conversation is
+about. Close the thread with resolve_comment once the request is carried out; a reply that
+mentions @Doop is plain text, not a queued task.`
+    : `reply inherits the root's element anchor, so an @mention reaches the resident agent with
+the same context the conversation is about. Close the thread with resolve_comment once the
+request is carried out; resolving an @mention thread also records the exchange in the
 canvas Memory. Writing is metered only when a reply @mentions a resident role, exactly
 like a comment left in the browser.`
 } Reading does not claim work or resolve it; task
@@ -169,7 +171,7 @@ Do not spam it: one update per phase of work, not one per tool call.
 
 ## Human feedback — TOP PRIORITY
 
-${lean ? 'Humans reply to your tasks from the canvas UI, which reaches the MCP agent that ran the task.' : 'Humans reply to agent tasks from the canvas UI.'} Each reply is an OPEN REQUEST on the
+${lean ? "Humans reply to MCP agents' tasks from the canvas UI." : 'Humans reply to agent tasks from the canvas UI.'} Each reply is an OPEN REQUEST on the
 canvas — not mail for one agent. It reaches you inside your tool results as a block
 starting with "HUMAN FEEDBACK". A tool that changes the canvas (and get_feedback) picks
 it up and assigns it to you; a read-only tool only says requests are waiting, so call
@@ -320,9 +322,15 @@ any public image URL. Source images in this order:
   illustration, a product render, a mascot — or your human asks for a
   generated image, generate one from a prompt. It returns a permanent URL on this origin
   plus a preview: look at the preview and judge it like any other asset before it goes
-  in. It draws with the image model your human picked in Settings (GPT Image, Nano
+  in. ${
+    lean
+      ? `It draws with an image model this server's operator set a key for (GPT Image, Nano
+  Banana or Seedream), on the server's key, and costs the operator money, and takes
+  20–60 seconds, so write ONE`
+      : `It draws with the image model your human picked in Settings (GPT Image, Nano
   Banana or Seedream), on their connected account (else the server's key), and costs
-  them quota or money, and takes 20–60 seconds, so write ONE
+  them quota or money, and takes 20–60 seconds, so write ONE`
+  }
   considered prompt — subject, style, composition, palette hexes, lighting, what to
   leave out — and refine a near miss by saying what was wrong rather than rolling the
   dice again. Match aspect to the slot (square, landscape, portrait). Images come back

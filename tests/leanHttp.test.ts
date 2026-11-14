@@ -304,10 +304,31 @@ describe('lean mode on', () => {
     expect(text).not.toContain('## The Doop Agent')
     expect(text).not.toContain('Humans queue board cards')
     expect(text).not.toContain('Writing is metered')
-    expect(text).toContain('Humans reply to your tasks')
+    expect(text).toContain("Humans reply to MCP agents' tasks")
+    expect(text).not.toContain('Humans reply to agent tasks from the canvas UI.')
     const description = await toolDescription(b, 'reply_to_comment')
     expect(description).toContain('MCP agents like you own those requests')
     expect(description).not.toContain('meter')
+  })
+
+  it("describes generate_image as running on the server's key, with no connected account", async () => {
+    const description = await toolDescription(b, 'generate_image')
+    expect(description).toContain("server's image key")
+    expect(description).not.toMatch(/Settings|connected/)
+  })
+
+  it('serves a comment-scope key the full guide behind its read-and-comment note', async () => {
+    const { secret } = (await (await b.owner.post('/api/agent-keys', { name: 'c', scope: 'comment' })).json()) as {
+      secret: string
+    }
+    const res = await mcp(b.server, secret, 'tools/call', {
+      name: 'get_guide',
+      arguments: { topic: 'doop-instructions' },
+    })
+    const text = res.result?.content?.[0]?.text ?? ''
+    expect(res.result?.isError).toBeFalsy()
+    expect(text).toContain('read-and-comment agent key')
+    expect(text).toContain('## Who answers comments')
   })
 
   it('carries a human reply to an agent task, unmetered', async () => {
@@ -352,7 +373,7 @@ describe('lean mode off', () => {
     expect((await res.json()).error).toBe('resident_limit')
   })
 
-  it('describes Linear, task feedback and resident @mentions in the MCP guide', async () => {
+  it('describes Linear and resident @mentions in the MCP guide', async () => {
     const text = await guide(b)
     for (const line of LEAN_DROPPED_GUIDE) expect(text).toContain(line)
   })
@@ -366,13 +387,35 @@ describe('lean mode off', () => {
     const text = await fullGuide(b)
     expect(text).toContain('## The Doop Agent')
     expect(text).toContain('Writing is metered')
+    expect(text).toContain('Humans reply to agent tasks from the canvas UI.')
+    expect(text).not.toContain("Humans reply to MCP agents' tasks")
     expect(text).not.toContain('## Who answers comments')
     expect(await toolDescription(b, 'reply_to_comment')).toContain('against the account’s meter')
+    expect(await toolDescription(b, 'generate_image')).toContain('connected ChatGPT subscription or OpenAI key')
   })
 
   it('meters a human reply to an agent task, refusing it with no task left', async () => {
     const res = await replyToAgentTask(b)
     expect(res.status).toBe(403)
     expect((await res.json()).error).toBe('resident_limit')
+  })
+})
+
+describe('lean mode spelled DOOP_LEAN=true', () => {
+  let b: Booted
+
+  beforeAll(async () => {
+    b = await boot({ DOOP_LEAN: 'true' }, 'true-owner@test.dev')
+  }, 70_000)
+
+  afterAll(() => {
+    b?.server.stop()
+    b?.upstream.close()
+  })
+
+  it('boots lean: the locale config says so and a disabled route does not exist', async () => {
+    const res = await new Client(b.server).get('/api/locale-config')
+    expect(await res.json()).toEqual({ defaultLocale: 'en', lean: true })
+    expect((await new Client(b.server).get('/api/billing/plans')).status).toBe(404)
   })
 })

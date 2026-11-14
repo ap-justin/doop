@@ -3,19 +3,34 @@ import { env } from './env.ts'
 import { mentionedRole, type AgentRole } from '../shared/agents.ts'
 
 /**
- * Lean mode (DOOP_LEAN=1): Doop as a shared canvas for MCP agents, without
- * the in-app Doop Agent and model accounts, in-app image generation, billing,
- * Slack and Linear, automations, GitHub and Meta import, Community, the
- * desktop connect relay, iOS live activities, Gemini cloud workers and the
- * PostHog relay. Off, the server is unchanged.
+ * Lean mode (DOOP_LEAN=1 or true, any case): Doop as a shared canvas for MCP
+ * agents, without the in-app Doop Agent and model accounts, new billing, Slack
+ * and Linear, automations, GitHub and Meta import, Community, the desktop
+ * connect relay, iOS live activities, Gemini cloud workers and the PostHog
+ * relay. Image generation draws on the server's own keys only, and Stripe
+ * subscriptions already on file are still cancelled and seat-synced. Off, the
+ * server is unchanged.
  *
  * The features stay in the code: their routes are refused here, and their
  * background workers are skipped at the points that start them.
  */
 
+const LEAN_ON = /^(1|true)$/i
+const LEAN_OFF = /^(0|false)?$/i
+
+function leanValue(): string {
+  return (env.DOOP_LEAN ?? '').trim()
+}
+
 /** Read per call, so a test can flip it (tests/envStub.ts). */
 export function leanMode(): boolean {
-  return /^(1|true)$/i.test(env.DOOP_LEAN ?? '')
+  return LEAN_ON.test(leanValue())
+}
+
+/** DOOP_LEAN as set, when it is neither an on nor an off spelling (`yes`, `on`), which leaves lean off. */
+export function unrecognisedLeanValue(): string | undefined {
+  const value = leanValue()
+  return LEAN_ON.test(value) || LEAN_OFF.test(value) ? undefined : env.DOOP_LEAN
 }
 
 /* Express routes match case-insensitively and with or without a trailing

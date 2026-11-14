@@ -230,7 +230,7 @@ export function renameWorkspace(id: string, name: string): WorkspaceRecord | und
 export async function deleteWorkspace(id: string): Promise<void> {
   const ws = records.get(id)
   if (!ws) return
-  if (billing.billingEnabled()) await billing.cancelSubscription(ws)
+  if (billing.stripeConfigured()) await billing.cancelSubscription(ws)
   store.detachWorkspace(id)
   records.delete(id)
   const former = [...(members.get(id)?.keys() ?? [])]
@@ -315,7 +315,7 @@ export function setCustomer(id: string, stripeCustomerId: string): void {
 const seatChains = new Map<string, Promise<void>>()
 
 function reconcileSeats(ws: WorkspaceRecord): void {
-  if (!billing.billingEnabled() || !ws.stripeSubscriptionId) return
+  if (!billing.stripeConfigured() || !ws.stripeSubscriptionId) return
   const run = async () => {
     const seats = members.get(ws.id)?.size ?? 0
     if (!records.has(ws.id)) return // deleted while queued
