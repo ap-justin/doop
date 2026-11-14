@@ -130,8 +130,9 @@ seed()
 
 /* Never-attempted queued cards get their first pickup after boot. Hydration
    marks interrupted claimed cards as failed, so they are excluded until a
-   human explicitly retries them. */
-{
+   human explicitly retries them. Lean mode starts no resident run, so it
+   skips this. */
+unlessLean(() => {
   const pending = [...data.tasks.entries()]
     .filter(([, list]) => list.some((t) => t.queuedBy && !t.agentName && !t.endedAt))
     .map(([canvasId]) => canvasId)
@@ -144,7 +145,7 @@ seed()
     )
   })
   if (pending.length) console.log(`[resident] ${pending.length} canvas(es) with new queued cards — starting after boot`)
-}
+})
 
 /* asset bookkeeping (no deletion): every upload records its canvas, and
    asset_refs tracks which frames reference which assets — kept in sync on

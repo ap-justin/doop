@@ -696,9 +696,10 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
   `residentMention` makes an @mention a plain comment (not queued, metered or refused);
   `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
-  lines, and `inAppAgentText` drops the guide's task-feedback line and metered-@mention sentence;
-  `unlessLean` skips the automations scheduler, live-activity delivery and the boot log's Doop
-  Agent, image-generation and Stripe lines. The client reads `lean` from `GET /api/locale-config`
+  lines, and `inAppAgentText` drops the task-feedback line and metered-@mention sentence from the
+  MCP `initialize` instructions (`get_guide`'s text is unchanged); `unlessLean` skips the
+  automations scheduler, live-activity delivery, the queued-card pickup at boot and the boot log's
+  Doop Agent, image-generation and Stripe lines. The client reads `lean` from `GET /api/locale-config`
   (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
   value cached in `localStorage` (`doop-lean`) when a language is picked, refreshed from the answer,
   otherwise after the request, keeping the cached value when it gives none) and hides the entry points to what the server refused: the Settings Doop Agent pane
