@@ -124,7 +124,7 @@ store.init(data.canvases)
 await workspaces.hydrateWorkspaces() // before the first request: canvasRole reads membership
 await webhooks.hydrateWebhooks()
 await hydrateFonts() // before the first request: frame writes add the faces they use
-billing.reportBillingConfig()
+unlessLean(billing.reportBillingConfig)
 actions.hydrateLogs(data)
 seed()
 
@@ -2789,20 +2789,23 @@ server.listen(PORT, () => {
   }
   console.log(`⟡ mcp endpoint      http://localhost:${PORT}/mcp`)
   console.log(`⟡ websocket         ws://localhost:${PORT}/ws`)
-  /* The Doop Agent failing silently is the one "why is nothing happening?"
-     a self-hoster cannot debug from the UI — board cards and @mentions just
-     sit there. Say so at boot, not only when the first card is queued. */
-  const tier = serverTierInfo()
-  console.log(
-    tier.ready
-      ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
-      : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
-  )
-  console.log(
-    serverImageGenEnabled()
-      ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
-      : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
-  )
+  /* lean mode turns the Doop Agent and in-app image generation off: no status for either */
+  unlessLean(() => {
+    /* The Doop Agent failing silently is the one "why is nothing happening?"
+       a self-hoster cannot debug from the UI — board cards and @mentions just
+       sit there. Say so at boot, not only when the first card is queued. */
+    const tier = serverTierInfo()
+    console.log(
+      tier.ready
+        ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
+        : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
+    )
+    console.log(
+      serverImageGenEnabled()
+        ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
+        : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
+    )
+  })
   /* automations fire from here: one tick a minute over the due rows */
   unlessLean(startScheduler)
   startMcpTokenPrune()

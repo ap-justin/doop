@@ -155,6 +155,19 @@ async function toolNames(b: Booted): Promise<string[]> {
 
 const LINEAR_TOOLS = ['list_linear_issues', 'get_linear_issue']
 
+/** The guide an MCP client is handed at `initialize`. */
+async function guide(b: Booted): Promise<string> {
+  const init = await mcp(b.server, await agentKey(b), 'initialize', {
+    protocolVersion: '2025-03-26',
+    capabilities: {},
+    clientInfo: { name: 'lean-test', version: '1.0.0' },
+  })
+  return init.result?.instructions ?? ''
+}
+
+/** Guide lines about features lean mode turns off: the Linear extension, task feedback and resident @mentions. */
+const LEAN_DROPPED_GUIDE = ['- Linear:', 'humans reply to your tasks', 'A reply that @mentions a resident role']
+
 /** A fresh open thread on the canvas, so a test never replies into one another test resolved. */
 async function openThread(b: Booted, text: string) {
   return b.owner.post(`/api/canvases/${b.canvasId}/comments`, { pageId: b.pageId, x: 3, y: 4, text })
@@ -207,7 +220,7 @@ describe('lean mode on', () => {
     expect((await b.owner.post(`/api/comments/${b.commentId}/resolve`)).status).toBe(200)
   })
 
-  /* AGENT_OFF leaves no free resident task and no key: a metered mention would be refused, so a 200 is one the meter never saw */
+  /* AGENT_OFF leaves no free task and no key: a metered mention is refused, so a 200 never met the meter */
   it('takes an @Doop comment, reply or agent reply as a plain comment, unmetered and queued for nobody', async () => {
     const comment = await openThread(b, '@Doop tighten the hero')
     expect(comment.status).toBe(200)
@@ -224,6 +237,12 @@ describe('lean mode on', () => {
     })
     expect(agentReply.result?.isError).toBeFalsy()
     expect(JSON.parse(agentReply.result?.content?.[0]?.text ?? '{}').forAgent).toBeUndefined()
+  })
+
+  it('leaves turned-off features out of the MCP guide, and keeps the comment tools', async () => {
+    const text = await guide(b)
+    expect(text).toContain('- Comments: call get_comments')
+    for (const line of LEAN_DROPPED_GUIDE) expect(text).not.toContain(line)
   })
 
   it('lists no Linear tools to an unlimited agent key, and keeps the design tools', async () => {
@@ -268,6 +287,11 @@ describe('lean mode off', () => {
     const res = await openThread(b, '@Doop tighten the hero')
     expect(res.status).toBe(403)
     expect((await res.json()).error).toBe('resident_limit')
+  })
+
+  it('describes Linear, task feedback and resident @mentions in the MCP guide', async () => {
+    const text = await guide(b)
+    for (const line of LEAN_DROPPED_GUIDE) expect(text).toContain(line)
   })
 
   it('lists the Linear tools to an unlimited agent key', async () => {
