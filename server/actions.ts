@@ -34,7 +34,7 @@ import {
   type TokenType,
 } from '../shared/designTokens.ts'
 import { emitCanvasEvent } from './events.ts'
-import { residentMention } from './lean.ts'
+import { leanMode, residentMention } from './lean.ts'
 import type {
   Actor,
   CanvasGuide,
@@ -387,8 +387,9 @@ export function addTaskFeedback(
     const task = tasks.find((t) => t.id === taskId)
     if (!task) continue
     /* a reply goes back to the agent whose work it is about — unless that was
-       an outside agent, in which case it stays open to whoever shows up */
-    const target = roleByAgentName(task.agentName)?.name
+       an outside agent, or lean runs no resident, in which case it stays open
+       to whoever shows up */
+    const target = leanMode() ? undefined : roleByAgentName(task.agentName)?.name
     const fb: TaskFeedback = {
       id: nanoid(8),
       taskId,
