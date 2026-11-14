@@ -24,6 +24,7 @@ const { useStore } = await import('../src/lib/store')
 const { setLean } = await import('../src/lib/lean')
 const { ActivityPanel } = await import('../src/components/ActivityPanel')
 const { TooltipProvider } = await import('../src/components/ui/tooltip')
+const { GeneralSettings } = await import('../src/components/GeneralSettings')
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -69,5 +70,21 @@ describe('the Agents tab with no tasks', () => {
     await renderPanel()
     expect(container.textContent).toContain('No tasks yet. Connect an MCP agent')
     expect(container.textContent).not.toContain('Ask the Doop Agent below')
+  })
+})
+
+describe('Settings → General', () => {
+  const promptBoxSwitch = () => container.querySelector('#show-prompt-box')
+
+  it('offers the Show Prompt Box switch when lean is off', async () => {
+    await act(async () => root.render(<GeneralSettings />))
+    expect(promptBoxSwitch()).not.toBeNull()
+  })
+
+  it('drops the Show Prompt Box card when lean is on', async () => {
+    setLean(true)
+    await act(async () => root.render(<GeneralSettings />))
+    expect(promptBoxSwitch()).toBeNull()
+    expect(container.textContent).not.toContain('Show Prompt Box')
   })
 })
