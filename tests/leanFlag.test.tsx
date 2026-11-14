@@ -35,13 +35,55 @@ describe('initLocale', () => {
     expect(getLocale()).toBe('pt-BR')
   })
 
-  it('reads the config even when the browser already picked a language', async () => {
+  it('waits for the config when a language is picked but no lean value is cached', async () => {
     localStorage.setItem('doop-locale', 'en')
     serverSays({ defaultLocale: 'pt-BR', lean: true })
     const { initLocale } = await import('../src/lib/i18n')
     const { isLean } = await import('../src/lib/lean')
     await initLocale()
     expect(isLean()).toBe(true)
+    expect(localStorage.getItem('doop-lean')).toBe('1')
+  })
+
+  it('renders at once from the cached value when a language is picked, then refreshes it', async () => {
+    localStorage.setItem('doop-locale', 'en')
+    localStorage.setItem('doop-lean', '1')
+    let answer: (value: unknown) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    )
+    const { initLocale } = await import('../src/lib/i18n')
+    const { isLean } = await import('../src/lib/lean')
+    await initLocale()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(isLean()).toBe(true)
+
+    answer({ ok: true, json: async () => ({ defaultLocale: 'en', lean: false }) })
+    await vi.waitFor(() => expect(isLean()).toBe(false))
+    expect(localStorage.getItem('doop-lean')).toBe('0')
+  })
+
+  it('keeps the cached value when the refresh fails', async () => {
+    localStorage.setItem('doop-locale', 'en')
+    localStorage.setItem('doop-lean', '1')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    const { initLocale } = await import('../src/lib/i18n')
+    const { isLean } = await import('../src/lib/lean')
+    await initLocale()
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+    expect(isLean()).toBe(true)
+    expect(localStorage.getItem('doop-lean')).toBe('1')
+  })
+
+  it('waits for the config when a lean value is cached but no language is picked', async () => {
+    localStorage.setItem('doop-lean', '1')
+    serverSays({ defaultLocale: 'pt-BR', lean: false })
+    const { initLocale } = await import('../src/lib/i18n')
+    const { isLean } = await import('../src/lib/lean')
+    await initLocale()
+    expect(isLean()).toBe(false)
   })
 
   it.each([

@@ -699,8 +699,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   lines, and `inAppAgentText` drops the guide's task-feedback line and metered-@mention sentence;
   `unlessLean` skips the automations scheduler, live-activity delivery and the boot log's Doop
   Agent, image-generation and Stripe lines. The client reads `lean` from `GET /api/locale-config`
-  (`initLocale` asks on every load and settles `src/lib/lean.ts`, `useLean()`, before the first
-  render) and hides the entry points to what the server refused: the Settings Doop Agent pane
+  (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
+  value cached in `localStorage` (`doop-lean`) when a language is picked, refreshed from the answer,
+  otherwise after the request) and hides the entry points to what the server refused: the Settings Doop Agent pane
   (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
   Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
