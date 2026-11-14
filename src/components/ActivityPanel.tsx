@@ -176,6 +176,7 @@ function RecentTasks() {
   const claimed = useMemo(() => tasks.filter((t) => t.agentName), [tasks])
   const working = useMemo(() => claimed.filter((t) => !t.endedAt && !t.failedAt), [claimed])
   const finished = useMemo(() => claimed.filter((t) => t.endedAt || t.failedAt), [claimed])
+  const lean = useLean()
   const t = useT()
 
   return (
@@ -184,7 +185,10 @@ function RecentTasks() {
         {t('panels.activityRecentTasks')}
       </h3>
       {claimed.length === 0 ? (
-        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">{t('panels.activityNoTasks')}</p>
+        <p className="px-3 pb-2 text-[12px] leading-[1.45] text-ink-faint">
+          {/* lean has no composer below to point at */}
+          {t(lean ? 'panels.activityNoTasksLean' : 'panels.activityNoTasks')}
+        </p>
       ) : all ? (
         <>
           {working.length > 0 && <TaskGroup label={t('panels.activityWorkingOn')} tasks={working} />}
