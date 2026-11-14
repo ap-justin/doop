@@ -124,6 +124,11 @@ function send(b: Booted, { method, path }: DisabledRoute) {
   return b.owner.req(path, { method, body: method === 'GET' ? undefined : '{}' })
 }
 
+/** The analytics relay's ingestion and asset requests, in order, so a test owns the upstream hits it asserts. */
+async function sendRelay(b: Booted) {
+  for (const route of disabledRoutes(b).filter((r) => r.path.startsWith('/relay/'))) await send(b, route)
+}
+
 interface McpResult {
   tools?: { name: string; description?: string }[]
   instructions?: string
@@ -194,7 +199,8 @@ describe('lean mode on', () => {
     }
   })
 
-  it('forwards nothing to PostHog', () => {
+  it('forwards nothing to PostHog', async () => {
+    await sendRelay(b)
     expect(b.upstream.hits).toEqual([])
   })
 
@@ -274,7 +280,9 @@ describe('lean mode off', () => {
     }
   })
 
-  it('forwards the analytics relay to PostHog, ingestion and assets alike', () => {
+  it('forwards the analytics relay to PostHog, ingestion and assets alike', async () => {
+    b.upstream.hits.length = 0
+    await sendRelay(b)
     expect(b.upstream.hits).toEqual(['POST /e/', 'GET /static/array.js'])
   })
 
