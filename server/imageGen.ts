@@ -1,4 +1,5 @@
 import { env } from './env.ts'
+import { leanMode } from './lean.ts'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { getAccounts, withFreshToken } from './modelAccounts.ts'
@@ -312,6 +313,8 @@ function arkGenerator(apiKey: string, label: string, model: string): Generator {
 
 const NO_GENERATOR =
   'image generation is not available: connect a ChatGPT subscription or an OpenAI or Gemini API key in Settings (or the server operator sets OPENAI_API_KEY, GEMINI_API_KEY or ARK_API_KEY). Meanwhile draw the visual as inline SVG/CSS or use search_images.'
+const NO_SERVER_GENERATOR =
+  'image generation is not available on this server: its operator has not set OPENAI_API_KEY, GEMINI_API_KEY or ARK_API_KEY. Meanwhile draw the visual as inline SVG/CSS or use search_images.'
 
 /* A connected account pays for its own provider's models and nothing else:
    the server keys only ever cover users who connected nothing — with one
@@ -369,16 +372,21 @@ export async function imageModelAvailability(
 let warnedDefault = false
 
 async function payerAccounts(payerId: string): Promise<PayerAccounts> {
+  /* lean mode hides model accounts, so a connected one could be neither seen nor disconnected */
+  if (leanMode()) return NO_ACCOUNTS
   const all = await getAccounts(payerId)
   return { on: all.filter((account) => account.enabled), own: all.length > 0 }
 }
 
 /** The model a run will draw with: the user's pick, else the server default,
- *  else the first entry their credentials can run. */
+ *  else the first entry their credentials can run. In lean mode only a model
+ *  the server's keys can run, or none. */
 async function chosenImageModel(
   payerId: string | undefined,
   accounts: PayerAccounts,
 ): Promise<ImageModelOption | null> {
+  /* lean hides the image-model picker, so a pick saved before it could never be changed */
+  if (leanMode()) return serverImageModel()
   const pref = payerId ? await getImagePref(payerId) : undefined
   if (pref) {
     const option = IMAGE_MODELS.find((entry) => entry.id === pref)
@@ -393,6 +401,11 @@ async function chosenImageModel(
   }
   if (fallback && available(fallback, accounts)) return fallback
   return IMAGE_MODELS.find((entry) => available(entry, accounts)) ?? fallback ?? null
+}
+
+function serverImageModel(): ImageModelOption | null {
+  const runnable = IMAGE_MODELS.filter((entry) => available(entry, NO_ACCOUNTS))
+  return runnable.find((entry) => entry.id === DEFAULT_IMAGE_MODEL) ?? runnable[0] ?? null
 }
 
 function providerGenerator(option: ImageModelOption, accounts: PayerAccounts): Generator {
@@ -438,6 +451,7 @@ function providerGenerator(option: ImageModelOption, accounts: PayerAccounts): G
  * default), on their own credentials first, else the matching server key.
  * An explicit pick that cannot run refuses with the fix — it never quietly
  * swaps in a different model or bills a key the user did not choose.
+ * Lean mode ignores the pick and runs on the server's keys alone.
  */
 export async function generatorFor(payerId?: string): Promise<Generator> {
   /* a lookup failure must not read as "no account": that would quietly move
@@ -449,7 +463,7 @@ export async function generatorFor(payerId?: string): Promise<Generator> {
       })
     : NO_ACCOUNTS
   const option = await chosenImageModel(payerId, accounts)
-  if (!option) return { ok: false, reason: NO_GENERATOR }
+  if (!option) return { ok: false, reason: leanMode() ? NO_SERVER_GENERATOR : NO_GENERATOR }
   return providerGenerator(option, accounts)
 }
 

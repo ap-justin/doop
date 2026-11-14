@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import express from 'express'
 import type { AddressInfo } from 'node:net'
-import { activeExtensions, isLeanDisabledPath, leanGate, leanMode, unlessLean } from '../server/lean.ts'
+import {
+  activeExtensions,
+  isLeanDisabledPath,
+  leanGate,
+  leanMode,
+  unlessLean,
+  unrecognisedLeanValue,
+} from '../server/lean.ts'
 import { stubEnv, unstubAllEnvs } from './envStub.ts'
 
 /**
@@ -14,12 +21,40 @@ beforeEach(() => stubEnv('DOOP_LEAN', undefined))
 afterEach(unstubAllEnvs)
 
 describe('leanMode', () => {
-  it('is on only for exactly 1', () => {
-    stubEnv('DOOP_LEAN', '1')
-    expect(leanMode()).toBe(true)
-    for (const off of [undefined, '', '0', 'true', 'yes', ' 2']) {
+  it('is on for 1 and true in any case', () => {
+    for (const on of ['1', 'true', 'TRUE', 'True']) {
+      stubEnv('DOOP_LEAN', on)
+      expect(leanMode()).toBe(true)
+    }
+  })
+
+  it('ignores whitespace around the value, as a compose environment list leaves it', () => {
+    for (const on of ['true ', ' 1', '\tTRUE\n']) {
+      stubEnv('DOOP_LEAN', on)
+      expect(leanMode()).toBe(true)
+    }
+  })
+
+  it('is off for anything else', () => {
+    for (const off of [undefined, '', '0', 'false', 'yes', 'on', ' 2', 'truee']) {
       stubEnv('DOOP_LEAN', off)
       expect(leanMode()).toBe(false)
+    }
+  })
+})
+
+describe('unrecognisedLeanValue', () => {
+  it('names a value that is set but neither on nor off, so the boot log can say it was ignored', () => {
+    for (const value of ['yes', 'on', 'enabled', ' 2']) {
+      stubEnv('DOOP_LEAN', value)
+      expect(unrecognisedLeanValue()).toBe(value)
+    }
+  })
+
+  it('is undefined for every spelling of on and off', () => {
+    for (const value of [undefined, '', ' ', '1', 'true', 'TRUE ', '0', 'false', 'False']) {
+      stubEnv('DOOP_LEAN', value)
+      expect(unrecognisedLeanValue()).toBeUndefined()
     }
   })
 })
@@ -62,7 +97,6 @@ describe('isLeanDisabledPath', () => {
     '/api/canvases/c1/cards',
     '/api/canvases/c1/cards/t1/retry',
     '/api/canvases/c1/publish',
-    '/api/tasks/t1/feedback',
     '/api/feedback/f1/retry',
     '/api/comments/x1/retry',
     '/api/workspaces/w1/billing/checkout',
@@ -88,6 +122,7 @@ describe('isLeanDisabledPath', () => {
     '/api/canvases/c1/duplicate',
     '/api/canvases/c1/export.pdf',
     '/api/comments/x1/replies',
+    '/api/tasks/t1/feedback',
     '/api/comments/x1/resolve',
     '/api/frames/f1/comments',
     '/api/fonts',

@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react'
 /* Whether the server runs in lean mode (server/lean.ts): settled from
    GET /api/locale-config before the first render (initLocale), and off until
    then. When that request fails, the value the server last reported to this
-   browser stands; with none cached, the full interface shows until one
-   background retry answers.
+   browser stands; with none cached, the full interface shows until one of
+   the spaced background retries answers (none answering leaves it showing).
    Lean hides the entry points to what the server turned off. */
 let lean = false
 const listeners = new Set<() => void>()

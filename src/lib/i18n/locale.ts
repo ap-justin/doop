@@ -118,10 +118,26 @@ function applyConfig(config: ServerConfig | null): void {
 
 /** Lean from an answer that arrives after the first render; the language
  *  stays as it rendered. */
-function applyLateLean(config: ServerConfig | null): void {
-  if (!config) return
+function applyLateLean(config: ServerConfig): void {
   setLean(config.lean)
   storeLean(config.lean)
+}
+
+/* Spaced out, since a request that fails fast (the edge's 5xx while a deploy
+   restarts the server) fails the same way when retried at once. */
+const LEAN_RETRY_DELAYS_MS = [2000, 5000, 15000]
+
+/** Asks for the config after each delay in turn, unbounded per request, and
+ *  stops at the first answer or after the last delay. Never rejects. */
+async function retryLean(): Promise<void> {
+  for (const delay of LEAN_RETRY_DELAYS_MS) {
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    const config = await fetchConfig()
+    if (config) {
+      applyLateLean(config)
+      return
+    }
+  }
 }
 
 /** Settles the language and lean mode before React mounts. A browser with a
@@ -129,7 +145,9 @@ function applyLateLean(config: ServerConfig | null): void {
  *  from the server's answer; any other waits for that one short request (the
  *  server's default language, otherwise English; lean as it says, or as it
  *  last said when it gives no answer). With no answer and nothing cached, lean
- *  starts off and the server is asked once more, unbounded, in the background.
+ *  starts off and the server is asked again in the background, after each of
+ *  `LEAN_RETRY_DELAYS_MS` in turn, each request unbounded, stopping at the
+ *  first answer (none answering leaves lean off).
  *  Then follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
@@ -142,14 +160,14 @@ export async function initLocale(): Promise<void> {
     setLean(lean)
     snapshot = null
     mark()
-    void fetchConfig(AbortSignal.timeout(CONFIG_TIMEOUT_MS)).then((config) => {
+    void fetchConfig().then((config) => {
       if (config) applyConfig(config)
     })
     return
   }
   const config = await fetchConfig(AbortSignal.timeout(CONFIG_TIMEOUT_MS))
   applyConfig(config)
-  if (!config && lean === null) void fetchConfig().then(applyLateLean)
+  if (!config && lean === null) void retryLean()
 }
 
 /** The active language, whether this browser picked it (rather than taking

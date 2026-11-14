@@ -91,7 +91,7 @@ import { isPeerViewport } from '../shared/viewport.ts'
 import { exportScaleSuffix, fitExportScale, parseExportScale } from '../shared/exportScale.ts'
 import { emailShare } from './canvasShares.ts'
 import * as userEvents from './userEvents.ts'
-import { activeExtensions, leanGate, leanMode, residentMention, unlessLean } from './lean.ts'
+import { activeExtensions, leanGate, leanMode, residentMention, unlessLean, unrecognisedLeanValue } from './lean.ts'
 import type { Canvas, ClientMessage, Presence, ServerMessage } from '../shared/types.ts'
 
 const PORT = env.PORT
@@ -2456,9 +2456,12 @@ app.post('/api/tasks/:id/feedback', async (req, res) => {
   if (!requireCanvas(req, res, canvasId, 'edit')) return
   const text = String(req.body?.text ?? '').trim()
   if (!text) return res.status(400).json({ error: 'empty text' })
-  const gate = await allowance.consumeResidentTask(req.user!.id)
-  if (!gate.ok) {
-    return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
+  /* lean mode runs no resident agent, so the reply is not metered */
+  if (!leanMode()) {
+    const gate = await allowance.consumeResidentTask(req.user!.id)
+    if (!gate.ok) {
+      return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
+    }
   }
   const fb = actions.addTaskFeedback(req.params.id, req.user!.name, text, req.user!.id)
   if (!fb) return res.status(404).json({ error: 'task not found or empty text' })
@@ -2765,6 +2768,11 @@ server.listen(PORT, () => {
   console.log(`⟡ doop server     http://localhost:${PORT}`)
   if (leanMode())
     console.log('⟡ lean mode         on: the in-app Doop Agent, billing, automations and integrations are off')
+  const ignoredLean = unrecognisedLeanValue()
+  if (ignoredLean !== undefined)
+    console.warn(
+      `⟡ lean mode         off: DOOP_LEAN=${JSON.stringify(ignoredLean)} is not 1 or true, so it was ignored`,
+    )
   /* comments anchored before element ids: stamped now, while serving, so a
      slow or failing row can never keep the server from coming up */
   if (data.legacyCommentSelectors.size > 0) {
@@ -2791,7 +2799,7 @@ server.listen(PORT, () => {
   }
   console.log(`⟡ mcp endpoint      http://localhost:${PORT}/mcp`)
   console.log(`⟡ websocket         ws://localhost:${PORT}/ws`)
-  /* lean mode turns the Doop Agent and in-app image generation off: no status for either */
+  /* lean mode turns the Doop Agent off: no status for it */
   unlessLean(() => {
     /* The Doop Agent failing silently is the one "why is nothing happening?"
        a self-hoster cannot debug from the UI — board cards and @mentions just
@@ -2802,12 +2810,17 @@ server.listen(PORT, () => {
         ? `⟡ doop agent        on — free tier on this server’s ${tier.provider === 'azure' ? 'Azure OpenAI deployment' : 'Anthropic key'}, then each user’s own model account`
         : `⟡ doop agent        no server ${tier.provider === 'azure' ? 'Azure config' : 'key'} — runs only for users who connect their own ChatGPT subscription or OpenAI key (${tier.provider === 'azure' ? 'set the AZURE_OPENAI_* vars' : 'set ANTHROPIC_API_KEY'} for a free tier; agents connected over MCP work regardless)`,
     )
-    console.log(
-      serverImageGenEnabled()
+  })
+  /* lean mode draws with the server's image keys only, so a missing key shows here too */
+  console.log(
+    leanMode()
+      ? serverImageGenEnabled()
+        ? '⟡ image generation  on — this server’s image keys'
+        : '⟡ image generation  off — set OPENAI_API_KEY, GEMINI_API_KEY or ARK_API_KEY to enable generate_image'
+      : serverImageGenEnabled()
         ? '⟡ image generation  on — each user’s connected ChatGPT/OpenAI account, else this server’s OPENAI_API_KEY'
         : '⟡ image generation  on for users with a connected ChatGPT/OpenAI account only (set OPENAI_API_KEY to cover everyone else)',
-    )
-  })
+  )
   /* automations fire from here: one tick a minute over the due rows */
   unlessLean(startScheduler)
   startMcpTokenPrune()
