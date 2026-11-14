@@ -703,7 +703,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
   value cached in `localStorage` (`doop-lean`) when a language is picked, refreshed from the answer,
   otherwise after the request, keeping the cached value when it gives none, or with none cached
-  asking once more in the background) and hides the entry points to what the server refused: the Settings Doop Agent pane
+  asking again in the background after 2s, 5s and 15s until one answers) and hides the entry points to what the server refused: the Settings Doop Agent pane
   (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
   Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
