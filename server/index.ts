@@ -85,14 +85,13 @@ import { accountsView, listRunners, MODEL_MENUS } from './agentRunners.ts'
 import { setStoredDefault } from './agentDefaults.ts'
 import { isRunnerProvider } from '../shared/agentRunner.ts'
 import { modelCatalogFor } from './modelCatalog.ts'
-import { mentionedRole } from '../shared/agents.ts'
 import { activeAgentTasks } from '../shared/agentActivity.ts'
 import { colorFor } from '../shared/types.ts'
 import { isPeerViewport } from '../shared/viewport.ts'
 import { exportScaleSuffix, fitExportScale, parseExportScale } from '../shared/exportScale.ts'
 import { emailShare } from './canvasShares.ts'
 import * as userEvents from './userEvents.ts'
-import { activeExtensions, leanGate, leanMode, unlessLean } from './lean.ts'
+import { activeExtensions, leanGate, leanMode, residentMention, unlessLean } from './lean.ts'
 import type { Canvas, ClientMessage, Presence, ServerMessage } from '../shared/types.ts'
 
 const PORT = env.PORT
@@ -897,7 +896,7 @@ const ROLE_DENIED: Record<CanvasRole, string> = {
    agent would make the edits the link withholds. Answers the 403 itself. */
 function refuseAgentMention(req: express.Request, res: express.Response, canvasId: string, text: string): boolean {
   const canvas = store.getCanvas(canvasId)
-  if (!mentionedRole(text) || (canvas && canEditCanvas(req.user!.id, canvas))) return false
+  if (!residentMention(text) || (canvas && canEditCanvas(req.user!.id, canvas))) return false
   res.status(403).json({ error: 'asking an agent to change the canvas needs edit access' })
   return true
 }
@@ -2141,7 +2140,7 @@ app.post('/api/frames/:id/comments', async (req, res) => {
   if (refuseAgentMention(req, res, frame.canvasId, String(text ?? ''))) return
   /* a comment that @mentions a resident agent is a new command to the team,
      so it's metered like a card; plain comments and replies stay free */
-  if (mentionedRole(String(text ?? ''))) {
+  if (residentMention(String(text ?? ''))) {
     const gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
@@ -2188,7 +2187,7 @@ app.post('/api/canvases/:id/comments', async (req, res) => {
   if (!body.trim()) return res.status(400).json({ error: 'empty text' })
   if (refuseAgentMention(req, res, canvas.id, body)) return
   let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-  if (mentionedRole(body)) {
+  if (residentMention(body)) {
     gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })
@@ -2224,7 +2223,7 @@ app.post('/api/comments/:id/replies', async (req, res) => {
   if (refuseAgentMention(req, res, found.canvasId, text)) return
   /* same rule as a fresh comment: only an @mention costs a resident task */
   let gate: Awaited<ReturnType<typeof allowance.consumeResidentTask>> | undefined
-  if (mentionedRole(text)) {
+  if (residentMention(text)) {
     gate = await allowance.consumeResidentTask(req.user!.id)
     if (!gate.ok) {
       return res.status(403).json({ error: 'resident_limit', used: gate.used, limit: gate.limit })

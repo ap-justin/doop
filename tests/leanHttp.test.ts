@@ -128,6 +128,7 @@ interface McpResult {
   tools?: { name: string; description?: string }[]
   instructions?: string
   content?: { text: string }[]
+  isError?: boolean
 }
 
 async function mcp(server: Server, secret: string, method: string, params?: Record<string, unknown>) {
@@ -153,6 +154,11 @@ async function toolNames(b: Booted): Promise<string[]> {
 }
 
 const LINEAR_TOOLS = ['list_linear_issues', 'get_linear_issue']
+
+/** A fresh open thread on the canvas, so a test never replies into one another test resolved. */
+async function openThread(b: Booted, text: string) {
+  return b.owner.post(`/api/canvases/${b.canvasId}/comments`, { pageId: b.pageId, x: 3, y: 4, text })
+}
 
 describe('lean mode on', () => {
   let b: Booted
@@ -201,6 +207,25 @@ describe('lean mode on', () => {
     expect((await b.owner.post(`/api/comments/${b.commentId}/resolve`)).status).toBe(200)
   })
 
+  /* AGENT_OFF leaves no free resident task and no key: a metered mention would be refused, so a 200 is one the meter never saw */
+  it('takes an @Doop comment, reply or agent reply as a plain comment, unmetered and queued for nobody', async () => {
+    const comment = await openThread(b, '@Doop tighten the hero')
+    expect(comment.status).toBe(200)
+    const root = await comment.json()
+    expect(root.forAgent).toBeUndefined()
+
+    const reply = await b.owner.post(`/api/comments/${root.id}/replies`, { text: '@Doop and the footer' })
+    expect(reply.status).toBe(200)
+    expect((await reply.json()).forAgent).toBeUndefined()
+
+    const agentReply = await mcp(b.server, await agentKey(b), 'tools/call', {
+      name: 'reply_to_comment',
+      arguments: { canvas_id: b.canvasId, comment_id: root.id, text: 'Over to @Doop', agent_name: 'Lean Bot' },
+    })
+    expect(agentReply.result?.isError).toBeFalsy()
+    expect(JSON.parse(agentReply.result?.content?.[0]?.text ?? '{}').forAgent).toBeUndefined()
+  })
+
   it('lists no Linear tools to an unlimited agent key, and keeps the design tools', async () => {
     const names = await toolNames(b)
     for (const tool of LINEAR_TOOLS) expect(names).not.toContain(tool)
@@ -237,6 +262,12 @@ describe('lean mode off', () => {
   it('says lean is off in the locale config', async () => {
     const res = await new Client(b.server).get('/api/locale-config')
     expect(await res.json()).toEqual({ defaultLocale: 'en', lean: false })
+  })
+
+  it('meters an @Doop comment as a command to the in-app agent, refusing it with no task left', async () => {
+    const res = await openThread(b, '@Doop tighten the hero')
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('resident_limit')
   })
 
   it('lists the Linear tools to an unlimited agent key', async () => {

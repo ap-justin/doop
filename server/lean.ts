@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { env } from './env.ts'
+import { mentionedRole, type AgentRole } from '../shared/agents.ts'
 
 /**
  * Lean mode (DOOP_LEAN=1): Doop as a shared canvas for MCP agents, without
@@ -48,6 +49,12 @@ export const leanGate: RequestHandler = (req, _res, next) => {
 /** The server extensions the core offers its hooks to: none in lean mode. */
 export function activeExtensions<T>(all: readonly T[]): readonly T[] {
   return leanMode() ? [] : all
+}
+
+/** The resident role a comment @mentions: none in lean mode, where the in-app
+ *  agent is off, so an @mention is plain text — not queued, metered or refused. */
+export function residentMention(text: string): AgentRole | undefined {
+  return leanMode() ? undefined : mentionedRole(text)
 }
 
 /** Starts background work that lean mode leaves off. */
