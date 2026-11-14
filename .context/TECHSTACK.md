@@ -689,7 +689,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 
 - Lean mode (`server/lean.ts`, `DOOP_LEAN=1` or `true`, any case, surrounding whitespace ignored; any other value is off, and one that is neither an on nor an off spelling is named in a boot warning):
   Doop as a canvas for MCP agents. `leanGate`, mounted right after `/healthz`, sends the routes of
-  the in-app Doop Agent and model accounts, billing (the Stripe webhook,
+  the in-app Doop Agent and model accounts, the image-model pick (`/api/image-model`), billing (the Stripe webhook,
   `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
@@ -700,7 +700,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   instructions. `doopGuide()` (`get_guide`) and the `reply_to_comment` description read the
   same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
   `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'
-  tasks. `generate_image` draws on the server's image keys only, never a connected model
+  tasks; `addTaskFeedback` addresses a reply to no resident role, so any MCP agent claims it. `generate_image` draws on the server's image keys only, never a connected model
   account (`payerAccounts`), and the boot log keeps its image-generation line so a missing key
   shows; with no usable server key the refusal names the operator, and a saved image-model pick is ignored. `billingEnabled()` is false, so workspace writes never wait on a plan and the plan
   pane and upgrade modal stay hidden; `stripeConfigured()` still lets a deleted workspace cancel a subscription already on file, and member changes sync its seats. `unlessLean` skips the automations scheduler,
@@ -709,12 +709,12 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
   value cached in `localStorage` (`doop-lean`) when a language is picked, refreshed from the answer,
   otherwise after the request, keeping the cached value when it gives none, or with none cached
-  asking again in the background after 2s, 5s and 15s until one answers) and hides the entry points to what the server refused: the Settings Doop Agent pane
+  asking again in the background after 2s, 5s and 15s, stopping at the first answer) and hides the entry points to what the server refused: the Settings Doop Agent pane
   (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
   Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
   import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`,
-  `leanPolish.test.tsx`, `leanPolishServer.test.ts`, `leanBilling.test.ts`, `leanImportPicker.test.tsx`.
+  `leanPolish.test.tsx`, `leanPolishServer.test.ts`, `leanBilling.test.ts`, `leanImportPicker.test.tsx`, `leanTaskFeedback.test.ts`.
 - Docker - `Dockerfile` + `docker-compose.yml`; `docker compose up` runs the app container
   (port 4400) and a `postgres:16-alpine` db container for self-hosting.
 

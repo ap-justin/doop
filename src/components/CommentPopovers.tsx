@@ -167,9 +167,9 @@ export function CommentComposer({
   const taRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => taRef.current?.focus(), [])
   const send = () => text.trim() && onSubmit(text)
+  const lean = useLean()
   /* @mention a resident agent to route the comment to it; without one the
      comment is a note for the humans in the room */
-  const lean = useLean()
   const mentioned = lean ? undefined : mentionedRole(text)
   return (
     <div className="w-[240px] rounded-[10px] border border-line bg-surface p-2 shadow-pop animate-[chip-in_0.18s_ease]">

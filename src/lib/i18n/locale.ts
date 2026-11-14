@@ -127,8 +127,8 @@ function applyLateLean(config: ServerConfig): void {
    restarts the server) fails the same way when retried at once. */
 const LEAN_RETRY_DELAYS_MS = [2000, 5000, 15000]
 
-/** Asks for the config after each delay in turn, unbounded per request, until
- *  one attempt gets an answer. Never rejects. */
+/** Asks for the config after each delay in turn, unbounded per request, and
+ *  stops at the first answer or after the last delay. Never rejects. */
 async function retryLean(): Promise<void> {
   for (const delay of LEAN_RETRY_DELAYS_MS) {
     await new Promise((resolve) => setTimeout(resolve, delay))
@@ -146,7 +146,8 @@ async function retryLean(): Promise<void> {
  *  server's default language, otherwise English; lean as it says, or as it
  *  last said when it gives no answer). With no answer and nothing cached, lean
  *  starts off and the server is asked again in the background, after each of
- *  `LEAN_RETRY_DELAYS_MS` in turn, each request unbounded, until one answers.
+ *  `LEAN_RETRY_DELAYS_MS` in turn, each request unbounded, stopping at the
+ *  first answer (none answering leaves lean off).
  *  Then follows picks made in other tabs. */
 export async function initLocale(): Promise<void> {
   window.addEventListener('storage', (event) => {
