@@ -2762,7 +2762,8 @@ wss.on('connection', (ws, upgradeReq) => {
 
 server.listen(PORT, () => {
   console.log(`⟡ doop server     http://localhost:${PORT}`)
-  if (leanMode()) console.log('⟡ lean mode         on: the in-app Doop Agent, billing, automations and integrations are off')
+  if (leanMode())
+    console.log('⟡ lean mode         on: the in-app Doop Agent, billing, automations and integrations are off')
   /* comments anchored before element ids: stamped now, while serving, so a
      slow or failing row can never keep the server from coming up */
   if (data.legacyCommentSelectors.size > 0) {
