@@ -703,7 +703,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   tasks. `generate_image` draws on the server's image keys only, never a connected model
   account (`payerAccounts`), and the boot log keeps its image-generation line so a missing key
   shows; with no usable server key the refusal names the operator, and a saved image-model pick is ignored. `billingEnabled()` is false, so workspace writes never wait on a plan and the plan
-  pane and upgrade modal stay hidden; `stripeConfigured()` still lets a deleted workspace cancel, and member changes sync, a subscription already on file. `unlessLean` skips the automations scheduler,
+  pane and upgrade modal stay hidden; `stripeConfigured()` still lets a deleted workspace cancel a subscription already on file, and member changes sync its seats. `unlessLean` skips the automations scheduler,
   live-activity delivery, the queued-card pickup at boot and the boot log's Doop Agent and
   Stripe lines. The comment composer, thread and panel offer no @doop role chips or hints. The client reads `lean` from `GET /api/locale-config`
   (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
