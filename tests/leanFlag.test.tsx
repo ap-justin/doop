@@ -100,18 +100,21 @@ describe('initLocale', () => {
   it.each([
     ['a failed answer', () => serverSays({}, false)],
     ['an unreachable server', () => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))],
-  ])('keeps the cached lean value when no language is picked and the config request gets %s', async (_name, arrange) => {
-    localStorage.setItem('doop-lean', '1')
-    arrange()
-    const { initLocale } = await import('../src/lib/i18n')
-    const { isLean } = await import('../src/lib/lean')
-    await initLocale()
-    expect(isLean()).toBe(true)
-    expect(localStorage.getItem('doop-lean')).toBe('1')
-    /* the cache stands in for the answer: no retry */
-    await new Promise((resolve) => setTimeout(resolve))
-    expect(fetch).toHaveBeenCalledTimes(1)
-  })
+  ])(
+    'keeps the cached lean value when no language is picked and the config request gets %s',
+    async (_name, arrange) => {
+      localStorage.setItem('doop-lean', '1')
+      arrange()
+      const { initLocale } = await import('../src/lib/i18n')
+      const { isLean } = await import('../src/lib/lean')
+      await initLocale()
+      expect(isLean()).toBe(true)
+      expect(localStorage.getItem('doop-lean')).toBe('1')
+      /* the cache stands in for the answer: no retry */
+      await new Promise((resolve) => setTimeout(resolve))
+      expect(fetch).toHaveBeenCalledTimes(1)
+    },
+  )
 
   it('keeps the cached lean value when no language is picked and the config request times out', async () => {
     localStorage.setItem('doop-lean', '1')
