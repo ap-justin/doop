@@ -15,7 +15,7 @@ import { mentionedRole, type AgentRole } from '../shared/agents.ts'
 
 /** Read per call, so a test can flip it (tests/envStub.ts). */
 export function leanMode(): boolean {
-  return env.DOOP_LEAN === '1'
+  return /^(1|true)$/i.test(env.DOOP_LEAN ?? '')
 }
 
 /* Express routes match case-insensitively and with or without a trailing
@@ -29,7 +29,6 @@ const LEAN_DISABLED_PATHS: readonly RegExp[] = [
   /^\/api\/(model-account|agent-runners|github)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/(github|cards)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/publish\/?$/i,
-  /^\/api\/tasks\/[^/]+\/feedback\/?$/i,
   /^\/api\/(feedback|comments)\/[^/]+\/retry\/?$/i,
   /^\/api\/workspaces\/[^/]+\/billing\//i,
 ]

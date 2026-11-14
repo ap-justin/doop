@@ -687,19 +687,25 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `workers/gemini/Dockerfile` builds the worker. Setup and limitations: `docs/gemini-cloud-pilot.md`.
   `DOOP_GEMINI_CLOUD_WORKERS` enables operator-managed routing and BYO metering; unset by default.
 
-- Lean mode (`server/lean.ts`, `DOOP_LEAN=1`; any other value is off and the server is unchanged):
+- Lean mode (`server/lean.ts`, `DOOP_LEAN=1` or `true`, any case; any other value is off and the server is unchanged):
   Doop as a canvas for MCP agents. `leanGate`, mounted right after `/healthz`, sends the routes of
-  the in-app Doop Agent and model accounts, in-app image generation, billing (the Stripe webhook,
+  the in-app Doop Agent and model accounts, billing (the Stripe webhook,
   `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
   `residentMention` makes an @mention a plain comment (not queued, metered or refused);
   `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
-  lines, and `inAppAgentText` drops the task-feedback line and metered-@mention sentence from the
-  MCP `initialize` instructions (`get_guide`'s text is unchanged); `unlessLean` skips the
-  automations scheduler, live-activity delivery, the queued-card pickup at boot and the boot log's
-  Doop Agent, image-generation and Stripe lines. The client reads `lean` from `GET /api/locale-config`
+  lines, and `inAppAgentText` drops the metered-@mention sentence from the MCP `initialize`
+  instructions. `doopGuide()` (`get_guide`) and the `reply_to_comment` description read the
+  same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
+  `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'
+  tasks. `generate_image` draws on the server's image keys only, never a connected model
+  account (`payerAccounts`), and the boot log keeps its image-generation line so a missing key
+  shows. `billingEnabled()` is false, so workspace writes never wait on a plan and the plan
+  pane and upgrade modal stay hidden. `unlessLean` skips the automations scheduler,
+  live-activity delivery, the queued-card pickup at boot and the boot log's Doop Agent and
+  Stripe lines. The comment composer, thread and panel offer no @doop role chips or hints. The client reads `lean` from `GET /api/locale-config`
   (`initLocale` settles `src/lib/lean.ts`, `useLean()`, before the first render: at once from the
   value cached in `localStorage` (`doop-lean`) when a language is picked, refreshed from the answer,
   otherwise after the request, keeping the cached value when it gives none, or with none cached
@@ -707,7 +713,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
   Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
-  import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`.
+  import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`,
+  `leanPolish.test.tsx`, `leanPolishServer.test.ts`.
 - Docker - `Dockerfile` + `docker-compose.yml`; `docker compose up` runs the app container
   (port 4400) and a `postgres:16-alpine` db container for self-hosting.
 

@@ -1,6 +1,7 @@
 import { env } from './env.ts'
 import express from 'express'
 import Stripe from 'stripe'
+import { leanMode } from './lean.ts'
 import { PLANS, isBillingInterval, workspaceStatusFrom } from '../shared/billing.ts'
 import type { BillingInterval, WorkspaceStatus } from '../shared/billing.ts'
 
@@ -25,8 +26,9 @@ const PRICES: Record<BillingInterval, string | undefined> = {
 }
 const ORIGIN = env.BETTER_AUTH_URL
 
+/** Off in lean mode, whatever the Stripe keys: workspace writes never wait on a plan. */
 export function billingEnabled(): boolean {
-  return !!SECRET_KEY
+  return !leanMode() && !!SECRET_KEY
 }
 
 let client: Stripe | null = null

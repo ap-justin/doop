@@ -4,6 +4,7 @@
  */
 
 import { AGENT_ROLES } from '../shared/agents.ts'
+import { leanMode } from './lean.ts'
 
 export const GUIDE_TOPICS = ['doop-instructions'] as const
 
@@ -93,7 +94,11 @@ only run in the player):
   and flags targets that do not exist — call it after wiring and fix what it flags. The player
   lives at /c/<canvasId>/proto (append ?frame=<id> to open on a specific screen).`
 
-export const DOOP_GUIDE = `# Doop Agent Guide
+/** The agent guide. Lean mode (server/lean.ts) has no in-app Doop Agent, board
+ *  cards or metered @mentions, so those parts read differently there. */
+export function doopGuide(): string {
+  const lean = leanMode()
+  return `# Doop Agent Guide
 
 ## The room you're in
 
@@ -102,7 +107,17 @@ your edits render for them the moment you make them, your presence appears under
 agent_name, and every action lands in a visible activity feed. Work like a considerate
 colleague, not a batch job.
 
-## The Doop Agent
+${
+  lean
+    ? `## Who answers comments
+
+This server has no built-in Doop Agent and no board cards: nothing picks up a comment on its own.
+A comment or reply that mentions @Doop is a request for the MCP agents connected to the canvas,
+you included — read it with get_comments and carry it out. Anything a human asks you for is open
+to you.
+
+`
+    : `## The Doop Agent
 
 Every canvas has a built-in Doop Agent: a set of roles that live in the server and pick
 work up on their own. Humans queue board cards addressed to them, and can route a card
@@ -115,7 +130,8 @@ that @mentions them, or feedback on a task they ran. Anything left unaddressed i
 to you. If a human asks you for something one of these roles owns, just do it — the
 routing is for their benefit, not a lock on your work.
 
-Use get_comments({ canvas_id }) to read element-pinned comments and replies, including
+`
+}Use get_comments({ canvas_id }) to read element-pinned comments and replies, including
 their frame, elementId, snippet, author, thread links, and claim/failure/resolution state. An
 element comment's elementId is the element's data-doop-id attribute in the frame HTML: find
 that attribute with get_frame to locate the element, and keep every data-doop-* attribute when
@@ -127,11 +143,15 @@ conversation context; include_resolved: false returns only unresolved entries. T
 is newest first and covers the retained history (up to 100 entries per canvas).
 
 Answer a thread with reply_to_comment({ canvas_id, comment_id, text, agent_name }) — the
-reply inherits the root's element anchor, so an @mention reaches the resident agent with
-the same context the conversation is about. Close the thread with resolve_comment once the
-request is carried out; resolving an @mention thread also records the exchange in the
+reply inherits the root's element anchor, so it keeps the context the conversation is
+about. Close the thread with resolve_comment once the request is carried out;
+${
+  lean
+    ? 'a reply that mentions @Doop is plain text, not a queued task.'
+    : `resolving an @mention thread also records the exchange in the
 canvas Memory. Writing is metered only when a reply @mentions a resident role, exactly
-like a comment left in the browser. Reading does not claim work or resolve it; task
+like a comment left in the browser.`
+} Reading does not claim work or resolve it; task
 feedback is separate (get_feedback).
 
 ## Narrate your work — set_status
@@ -149,7 +169,7 @@ Do not spam it: one update per phase of work, not one per tool call.
 
 ## Human feedback — TOP PRIORITY
 
-Humans reply to agent tasks from the canvas UI. Each reply is an OPEN REQUEST on the
+${lean ? 'Humans reply to your tasks from the canvas UI, which reaches the MCP agent that ran the task.' : 'Humans reply to agent tasks from the canvas UI.'} Each reply is an OPEN REQUEST on the
 canvas — not mail for one agent. It reaches you inside your tool results as a block
 starting with "HUMAN FEEDBACK". A tool that changes the canvas (and get_feedback) picks
 it up and assigns it to you; a read-only tool only says requests are waiting, so call
@@ -463,3 +483,4 @@ Two tools reach the Doop team, never the humans on the canvas, and change no can
 
 Never include secrets. A human's design feedback is not this: record that with save_decision.
 `
+}

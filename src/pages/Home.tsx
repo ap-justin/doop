@@ -17,6 +17,7 @@ import { FramePreview, FrameThumb } from '../components/FramePreview'
 import { HomeHero } from '../components/HomeHero'
 import { SourcePicker } from '../components/ImportSources'
 import { importSources } from '../components/importSourceList'
+import { useLean } from '../lib/lean'
 import { Modal } from '../components/ui/modal'
 import { ShareModal } from '../components/ShareModal'
 import { CreateWorkspaceModal, MoveCanvasModal, UpgradeModal } from '../components/WorkspaceModals'
@@ -77,6 +78,7 @@ function workspaceOf(scope: Scope): string | undefined {
 }
 
 export function Home() {
+  const lean = useLean()
   const [canvases, setCanvases] = useState<CanvasMeta[] | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
   /* an empty list is an answer too: someone removed from their last workspace */
@@ -529,7 +531,7 @@ export function Home() {
       {showConnect && <ConnectModal onClose={() => setShowConnect(false)} />}
       {importing && (
         <Modal size="lg" showClose onClose={() => setImporting(false)}>
-          <SourcePicker sources={importSources()} onPick={(id) => void importInto(id)} />
+          <SourcePicker sources={importSources(undefined, lean)} onPick={(id) => void importInto(id)} />
         </Modal>
       )}
       {shareCanvas && (

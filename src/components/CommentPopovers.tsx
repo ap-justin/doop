@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ElementComment } from '../../shared/types'
 import { colorFor } from '../../shared/types'
+import { useLean } from '../lib/lean'
 import { AGENT_ROLES, DEFAULT_ROLE_ID, mentionedRole, roleName } from '../../shared/agents'
 import { cn } from '@/lib/utils'
 import { canCommentOpenCanvas, canEditOpenCanvas, useStore } from '../lib/store'
@@ -168,7 +169,8 @@ export function CommentComposer({
   const send = () => text.trim() && onSubmit(text)
   /* @mention a resident agent to route the comment to it; without one the
      comment is a note for the humans in the room */
-  const mentioned = mentionedRole(text)
+  const lean = useLean()
+  const mentioned = lean ? undefined : mentionedRole(text)
   return (
     <div className="w-[240px] rounded-[10px] border border-line bg-surface p-2 shadow-pop animate-[chip-in_0.18s_ease]">
       <Textarea
@@ -183,7 +185,7 @@ export function CommentComposer({
           if (e.key === 'Escape') onCancel()
         }}
       />
-      {!mentioned && (
+      {!mentioned && !lean && (
         <div className="mb-2 flex flex-wrap gap-1">
           {AGENT_ROLES.map((role) => (
             <Button
@@ -277,7 +279,8 @@ export function CommentThread({
       .catch(() => setFailed(true))
       .finally(() => setSending(false))
   }
-  const mentioned = mentionedRole(reply)
+  const lean = useLean()
+  const mentioned = lean ? undefined : mentionedRole(reply)
   return (
     <div
       data-comment-popover
@@ -321,7 +324,7 @@ export function CommentThread({
       {canComment && (
         <ThreadReply
           reply={reply}
-          placeholder={canEdit ? t('stage.replyAskAgent') : t('stage.replyEllipsis')}
+          placeholder={canEdit && !lean ? t('stage.replyAskAgent') : t('stage.replyEllipsis')}
           failed={failed}
           sending={sending}
           mentioned={mentioned}

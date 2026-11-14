@@ -14,10 +14,15 @@ beforeEach(() => stubEnv('DOOP_LEAN', undefined))
 afterEach(unstubAllEnvs)
 
 describe('leanMode', () => {
-  it('is on only for exactly 1', () => {
-    stubEnv('DOOP_LEAN', '1')
-    expect(leanMode()).toBe(true)
-    for (const off of [undefined, '', '0', 'true', 'yes', ' 2']) {
+  it('is on for 1 and true in any case', () => {
+    for (const on of ['1', 'true', 'TRUE', 'True']) {
+      stubEnv('DOOP_LEAN', on)
+      expect(leanMode()).toBe(true)
+    }
+  })
+
+  it('is off for anything else', () => {
+    for (const off of [undefined, '', '0', 'false', 'yes', ' 2', 'truee']) {
       stubEnv('DOOP_LEAN', off)
       expect(leanMode()).toBe(false)
     }
@@ -62,7 +67,6 @@ describe('isLeanDisabledPath', () => {
     '/api/canvases/c1/cards',
     '/api/canvases/c1/cards/t1/retry',
     '/api/canvases/c1/publish',
-    '/api/tasks/t1/feedback',
     '/api/feedback/f1/retry',
     '/api/comments/x1/retry',
     '/api/workspaces/w1/billing/checkout',
@@ -88,6 +92,7 @@ describe('isLeanDisabledPath', () => {
     '/api/canvases/c1/duplicate',
     '/api/canvases/c1/export.pdf',
     '/api/comments/x1/replies',
+    '/api/tasks/t1/feedback',
     '/api/comments/x1/resolve',
     '/api/frames/f1/comments',
     '/api/fonts',

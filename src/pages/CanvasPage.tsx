@@ -59,6 +59,7 @@ import { pageFrames } from '../../shared/pages'
 import type { Frame } from '../../shared/types'
 import { ImportStepFooter, ImportStepHeader, SourcePicker } from '../components/ImportSources'
 import { importSources } from '../components/importSourceList'
+import { useLean } from '../lib/lean'
 import { PresentMode } from '../components/PresentMode'
 import { getIdentity, setName } from '../lib/identity'
 import {
@@ -1372,6 +1373,7 @@ function ImportModal({
   /* which source's screen is open — null is the picker; landing back from
      GitHub's install flow jumps straight to that screen */
   const t = useT()
+  const lean = useLean()
   const [source, setSource] = useState<string | null>(installPass || installError ? 'github' : initialSource)
   const [url, setUrl] = useState('')
   const [wholeSite, setWholeSite] = useState(false)
@@ -1683,7 +1685,7 @@ function ImportModal({
         ) : !discovery ? (
           <>
             {source === null ? (
-              <SourcePicker onPick={setSource} sources={importSources()} />
+              <SourcePicker onPick={setSource} sources={importSources(undefined, lean)} />
             ) : source === 'website' ? (
               <>
                 <ImportStepHeader

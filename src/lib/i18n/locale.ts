@@ -159,7 +159,7 @@ export async function initLocale(): Promise<void> {
     setLean(lean)
     snapshot = null
     mark()
-    void fetchConfig(AbortSignal.timeout(CONFIG_TIMEOUT_MS)).then((config) => {
+    void fetchConfig().then((config) => {
       if (config) applyConfig(config)
     })
     return

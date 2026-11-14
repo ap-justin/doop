@@ -109,7 +109,6 @@ function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledR
     ['POST', `/api/canvases/${canvasId}/cards`],
     ['PUT', `/api/canvases/${canvasId}/publish`],
     ['DELETE', `/api/canvases/${canvasId}/publish`],
-    ['POST', '/api/tasks/task-1/feedback'],
     ['POST', '/api/feedback/fb-1/retry'],
     ['POST', `/api/comments/${commentId}/retry`],
     ['POST', `/api/workspaces/${workspaceId}/billing/checkout`],
@@ -169,8 +168,36 @@ async function guide(b: Booted): Promise<string> {
   return init.result?.instructions ?? ''
 }
 
-/** Guide lines about features lean mode turns off: the Linear extension, task feedback and resident @mentions. */
-const LEAN_DROPPED_GUIDE = ['- Linear:', 'humans reply to your tasks', 'A reply that @mentions a resident role']
+/** Guide lines about features lean mode turns off: the Linear extension, resident @mentions. */
+const LEAN_DROPPED_GUIDE = ['- Linear:', 'A reply that @mentions a resident role']
+
+/** The full playbook `get_guide` serves. */
+async function fullGuide(b: Booted): Promise<string> {
+  const res = await mcp(b.server, await agentKey(b), 'tools/call', {
+    name: 'get_guide',
+    arguments: { topic: 'doop-instructions' },
+  })
+  return res.result?.content?.[0]?.text ?? ''
+}
+
+async function toolDescription(b: Booted, name: string): Promise<string> {
+  const tools = (await mcp(b.server, await agentKey(b), 'tools/list')).result?.tools ?? []
+  return tools.find((t) => t.name === name)?.description ?? ''
+}
+
+/** A human reply to a task an MCP agent opened, sent the way the canvas UI sends it. */
+async function replyToAgentTask(b: Booted) {
+  await mcp(b.server, await agentKey(b), 'tools/call', {
+    name: 'set_status',
+    arguments: { canvas_id: b.canvasId, status: 'Working', agent_name: 'Lean Bot' },
+  })
+  const canvases = (await (await b.owner.get('/api/canvases')).json()) as {
+    id: string
+    activeTasks?: { id: string }[]
+  }[]
+  const task = canvases.find((c) => c.id === b.canvasId)?.activeTasks?.[0]
+  return b.owner.post(`/api/tasks/${task?.id}/feedback`, { text: 'warmer accent' })
+}
 
 /** A fresh open thread on the canvas, so a test never replies into one another test resolved. */
 async function openThread(b: Booted, text: string) {
@@ -270,6 +297,22 @@ describe('lean mode on', () => {
     for (const tool of ['create_canvas', 'reply_to_comment', 'resolve_comment', 'generate_image', 'upload_asset'])
       expect(names).toContain(tool)
   })
+
+  it('gives MCP agents the @Doop comments and leaves out the in-app agent, board cards and metering', async () => {
+    const text = await fullGuide(b)
+    expect(text).toContain('## Who answers comments')
+    expect(text).not.toContain('## The Doop Agent')
+    expect(text).not.toContain('Humans queue board cards')
+    expect(text).not.toContain('Writing is metered')
+    expect(text).toContain('Humans reply to your tasks')
+    const description = await toolDescription(b, 'reply_to_comment')
+    expect(description).toContain('MCP agents like you own those requests')
+    expect(description).not.toContain('meter')
+  })
+
+  it('carries a human reply to an agent task, unmetered', async () => {
+    expect((await replyToAgentTask(b)).status).toBe(200)
+  })
 })
 
 describe('lean mode off', () => {
@@ -317,5 +360,19 @@ describe('lean mode off', () => {
   it('lists the Linear tools to an unlimited agent key', async () => {
     const names = await toolNames(b)
     for (const tool of LINEAR_TOOLS) expect(names).toContain(tool)
+  })
+
+  it('describes the in-app agent, board cards and metering in the guide and reply_to_comment', async () => {
+    const text = await fullGuide(b)
+    expect(text).toContain('## The Doop Agent')
+    expect(text).toContain('Writing is metered')
+    expect(text).not.toContain('## Who answers comments')
+    expect(await toolDescription(b, 'reply_to_comment')).toContain('against the account’s meter')
+  })
+
+  it('meters a human reply to an agent task, refusing it with no task left', async () => {
+    const res = await replyToAgentTask(b)
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('resident_limit')
   })
 })

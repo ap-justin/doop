@@ -1,4 +1,5 @@
 import { env } from './env.ts'
+import { leanMode } from './lean.ts'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { getAccounts, withFreshToken } from './modelAccounts.ts'
@@ -369,6 +370,8 @@ export async function imageModelAvailability(
 let warnedDefault = false
 
 async function payerAccounts(payerId: string): Promise<PayerAccounts> {
+  /* lean mode hides model accounts, so a connected one could be neither seen nor disconnected */
+  if (leanMode()) return NO_ACCOUNTS
   const all = await getAccounts(payerId)
   return { on: all.filter((account) => account.enabled), own: all.length > 0 }
 }
