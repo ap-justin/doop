@@ -14,6 +14,9 @@ vi.mock('../server/db/persist.ts', () => ({
   saveFrame: () => {},
 }))
 
+// addTaskFeedback fires an unawaited import of the resident; without this it can run a real sweep after the env stub is gone
+vi.mock('../server/resident.ts', () => ({ onFeedback: vi.fn() }))
+
 const actions = await import('../server/actions.ts')
 const { store } = await import('../server/store.ts')
 
