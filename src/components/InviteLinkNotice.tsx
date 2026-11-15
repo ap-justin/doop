@@ -7,8 +7,8 @@ import { useT } from '@/lib/i18n'
 /** What the inviter sees right after inviting an address with no account yet.
  *  Without a mailer, the link to send and a Copy button (only its hash is kept
  *  on the server). With one there is no `link`: it went to the address by
- *  email alone, and the inviter never holds it. Mount it with `key={link}`, so
- *  a new link never inherits the last one's "Link copied". */
+ *  email alone, and the inviter never holds it. Mount it with `key={link ?? email}`,
+ *  so a new invite never inherits the last one's "Link copied". */
 export function InviteLinkNotice({ email, link }: { email: string; link?: string }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
@@ -27,7 +27,7 @@ export function InviteLinkNotice({ email, link }: { email: string; link?: string
 
   if (!link)
     return (
-      <p className="mt-3 text-label text-ink-soft" data-testid="invite-sent-notice">
+      <p role="status" className="mt-3 text-label text-ink-soft" data-testid="invite-sent-notice">
         {t('invite.sent', { email })}
       </p>
     )
