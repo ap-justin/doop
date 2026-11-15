@@ -28,6 +28,19 @@ function failureOf(caught: unknown, fallback: PlainMessageKey): Failure {
   return { kind: 'retry', message: fallback }
 }
 
+/** A lookup that failed without ending the link, with what to tell the person. */
+type LoadFailed = { failed: PlainMessageKey }
+
+function loadFailed(failure: Failure): LoadFailed {
+  return { failed: failure.kind === 'retry' ? failure.message : 'invite.loadFailed' }
+}
+
+type Lookup = InviteLinkInfo | 'invalid' | LoadFailed | null
+
+function isFound(lookup: Lookup): lookup is InviteLinkInfo {
+  return typeof lookup === 'object' && lookup !== null && !('failed' in lookup)
+}
+
 /** The page behind `/invite/<token>`: who invited you and to what, the fixed
  *  email, and a name and password that create the account. Every link that is
  *  expired, used, revoked or unknown shows the one same message, except to the
@@ -35,7 +48,7 @@ function failureOf(caught: unknown, fallback: PlainMessageKey): Failure {
  *  landing. Every landing replaces this page's history entry, so Back skips it. */
 export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?: string }) {
   const t = useT()
-  const [info, setInfo] = useState<InviteLinkInfo | 'invalid' | 'failed' | null>(null)
+  const [info, setInfo] = useState<Lookup>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -54,8 +67,9 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
       .then((found) => active && setInfo(found))
       .catch((caught: unknown) => {
         if (!active) return
-        if (failureOf(caught, 'invite.loadFailed').kind !== 'invalid') {
-          setInfo('failed')
+        const failure = failureOf(caught, 'invite.loadFailed')
+        if (failure.kind !== 'invalid') {
+          setInfo(loadFailed(failure))
           return
         }
         /* a spent link answers the lookup `invalid`; join still lands the account that spent it */
@@ -65,7 +79,11 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
         }
         api.joinInviteLink(token).then(
           (done) => location.replace(done.landing),
-          () => active && setInfo('invalid'),
+          (joinCaught: unknown) => {
+            if (!active) return
+            const joinFailure = failureOf(joinCaught, 'invite.joinFailed')
+            setInfo(joinFailure.kind === 'invalid' ? 'invalid' : loadFailed(joinFailure))
+          },
         )
       })
     return () => {
@@ -78,7 +96,7 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
     setLoadAttempt((attempt) => attempt + 1)
   }
 
-  const found = typeof info === 'object' && info !== null ? info : null
+  const found = isFound(info) ? info : null
   const signedInElsewhere = found !== null && signedInAs !== undefined && signedInAs.toLowerCase() !== found.email
   /* an account that already exists joins as soon as it is signed in as the invited address */
   const joinsNow = found !== null && signedInAs !== undefined && !signedInElsewhere && found.accountExists
@@ -121,7 +139,7 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
       const failure = failureOf(caught, 'invite.failed')
       if (failure.kind === 'invalid') setInfo('invalid')
       else if (failure.kind === 'account-exists')
-        setInfo((current) => (typeof current === 'object' && current ? { ...current, accountExists: true } : current))
+        setInfo((current) => (isFound(current) ? { ...current, accountExists: true } : current))
       else setError(failure.message)
     }
   }
@@ -133,8 +151,9 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
           <AuthCard title={t('invite.invalidTitle')}>
             <AuthCardText>{t('invite.invalidText')}</AuthCardText>
           </AuthCard>
-        ) : info === 'failed' ? (
-          <AuthCard title={t('invite.loadFailed')}>
+        ) : info !== null && 'failed' in info ? (
+          <AuthCard title={t('invite.loadFailedTitle')}>
+            <AuthCardText>{t(info.failed)}</AuthCardText>
             <Button variant="solid" onClick={retryLoad}>
               {t('common.retry')}
             </Button>

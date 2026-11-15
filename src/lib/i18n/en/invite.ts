@@ -37,5 +37,6 @@ export const invite = {
 
   invalidTitle: 'This invite link isn’t valid any more',
   invalidText: 'Ask the person who invited you for a new one.',
+  loadFailedTitle: 'Could not load this invite',
   loadFailed: 'Could not load this invite. Check your connection and try again.',
 } as const

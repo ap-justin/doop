@@ -38,5 +38,6 @@ export const invite: Catalog['invite'] = {
 
   invalidTitle: 'Este link de convite não é mais válido',
   invalidText: 'Peça um novo a quem convidou você.',
+  loadFailedTitle: 'Não foi possível carregar este convite',
   loadFailed: 'Não foi possível carregar este convite. Verifique sua conexão e tente novamente.',
 }
