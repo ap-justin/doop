@@ -637,8 +637,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   email with no account (`POST /api/workspaces/:id/members`, `POST /api/canvases/:id/members`) makes a
   pending invite with a single-use token, 7 days to live, stored as its sha256 only (workspace invites in
   `workspace_invites`, canvas invites in `canvas_invites`, migration 0051) and returns
-  `${BETTER_AUTH_URL}/invite/<token>` to the inviter once; with a mailer it is emailed too. The link is the
-  proof of the address, which is why production without a mailer now takes such invites. An expired invite
+  `${BETTER_AUTH_URL}/invite/<token>` to the inviter once; with a mailer it is emailed too. The inviter holds
+  the link as well, so it proves nothing about the address: an account it creates is unverified. An expired invite
   is not pending: listing, resolving or honouring invites deletes the expired rows first, so none is hidden
   from its owner yet still honoured (workspace invites from before links have no expiry and stay). The public
   `/api/invite-links/:token` routes (`GET` for what the page shows, `POST …/accept` with a name and password,
@@ -646,10 +646,13 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `invalid` (404) for an unknown, expired, used or revoked token; the other codes are `InviteLinkError` in
   `shared/inviteLinks.ts`. Accepting runs better-auth's own `signUpEmail`
   inside `withInviteSignup`, a per-request async-local bypass for that one address of the
-  `SIGNUP_EMAIL_DOMAINS` check and the verification email in `server/auth.ts`; unless the user id it returns
-  names a row it just made for the address (with a mailer, better-auth answers an existing address with a
-  made-up one), the answer is 409 `account-exists` and nothing is verified or honoured. Otherwise it marks the
-  address verified, signs the person in and only then spends this link's invite, no other (the member row
+  `SIGNUP_EMAIL_DOMAINS` check in `server/auth.ts`; unless the user id it returns
+  names a row it just made for the address (when verification is required, better-auth answers an existing
+  address with a made-up one), the answer is 409 `account-exists` and nothing is honoured. When verification is
+  required (`REQUIRE_VERIFICATION`) the answer is `{ verify: true }` with no session and the invite unspent:
+  better-auth's verification email brings the person back signed in, to the workspace (verifying honours its
+  invite) or to `/invite/<token>` to join the canvas. Otherwise it signs the person in and only then spends
+  this link's invite, no other (the member row
   and the invite's deletion in one transaction for both kinds), so a failed step leaves the link for
   `join`. A second accept of a link already being accepted gets 409 `in-progress`, and the account that spent a
   link may `join` with it again and land, for as long as this process remembers it. Accept and join share a

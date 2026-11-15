@@ -46,7 +46,7 @@ const SIGNUP_EMAIL_DOMAINS = env.SIGNUP_EMAIL_DOMAINS.map((s) => s.toLowerCase()
  * rather than absent, which keeps the ADMIN_EMAILS path below intact. An
  * admin-to-be clicks the link once; nobody else has to.
  */
-const REQUIRE_VERIFICATION = mailerConfigured && env.REQUIRE_EMAIL_VERIFICATION
+export const REQUIRE_VERIFICATION = mailerConfigured && env.REQUIRE_EMAIL_VERIFICATION
 
 /**
  * An email address only identifies someone once they have PROVEN they own it.
@@ -468,8 +468,6 @@ function buildAuth() {
         await acceptInvites(user.id, user.email)
       },
       sendVerificationEmail: async ({ user, url }) => {
-        /* an account made from an invite link is verified by the link itself */
-        if (inviteSignupAllows(user.email)) return
         await sendMail({
           to: user.email,
           subject: 'Verify your doop email',

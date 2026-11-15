@@ -1427,6 +1427,7 @@ app.post('/api/canvases/:id/members', async (req, res) => {
     .where(eq(authSchema.user.email, email))
   if (!row) {
     /* no account yet: the invite becomes a link that creates one */
+    if (!email.includes('@')) return res.status(400).json({ error: 'a valid email is required' })
     const { invite, link } = await createCanvasInvite(c.id, email, req.user!.id)
     emailCanvasInvite(req.user!, email, c.name, link)
     return res.json({ invite, link, emailed: mailerConfigured })

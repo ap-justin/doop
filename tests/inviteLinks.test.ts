@@ -121,6 +121,23 @@ describe('invite links', () => {
     expect(await again.json()).toEqual({ error: 'invalid' })
   })
 
+  it('leaves an accepted account unverified: the inviter holds the link, so it proves nothing about the address', async () => {
+    const { body } = await inviteToWorkspace('unproven@example.com')
+    const person = new Client(server)
+    const res = await acceptAs(person, body.link, { name: 'Una', password: 'password12345' })
+    expect(res.status, await res.clone().text()).toBe(200)
+    const session = await (await person.get('/api/auth/get-session')).json()
+    expect(session.user).toMatchObject({ email: 'unproven@example.com', emailVerified: false })
+  })
+
+  it('refuses a canvas invite to an address without an @, making no invite', async () => {
+    const own = await newCanvas('No at sign')
+    const { res, body } = await inviteToCanvas('bob', own)
+    expect(res.status).toBe(400)
+    expect(body).toEqual({ error: 'a valid email is required' })
+    expect(await (await owner.get(`/api/canvases/${own}/invites`)).json()).toEqual([])
+  })
+
   it('creates the account from a canvas link and gives it the canvas', async () => {
     const { body } = await inviteToCanvas('canvas-guest@example.com')
     const guest = new Client(server)
@@ -275,6 +292,49 @@ describe('invite links', () => {
       expect((await again.json()).landing).toBe(`/w/${ws}`)
     } finally {
       open.stop()
+    }
+  })
+
+  it('with required verification, makes the account but neither signs it in nor spends the invite', async () => {
+    const prod = { NODE_ENV: 'production', BETTER_AUTH_SECRET: 'test-secret-not-for-real-use' }
+    /* the inviter signs up and invites while no mailer is set, since an
+       unverified account cannot sign in once verification is required */
+    const before = await startServer(prod)
+    const boss = new Client(before)
+    await boss.signUp('boss@test.dev', 'Boss')
+    const wsId = (await (await boss.post('/api/workspaces', { name: 'Mail Co' })).json()).id
+    const cvId = (await (await boss.post('/api/canvases', { name: 'Mail board' })).json()).id
+    const links: string[] = []
+    for (const [path, email] of [
+      [`/api/workspaces/${wsId}/members`, 'wsinbox@test.dev'],
+      [`/api/canvases/${cvId}/members`, 'cvinbox@test.dev'],
+    ] as const)
+      links.push((await (await boss.post(path, { email })).json()).link)
+    before.stop({ keepData: true })
+    await before.stopped
+
+    /* then SMTP is "configured" (nothing listens on port 9, so every send fails
+       fast) with REQUIRE_EMAIL_VERIFICATION at its default */
+    const verifying = await startServer({ ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: '9' }, before.dataDir)
+    try {
+      for (const link of links) {
+        const person = new Client(verifying)
+        const res = await person.post(`/api/invite-links/${tokenOf(link)}/accept`, {
+          name: 'Ivy',
+          password: 'password12345',
+        })
+        expect(res.status, await res.clone().text()).toBe(200)
+        expect(await res.json()).toEqual({ verify: true })
+        expect(res.headers.getSetCookie()).toEqual([])
+        expect((await person.get('/api/me')).status).toBe(401)
+
+        /* the account exists and the invite still waits, for verification or join */
+        const info = await new Client(verifying).get(`/api/invite-links/${tokenOf(link)}`)
+        expect(info.status).toBe(200)
+        expect((await info.json()).accountExists).toBe(true)
+      }
+    } finally {
+      verifying.stop()
     }
   })
 

@@ -21,8 +21,8 @@ export function hashInviteToken(token: string): string {
 
 export const inviteLinkUrl = (token: string) => `${ORIGIN}/invite/${token}`
 
-/** The one request that may create an account for the invited address without
- *  the sign-up allowlist or email verification: server/auth.ts asks here. */
+/** The one request that may create an account for the invited address outside
+ *  the sign-up allowlist: server/auth.ts asks here. */
 const signupBypass = new AsyncLocalStorage<{ email: string }>()
 
 export function withInviteSignup<T>(email: string, run: () => Promise<T>): Promise<T> {

@@ -5,7 +5,7 @@ import { fromNodeHeaders } from 'better-auth/node'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
 import * as authSchema from './db/auth-schema.ts'
-import { auth } from './auth.ts'
+import { auth, REQUIRE_VERIFICATION } from './auth.ts'
 import { store } from './store.ts'
 import { notifyUsers } from './userEvents.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
@@ -221,23 +221,30 @@ inviteLinksRouter.get('/:token', async (req, res) => {
   res.json(info)
 })
 
-/** Spend this link's invite, and only it, for an account that exists and has
- *  shown it owns the address. */
+/** Spend this link's invite, and only it, for the invited address's account. */
 async function honour(hash: string, found: ResolvedInvite, userId: string): Promise<void> {
   if (found.kind === 'workspace') await acceptWorkspaceInviteLink(found.workspaceInvite, userId)
   else await acceptCanvasInvite(found.canvasInvite, userId)
   rememberSpent(hash, found, userId)
 }
 
-/** The account better-auth just created. With a mailer it answers an address
- *  that already has an account with a generic success and a made-up user id,
- *  so the id must name a real row for this address before anything trusts it. */
+/** The account better-auth just created. When verification is required it
+ *  answers an address that already has an account with a generic success and
+ *  a made-up user id, so the id must name a real row for this address before
+ *  anything trusts it. */
 async function createdAccount(userId: string, email: string) {
   const [row] = await db
     .select({ id: authSchema.user.id })
     .from(authSchema.user)
     .where(and(eq(authSchema.user.id, userId), eq(authSchema.user.email, email)))
   return row
+}
+
+/** Where the verification email brings a new account back to, signed in:
+ *  verifying honours a workspace invite by address (`acceptInvites` in
+ *  server/auth.ts), while a canvas invite waits on this link's join. */
+function verifiedLanding(token: string, found: ResolvedInvite): string {
+  return found.kind === 'workspace' ? found.landing : `/invite/${token}`
 }
 
 inviteLinksRouter.post('/:token/accept', async (req, res) => {
@@ -258,17 +265,22 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
       /* better-auth's own sign-up hashes the password and writes the user and
          credential rows; the bypass covers this one request for this one address */
       signedUp = await withInviteSignup(found.email, () =>
-        auth.api.signUpEmail({ body: { email: found.email, password, name }, headers: fromNodeHeaders(req.headers) }),
+        auth.api.signUpEmail({
+          body: { email: found.email, password, name, callbackURL: verifiedLanding(token, found) },
+          headers: fromNodeHeaders(req.headers),
+        }),
       )
     } catch (err) {
-      /* without a mailer, an account made for the address since the check above throws here */
+      /* when verification isn't required, an account made for the address since the check above throws here */
       if (await accountFor(found.email)) return refuse(res, 409, 'account-exists')
       const message = err instanceof Error ? err.message : 'could not create the account'
       return res.status(400).json({ error: message })
     }
     const created = await createdAccount(signedUp.user.id, found.email)
     if (!created) return refuse(res, 409, 'account-exists')
-    await db.update(authSchema.user).set({ emailVerified: true }).where(eq(authSchema.user.id, created.id))
+    /* the inviter holds the link too, so it proves nothing about the address:
+       where verification is required, the account waits for its email */
+    if (REQUIRE_VERIFICATION) return res.json({ verify: true })
     /* sign in before spending the invite: a failed sign-in leaves it for the
        join route, which the page offers once the account exists */
     const signedIn = await auth.api.signInEmail({

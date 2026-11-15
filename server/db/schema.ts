@@ -164,7 +164,7 @@ export const workspaceInvites = pgTable(
 )
 
 /** A canvas shared with an email that has no account yet. The link's token
- *  (hash only) is the proof of the address; accepting it creates the account
+ *  (hash only) is the credential; accepting it creates the account
  *  and adds the person to the canvas. */
 export const canvasInvites = pgTable(
   'canvas_invites',
