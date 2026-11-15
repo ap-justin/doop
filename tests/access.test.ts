@@ -175,7 +175,10 @@ describe('canvas access model', () => {
 
   it('membership management is owner-only (members may leave)', async () => {
     expect((await invited.post(`/api/canvases/${canvasId}/members`, { email: 'stranger@test.dev' })).status).toBe(403)
-    expect((await owner.post(`/api/canvases/${canvasId}/members`, { email: 'nobody@test.dev' })).status).toBe(404)
+    /* an address with no account gets an invite link, not a membership */
+    const pending = await owner.post(`/api/canvases/${canvasId}/members`, { email: 'nobody@test.dev' })
+    expect(pending.status).toBe(200)
+    expect((await pending.json()).link).toMatch(/\/invite\/[\w-]+$/)
     expect((await stranger.delete(`/api/canvases/${canvasId}/members/${invitedId}`)).status).toBe(403)
 
     const people = await (await owner.get(`/api/canvases/${canvasId}/members`)).json()
