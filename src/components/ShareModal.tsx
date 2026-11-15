@@ -79,8 +79,8 @@ export function ShareModal({
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
   const [upgrade, setUpgrade] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingCanvasInvite[]>([])
-  /* the link for the address just invited; the server keeps only its hash */
-  const [sent, setSent] = useState<{ email: string; link: string } | null>(null)
+  /* the address just invited, with its link unless a mailer sent it alone (the server keeps only its hash) */
+  const [sent, setSent] = useState<{ email: string; link?: string } | null>(null)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -260,7 +260,7 @@ export function ShareModal({
           </>
         )}
         {error && <p className="mx-[2px] mt-2 text-label text-accent-ink">{error}</p>}
-        {isOwner && sent && <InviteLinkNotice key={sent.link} email={sent.email} link={sent.link} />}
+        {isOwner && sent && <InviteLinkNotice key={sent.link ?? sent.email} email={sent.email} link={sent.link} />}
         <div className="mt-[14px] mb-1 flex max-h-[40vh] flex-col gap-[2px] overflow-y-auto">
           {(people ?? []).map((person) => (
             <PersonRow

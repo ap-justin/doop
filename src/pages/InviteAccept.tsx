@@ -37,7 +37,6 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
   const t = useT()
   const [info, setInfo] = useState<InviteLinkInfo | 'invalid' | 'failed' | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
-  const [verifySent, setVerifySent] = useState(false)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -64,7 +63,10 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
           setInfo('invalid')
           return
         }
-        api.joinInviteLink(token).then((done) => location.replace(done.landing), () => active && setInfo('invalid'))
+        api.joinInviteLink(token).then(
+          (done) => location.replace(done.landing),
+          () => active && setInfo('invalid'),
+        )
       })
     return () => {
       active = false
@@ -112,9 +114,7 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
     setError(null)
     try {
       const done = await api.acceptInviteLink(token, { name: name.trim(), password })
-      /* no session yet: the emailed verification link signs them in and lands them */
-      if ('verify' in done) setVerifySent(true)
-      else location.replace(done.landing)
+      location.replace(done.landing)
     } catch (caught) {
       submitting.current = false
       setBusy(false)
@@ -185,15 +185,6 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
               </Button>
             </>
           )}
-        </AuthCard>
-      </AuthScreen>
-    )
-
-  if (verifySent)
-    return (
-      <AuthScreen>
-        <AuthCard title={t('invite.verifyTitle')}>
-          <AuthCardText>{t('invite.verifyText', { email: found.email })}</AuthCardText>
         </AuthCard>
       </AuthScreen>
     )

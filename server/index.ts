@@ -1430,7 +1430,8 @@ app.post('/api/canvases/:id/members', async (req, res) => {
     if (!email.includes('@')) return res.status(400).json({ error: 'a valid email is required' })
     const { invite, link } = await createCanvasInvite(c.id, email, req.user!.id)
     emailCanvasInvite(req.user!, email, c.name, link)
-    return res.json({ invite, link, emailed: mailerConfigured })
+    /* with a mailer the link goes by email alone: the inviter never holds it */
+    return res.json(mailerConfigured ? { invite, emailed: true } : { invite, link, emailed: false })
   }
   if (row.id === c.ownerId) return res.status(400).json({ error: 'the owner already has access' })
   const isNew = !c.memberIds?.includes(row.id)

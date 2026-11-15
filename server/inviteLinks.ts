@@ -5,7 +5,7 @@ import { fromNodeHeaders } from 'better-auth/node'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
 import * as authSchema from './db/auth-schema.ts'
-import { auth, REQUIRE_VERIFICATION } from './auth.ts'
+import { auth } from './auth.ts'
 import { store } from './store.ts'
 import { notifyUsers } from './userEvents.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
@@ -20,9 +20,11 @@ import type { InviteLinkError, InviteLinkInfo, PendingCanvasInvite } from '../sh
 
 /**
  * Invite links. Sharing a canvas or workspace with an email that has no
- * account yet makes a pending invite carrying a single-use token. The
- * inviter gets the link to /invite/<token>; opening it lets the invited
- * address create its account, or an account it already has join. Workspace
+ * account yet makes a pending invite carrying a single-use token. The link,
+ * /invite/<token>, goes by email when a mailer is configured, so only the
+ * address's owner holds it; without a mailer the inviter gets it instead.
+ * Opening it lets the invited address create its account, or an account it
+ * already has join. Workspace
  * invites live in `workspace_invites` (they predate links), canvas invites
  * in `canvas_invites`; this file is the canvas half plus the public routes
  * both kinds share.
@@ -240,14 +242,6 @@ async function createdAccount(userId: string, email: string) {
   return row
 }
 
-/** Where the verification email brings a new account back to, signed in:
- *  verifying honours a workspace invite by address (`acceptInvites`, from
- *  server/auth.ts's afterEmailVerification), while a canvas invite waits on
- *  this link's join. */
-function verifiedLanding(token: string, found: ResolvedInvite): string {
-  return found.kind === 'workspace' ? found.landing : `/invite/${token}`
-}
-
 inviteLinksRouter.post('/:token/accept', async (req, res) => {
   const token = req.params.token
   const hash = hashInviteToken(token)
@@ -267,7 +261,7 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
          credential rows; the bypass covers this one request for this one address */
       signedUp = await withInviteSignup(found.email, () =>
         auth.api.signUpEmail({
-          body: { email: found.email, password, name, callbackURL: verifiedLanding(token, found) },
+          body: { email: found.email, password, name },
           headers: fromNodeHeaders(req.headers),
         }),
       )
@@ -279,9 +273,11 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
     }
     const created = await createdAccount(signedUp.user.id, found.email)
     if (!created) return refuse(res, 409, 'account-exists')
-    /* the inviter holds the link too, so it proves nothing about the address:
-       where verification is required, the account waits for its email */
-    if (REQUIRE_VERIFICATION) return res.json({ verify: true })
+    /* With a mailer the link went to the address by email alone (the inviter
+       never held it), so opening it proves the address. Without one the inviter
+       holds the link too, so it proves nothing and the account stays unverified. */
+    if (mailerConfigured)
+      await db.update(authSchema.user).set({ emailVerified: true }).where(eq(authSchema.user.id, created.id))
     /* sign in before spending the invite: a failed sign-in leaves it for the
        join route, which the page offers once the account exists */
     const signedIn = await auth.api.signInEmail({

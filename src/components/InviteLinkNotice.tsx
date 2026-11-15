@@ -4,16 +4,18 @@ import { CopyIcon } from './ui/icons'
 import { Input } from './ui/input'
 import { useT } from '@/lib/i18n'
 
-/** The link an inviter sends to an address with no account yet: what to do
- *  with it, and a Copy button. Shown right after inviting, since only its
- *  hash is kept on the server. Mount it with `key={link}`, so a new link
- *  never inherits the last one's "Link copied". */
-export function InviteLinkNotice({ email, link }: { email: string; link: string }) {
+/** What the inviter sees right after inviting an address with no account yet.
+ *  Without a mailer, the link to send and a Copy button (only its hash is kept
+ *  on the server). With one there is no `link`: it went to the address by
+ *  email alone, and the inviter never holds it. Mount it with `key={link}`, so
+ *  a new link never inherits the last one's "Link copied". */
+export function InviteLinkNotice({ email, link }: { email: string; link?: string }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState(false)
 
   async function copy() {
+    if (!link) return
     try {
       await navigator.clipboard.writeText(link)
       setCopied(true)
@@ -22,6 +24,13 @@ export function InviteLinkNotice({ email, link }: { email: string; link: string 
       setFailed(true)
     }
   }
+
+  if (!link)
+    return (
+      <p className="mt-3 text-label text-ink-soft" data-testid="invite-sent-notice">
+        {t('invite.sent', { email })}
+      </p>
+    )
 
   return (
     <div className="mt-3 flex flex-col gap-2" data-testid="invite-link-notice">

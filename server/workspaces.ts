@@ -671,7 +671,8 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     invitedByName: req.user!.name,
     createdAt: invite.createdAt,
   }
-  res.json({ invite: pending, emailed: mailerConfigured, link })
+  /* with a mailer the link goes by email alone: the inviter never holds it */
+  res.json(mailerConfigured ? { invite: pending, emailed: true } : { invite: pending, emailed: false, link })
 })
 
 workspacesRouter.patch('/:id/members/:userId', (req, res) => {

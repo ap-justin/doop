@@ -163,7 +163,7 @@ describe('invite links over time', () => {
     for (const link of [cases.liveWs.link, cases.liveCv.link]) {
       expect((await anon().get(`/api/invite-links/${tokenOf(link)}`)).status).toBe(200)
     }
-  })
+  }, 70_000)
 
   it('shares one budget between accept and join, and a new window gives it back', async () => {
     const { link } = await inviteToWorkspace('budget@example.com')

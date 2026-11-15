@@ -265,13 +265,14 @@ export interface PlansResponse {
 }
 
 /** An invite lands one of two ways: an existing account is a member at
- *  once; an unknown email gets an invite link (emailed too, when SMTP is set up). */
+ *  once; an unknown email gets an invite link: shown to the inviter, or, when SMTP is set up,
+ *  sent to the address alone. */
 export type WorkspaceInviteResult =
-  { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean; link: string }
+  { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean; link?: string }
 
 /** Sharing a canvas lands one of two ways too: an existing account is a
- *  collaborator at once; an unknown email gets an invite link for the inviter. */
-export type CanvasInviteResult = CanvasMember | { invite: PendingCanvasInvite; link: string; emailed: boolean }
+ *  collaborator at once; an unknown email gets an invite link for the inviter, or, with SMTP, by email alone. */
+export type CanvasInviteResult = CanvasMember | { invite: PendingCanvasInvite; link?: string; emailed: boolean }
 
 function actor() {
   const { clientId, name } = getIdentity()
@@ -703,7 +704,7 @@ export const api = {
      joining with an account that already exists */
   inviteLink: (token: string) => req<InviteLinkInfo>(`/api/invite-links/${encodeURIComponent(token)}`),
   acceptInviteLink: (token: string, person: { name: string; password: string }) =>
-    req<{ landing: string } | { verify: true }>(`/api/invite-links/${encodeURIComponent(token)}/accept`, {
+    req<{ landing: string }>(`/api/invite-links/${encodeURIComponent(token)}/accept`, {
       method: 'POST',
       body: JSON.stringify(person),
     }),

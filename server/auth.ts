@@ -468,6 +468,8 @@ function buildAuth() {
         await acceptInvites(user.id, user.email)
       },
       sendVerificationEmail: async ({ user, url }) => {
+        /* an account made from an invite link is verified by the emailed link itself */
+        if (inviteSignupAllows(user.email)) return
         await sendMail({
           to: user.email,
           subject: 'Verify your doop email',

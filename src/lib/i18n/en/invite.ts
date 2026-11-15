@@ -1,6 +1,7 @@
 /** Invite links: the link shown to the inviter and the page its holder opens. */
 export const invite = {
   linkLine: 'Send this link to {email}. It works once and expires in 7 days.',
+  sent: 'Invite sent to {email}',
   linkAria: 'Invite link for {email}',
   copyLink: 'Copy link',
   linkCopied: 'Link copied',
@@ -37,7 +38,4 @@ export const invite = {
   invalidTitle: 'This invite link isn’t valid any more',
   invalidText: 'Ask the person who invited you for a new one.',
   loadFailed: 'Could not load this invite. Check your connection and try again.',
-
-  verifyTitle: 'Check your inbox',
-  verifyText: 'We sent a link to {email}. Open it to confirm your address and join.',
 } as const

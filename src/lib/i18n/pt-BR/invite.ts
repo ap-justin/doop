@@ -2,6 +2,7 @@ import type { Catalog } from '..'
 
 export const invite: Catalog['invite'] = {
   linkLine: 'Envie este link para {email}. Ele funciona uma vez e expira em 7 dias.',
+  sent: 'Convite enviado para {email}',
   linkAria: 'Link de convite para {email}',
   copyLink: 'Copiar link',
   linkCopied: 'Link copiado',
@@ -38,7 +39,4 @@ export const invite: Catalog['invite'] = {
   invalidTitle: 'Este link de convite não é mais válido',
   invalidText: 'Peça um novo a quem convidou você.',
   loadFailed: 'Não foi possível carregar este convite. Verifique sua conexão e tente novamente.',
-
-  verifyTitle: 'Confira sua caixa de entrada',
-  verifyText: 'Enviamos um link para {email}. Abra-o para confirmar seu endereço e entrar.',
 }

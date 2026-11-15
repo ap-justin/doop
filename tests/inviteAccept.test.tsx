@@ -3,6 +3,7 @@ import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { InviteAccept } from '../src/pages/InviteAccept'
+import { InviteLinkNotice } from '../src/components/InviteLinkNotice'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const INFO = {
@@ -104,23 +105,25 @@ it('replaces the invite page with the landing once the account is made', async (
   expect(location.assign).not.toHaveBeenCalled()
 })
 
-it('asks the person to check their inbox when the address still needs verifying', async () => {
-  const location = stubLocation()
-  stubFetch(INFO, () => Promise.resolve(Response.json({ verify: true })))
-  await act(async () => root.render(<InviteAccept token="tok" />))
-  await fillAccountForm()
-  await act(async () => void submit(container.querySelector('form')!))
-  expect(container.textContent).toContain('Check your inbox')
-  expect(container.textContent).toContain('new@example.com')
-  expect(container.querySelector('form')).toBeNull()
-  expect(location.replace).not.toHaveBeenCalled()
-  expect(location.assign).not.toHaveBeenCalled()
+it('shows the inviter the link and a Copy button, or, once a mailer sent it, only that it was sent', async () => {
+  const link = 'http://localhost/invite/tok123'
+  await act(async () => root.render(<InviteLinkNotice email="new@example.com" link={link} />))
+  expect(container.querySelector<HTMLInputElement>('input')?.value).toBe(link)
+  expect(container.textContent).toContain('Copy link')
+
+  await act(async () => root.render(<InviteLinkNotice email="new@example.com" />))
+  expect(container.textContent).toContain('Invite sent to new@example.com')
+  expect(container.querySelector('input')).toBeNull()
+  expect(container.querySelector('button')).toBeNull()
 })
 
 it('offers a retry, not the dead-link card, when the invite fails to load', async () => {
   const edgeDown = () => Response.json({ error: 'Application failed to respond' }, { status: 502 })
   let lookups = 0
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(lookups++ === 0 ? edgeDown() : Response.json(INFO))))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(lookups++ === 0 ? edgeDown() : Response.json(INFO))),
+  )
   await act(async () => root.render(<InviteAccept token="tok" />))
   expect(container.textContent).toContain('Could not load this invite')
   expect(container.textContent).not.toContain('isn’t valid')

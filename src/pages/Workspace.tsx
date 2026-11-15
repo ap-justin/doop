@@ -296,8 +296,8 @@ function MembersPane({
   const [role, setRole] = useState<WorkspaceRole>('member')
   const [busy, setBusy] = useState(false)
   const [removing, setRemoving] = useState<{ userId: string; name: string } | null>(null)
-  /* the link for the address just invited; the server keeps only its hash */
-  const [sent, setSent] = useState<{ email: string; link: string } | null>(null)
+  /* the address just invited, with its link unless a mailer sent it alone (the server keeps only its hash) */
+  const [sent, setSent] = useState<{ email: string; link?: string } | null>(null)
 
   async function invite() {
     const clean = email.trim()
@@ -387,7 +387,7 @@ function MembersPane({
             </Button>
           </div>
         )}
-        {admin && sent && <InviteLinkNotice key={sent.link} email={sent.email} link={sent.link} />}
+        {admin && sent && <InviteLinkNotice key={sent.link ?? sent.email} email={sent.email} link={sent.link} />}
       </CardHeader>
       <div>
         {ws.members.map((m) => {

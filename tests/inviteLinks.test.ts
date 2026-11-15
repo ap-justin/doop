@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import path from 'node:path'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Client, startServer, type Server } from './harness.ts'
+import { startSmtpSink, type SinkMail } from './smtpSink.ts'
 
 /**
  * Invite links on a closed production instance: sign-up is limited to a
@@ -126,6 +128,7 @@ describe('invite links', () => {
     const person = new Client(server)
     const res = await acceptAs(person, body.link, { name: 'Una', password: 'password12345' })
     expect(res.status, await res.clone().text()).toBe(200)
+    expect(body.emailed).toBe(false)
     const session = await (await person.get('/api/auth/get-session')).json()
     expect(session.user).toMatchObject({ email: 'unproven@example.com', emailVerified: false })
   })
@@ -295,47 +298,78 @@ describe('invite links', () => {
     }
   }, 70_000)
 
-  it('with required verification, makes the account but neither signs it in nor spends the invite', async () => {
+  describe('with a mailer', () => {
     const prod = { NODE_ENV: 'production', BETTER_AUTH_SECRET: 'test-secret-not-for-real-use' }
-    /* the inviter signs up and invites while no mailer is set, since an
-       unverified account cannot sign in once verification is required */
-    const before = await startServer(prod)
-    const boss = new Client(before)
-    await boss.signUp('boss@test.dev', 'Boss')
-    const wsId = (await (await boss.post('/api/workspaces', { name: 'Mail Co' })).json()).id
-    const cvId = (await (await boss.post('/api/canvases', { name: 'Mail board' })).json()).id
-    const links: string[] = []
-    for (const [path, email] of [
-      [`/api/workspaces/${wsId}/members`, 'wsinbox@test.dev'],
-      [`/api/canvases/${cvId}/members`, 'cvinbox@test.dev'],
-    ] as const)
-      links.push((await (await boss.post(path, { email })).json()).link)
-    before.stop({ keepData: true })
-    await before.stopped
-
-    /* then SMTP is "configured" (nothing listens on port 9, so every send fails
-       fast) with REQUIRE_EMAIL_VERIFICATION at its default */
-    const verifying = await startServer({ ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: '9' }, before.dataDir)
-    try {
-      for (const link of links) {
-        const person = new Client(verifying)
-        const res = await person.post(`/api/invite-links/${tokenOf(link)}/accept`, {
-          name: 'Ivy',
-          password: 'password12345',
-        })
-        expect(res.status, await res.clone().text()).toBe(200)
-        expect(await res.json()).toEqual({ verify: true })
-        expect(res.headers.getSetCookie()).toEqual([])
-        expect((await person.get('/api/me')).status).toBe(401)
-
-        /* the account exists and the invite still waits, for verification or join */
-        const info = await new Client(verifying).get(`/api/invite-links/${tokenOf(link)}`)
-        expect(info.status).toBe(200)
-        expect((await info.json()).accountExists).toBe(true)
-      }
-    } finally {
-      verifying.stop()
+    const sinkLink = (mails: SinkMail[], to: string) => {
+      const mail = mails.find((m) => m.to === to && m.data.includes('/invite/'))
+      return /https?:\/\/\S+\/invite\/[\w-]+/.exec(mail?.data ?? '')?.[0]
     }
+
+    it('mails the link to the address alone, and opening it verifies the address and lands', async () => {
+      const sink = await startSmtpSink()
+      /* the inviter signs up and is verified while no mailer is set, since an
+         unverified account cannot sign in once verification is required */
+      const before = await startServer(prod)
+      await new Client(before).signUp('boss@test.dev', 'Boss')
+      before.stop({ keepData: true })
+      await before.stopped
+      const { PGlite } = await import('@electric-sql/pglite')
+      const pg = new PGlite(path.join(before.dataDir, 'data', 'pg'))
+      await pg.query(`update "user" set email_verified = true`)
+      await pg.close()
+
+      const mailed = await startServer(
+        { ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(sink.port) },
+        before.dataDir,
+      )
+      try {
+        const boss = new Client(mailed)
+        expect(
+          (await boss.post('/api/auth/sign-in/email', { email: 'boss@test.dev', password: 'password12345' })).status,
+        ).toBe(200)
+        const wsId = (await (await boss.post('/api/workspaces', { name: 'Mail Co' })).json()).id
+        const cvId = (await (await boss.post('/api/canvases', { name: 'Mail board' })).json()).id
+        const invited = [
+          [
+            'wsinbox@test.dev',
+            await boss.post(`/api/workspaces/${wsId}/members`, { email: 'wsinbox@test.dev' }),
+            `/w/${wsId}`,
+          ],
+          [
+            'cvinbox@test.dev',
+            await boss.post(`/api/canvases/${cvId}/members`, { email: 'cvinbox@test.dev' }),
+            `/c/${cvId}`,
+          ],
+        ] as const
+        for (const [email, res, landing] of invited) {
+          const body = await res.json()
+          expect(res.status, JSON.stringify(body)).toBe(200)
+          /* the inviter is told it was emailed, and never holds the link */
+          expect(body.emailed).toBe(true)
+          expect(body.link).toBeUndefined()
+          expect(JSON.stringify(body)).not.toContain('/invite/')
+
+          await vi.waitFor(() => expect(sinkLink(sink.mails, email)).toBeTruthy(), { timeout: 10_000 })
+          const link = sinkLink(sink.mails, email)!
+          const person = new Client(mailed)
+          const accepted = await person.post(`/api/invite-links/${tokenOf(link)}/accept`, {
+            name: 'Ivy',
+            password: 'password12345',
+          })
+          expect(accepted.status, await accepted.clone().text()).toBe(200)
+          expect(await accepted.json()).toEqual({ landing })
+          const session = await (await person.get('/api/auth/get-session')).json()
+          expect(session.user).toMatchObject({ email, emailVerified: true })
+        }
+        /* no verification mail went to either invitee: the link was the proof */
+        expect(
+          sink.mails.filter((m) => m.data.includes('Verify your doop email') && m.to.endsWith('inbox@test.dev')),
+        ).toEqual([])
+      } finally {
+        mailed.stop()
+        await sink.stop()
+      }
+    }, 70_000)
   })
 
   it('rate-limits the accept route per invited address, whatever address the request claims', async () => {
