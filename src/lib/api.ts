@@ -265,7 +265,7 @@ export interface PlansResponse {
 }
 
 /** An invite lands one of two ways: an existing account is a member at
- *  once; an unknown email waits (and was emailed, when SMTP is set up). */
+ *  once; an unknown email gets an invite link (emailed too, when SMTP is set up). */
 export type WorkspaceInviteResult =
   { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean; link: string }
 

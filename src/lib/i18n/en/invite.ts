@@ -4,7 +4,7 @@ export const invite = {
   linkAria: 'Invite link for {email}',
   copyLink: 'Copy link',
   linkCopied: 'Link copied',
-  copyFailed: 'Could not copy — select the link and copy it by hand',
+  copyFailed: 'Could not copy. Select the link and copy it by hand.',
   waiting: 'Waiting to sign up',
   revoke: 'Revoke',
   revokeAria: 'Revoke the invite for {email}',
@@ -35,7 +35,7 @@ export const invite = {
   wrongAccountHint: 'Sign out to continue as {email}.',
 
   invalidTitle: 'This invite link isn’t valid any more',
-  invalidText: 'Ask for a new one.',
+  invalidText: 'Ask the person who invited you for a new one.',
   loadFailed: 'Could not load this invite. Check your connection and try again.',
 
   verifyTitle: 'Check your inbox',

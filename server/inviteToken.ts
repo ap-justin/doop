@@ -3,8 +3,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { ORIGIN } from './links.ts'
 
 /**
- * Invite links: the token in `${ORIGIN}/invite/<token>` is the proof that its
- * holder owns the invited address. Like agent keys, only its sha256 is stored;
+ * Invite links: the token in `${ORIGIN}/invite/<token>` is the invite's
+ * credential. The inviter holds it too, so it proves nothing about the
+ * invited address. Like agent keys, only its sha256 is stored;
  * 192 random bits make a plain hash preimage-proof.
  */
 

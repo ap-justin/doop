@@ -487,8 +487,8 @@ export async function workspaceInviteByToken(tokenHash: string): Promise<Workspa
   }
 }
 
-/** Honour one link's invite for an account whose ownership of the address the
- *  link (or a password sign-in after it) has shown. */
+/** Honour one link's invite for the account its accept or join route has
+ *  signed in as the invited address. */
 export async function acceptWorkspaceInviteLink(link: WorkspaceInviteLink, userId: string): Promise<void> {
   const ws = records.get(link.workspaceId)
   if (ws) await acceptInvite(ws, userId, link)

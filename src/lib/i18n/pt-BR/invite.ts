@@ -36,7 +36,7 @@ export const invite: Catalog['invite'] = {
   wrongAccountHint: 'Saia para continuar como {email}.',
 
   invalidTitle: 'Este link de convite não é mais válido',
-  invalidText: 'Peça um novo.',
+  invalidText: 'Peça um novo a quem convidou você.',
   loadFailed: 'Não foi possível carregar este convite. Verifique sua conexão e tente novamente.',
 
   verifyTitle: 'Confira sua caixa de entrada',

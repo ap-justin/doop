@@ -20,12 +20,12 @@ import type { InviteLinkError, InviteLinkInfo, PendingCanvasInvite } from '../sh
 
 /**
  * Invite links. Sharing a canvas or workspace with an email that has no
- * account yet makes a pending invite carrying a single-use token; the link
- * to /invite/<token> shows the inviter the way in, and opening it lets the
- * invited address create its account. Workspace invites live in
- * `workspace_invites` (they predate links), canvas invites in
- * `canvas_invites`; this file is the canvas half plus the public accept
- * route both kinds share.
+ * account yet makes a pending invite carrying a single-use token. The
+ * inviter gets the link to /invite/<token>; opening it lets the invited
+ * address create its account, or an account it already has join. Workspace
+ * invites live in `workspace_invites` (they predate links), canvas invites
+ * in `canvas_invites`; this file is the canvas half plus the public routes
+ * both kinds share.
  */
 
 /* ---- canvas invites ---- */
@@ -241,8 +241,9 @@ async function createdAccount(userId: string, email: string) {
 }
 
 /** Where the verification email brings a new account back to, signed in:
- *  verifying honours a workspace invite by address (`acceptInvites` in
- *  server/auth.ts), while a canvas invite waits on this link's join. */
+ *  verifying honours a workspace invite by address (`acceptInvites`, from
+ *  server/auth.ts's afterEmailVerification), while a canvas invite waits on
+ *  this link's join. */
 function verifiedLanding(token: string, found: ResolvedInvite): string {
   return found.kind === 'workspace' ? found.landing : `/invite/${token}`
 }

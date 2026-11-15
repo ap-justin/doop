@@ -656,8 +656,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   and the invite's deletion in one transaction for both kinds), so a failed step leaves the link for
   `join`. A second accept of a link already being accepted gets 409 `in-progress`, and the account that spent a
   link may `join` with it again and land, for as long as this process remembers it. Accept and join share a
-  3-per-10-seconds budget per invited address (not per IP) like better-auth's sign-in. OAuth sign-up is
-  untouched. The page is
+  3-per-10-seconds budget per invited address (not per IP) like better-auth's sign-in. A token never
+  reaches PostHog: `before_send` runs `src/lib/inviteRedaction.ts` over every event, replay included. The page is
   `src/pages/InviteAccept.tsx`, the link and its Copy button `InviteLinkNotice.tsx`. Tests:
   `inviteLinks.test.ts`, `inviteLinksLifecycle.test.ts` (expiry and the attempt window on a shifted
   clock), `inviteToken.test.ts`, `inviteAccept.test.tsx`, `inviteRedaction.test.ts`.

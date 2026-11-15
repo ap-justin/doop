@@ -245,7 +245,7 @@ describe('invite links', () => {
       ).status,
     ).toBe(200)
     const { body } = await inviteToWorkspace('early@signup-closed.invalid')
-    /* an existing account is added as before */
+    /* an existing account becomes a member at once, with no link */
     expect(body.member).toBeTruthy()
     expect(body.link).toBeUndefined()
   })
