@@ -8,7 +8,10 @@ import { useT } from '@/lib/i18n'
  *  Without a mailer, the link to send and a Copy button (only its hash is kept
  *  on the server). With one there is no `link`: it went to the address by
  *  email alone, and the inviter never holds it. Mount it with `key={link ?? email}`,
- *  so a new invite never inherits the last one's "Link copied". */
+ *  so a new invite never inherits the last one's "Link copied". It is no live
+ *  region itself: a region inserted with its text already inside is not reliably
+ *  read, so the caller announces it, either by rendering it inside an always-mounted
+ *  `role="status"` (ShareModal) or through its own toast (the Workspace members pane). */
 export function InviteLinkNotice({ email, link }: { email: string; link?: string }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
@@ -27,7 +30,7 @@ export function InviteLinkNotice({ email, link }: { email: string; link?: string
 
   if (!link)
     return (
-      <p role="status" className="mt-3 text-label text-ink-soft" data-testid="invite-sent-notice">
+      <p className="mt-3 text-label text-ink-soft" data-testid="invite-sent-notice">
         {t('invite.sent', { email })}
       </p>
     )

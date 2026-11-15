@@ -138,6 +138,7 @@ export function ShareModal({
     if (!clean || busy || people === null) return
     setBusy(true)
     setError(null)
+    setSent(null)
     try {
       const result = await api.inviteMember(canvas.id, clean)
       if ('invite' in result) {
@@ -149,7 +150,6 @@ export function ShareModal({
         return
       }
       const member = result
-      setSent(null)
       setPeople((current) =>
         current?.some((person) => person.userId === member.userId) ? current : [...(current ?? []), member],
       )
@@ -260,7 +260,12 @@ export function ShareModal({
           </>
         )}
         {error && <p className="mx-[2px] mt-2 text-label text-accent-ink">{error}</p>}
-        {isOwner && sent && <InviteLinkNotice key={sent.link ?? sent.email} email={sent.email} link={sent.link} />}
+        {isOwner && (
+          // mounted before any invite, so the notice arriving inside it is announced
+          <div role="status">
+            {sent && <InviteLinkNotice key={sent.link ?? sent.email} email={sent.email} link={sent.link} />}
+          </div>
+        )}
         <div className="mt-[14px] mb-1 flex max-h-[40vh] flex-col gap-[2px] overflow-y-auto">
           {(people ?? []).map((person) => (
             <PersonRow

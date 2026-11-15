@@ -112,7 +112,9 @@ it('shows the inviter the link and a Copy button, or, once a mailer sent it, onl
   expect(container.textContent).toContain('Copy link')
 
   await act(async () => root.render(<InviteLinkNotice email="new@example.com" />))
-  expect(container.querySelector('[role="status"]')?.textContent).toBe('Invite sent to new@example.com')
+  expect(container.querySelector('[data-testid="invite-sent-notice"]')?.textContent).toBe(
+    'Invite sent to new@example.com',
+  )
   expect(container.querySelector('input')).toBeNull()
   expect(container.querySelector('button')).toBeNull()
 })
