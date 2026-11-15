@@ -345,9 +345,10 @@ function MembersPane({
     }
   }
 
-  async function revoke(inviteId: string) {
+  async function revoke(invite: { id: string; email: string }) {
     try {
-      await api.revokeWorkspaceInvite(ws.id, inviteId)
+      await api.revokeWorkspaceInvite(ws.id, invite.id)
+      setSent((current) => (current?.email.toLowerCase() === invite.email.toLowerCase() ? null : current))
       onChange()
     } catch (caught) {
       onError(caught, t('workspace.revokeFailed'))
@@ -386,7 +387,7 @@ function MembersPane({
             </Button>
           </div>
         )}
-        {admin && sent && <InviteLinkNotice email={sent.email} link={sent.link} />}
+        {admin && sent && <InviteLinkNotice key={sent.link} email={sent.email} link={sent.link} />}
       </CardHeader>
       <div>
         {ws.members.map((m) => {
@@ -451,7 +452,7 @@ function MembersPane({
                     {t('workspace.invitedBy', { role: t(ROLE_LABEL[inv.role]), name: inv.invitedByName })}
                   </span>
                 </span>
-                <Button variant="bare" size="sm" onClick={() => revoke(inv.id)}>
+                <Button variant="bare" size="sm" onClick={() => void revoke(inv)}>
                   {t('workspace.revoke')}
                 </Button>
               </div>

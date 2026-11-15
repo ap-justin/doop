@@ -10,6 +10,12 @@ export interface InviteLinkInfo {
   accountExists: boolean
 }
 
+/** The `error` an invite-link route answers with:
+ *  - `invalid` (404): unknown, expired, used or revoked, one answer for all
+ *  - `account-exists` (409): the address has an account, so the page asks it to sign in and join
+ *  - `in-progress` (409): this link is being accepted by another request right now; retry */
+export type InviteLinkError = 'invalid' | 'account-exists' | 'in-progress'
+
 /** A canvas shared with an address that has no account yet. */
 export interface PendingCanvasInvite {
   id: string

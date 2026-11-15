@@ -179,6 +179,7 @@ export const canvasInvites = pgTable(
   },
   (t) => [
     uniqueIndex('canvas_invites_canvas_email_idx').on(t.canvasId, t.email),
+    index('canvas_invites_email_idx').on(t.email),
     index('canvas_invites_token_idx').on(t.tokenHash),
   ],
 )

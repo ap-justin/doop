@@ -1,6 +1,6 @@
 import { env } from './env.ts'
 import express from 'express'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, lte, type SQL } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
@@ -390,7 +390,16 @@ async function createInvite(workspaceId: string, email: string, role: WorkspaceR
   return { invite: { ...invite, id: saved?.id ?? invite.id }, link: inviteLinkUrl(token) }
 }
 
+/** An expired invite is not pending: it is deleted the first time anything
+ *  lists, resolves or honours it, so an admin never has one that is hidden
+ *  but still honoured. Rows from before links have no expiry (null compares
+ *  as unknown, so `lte` keeps them) and stay pending. */
+async function dropExpiredInvites(scope: SQL): Promise<void> {
+  await db.delete(t.workspaceInvites).where(and(scope, lte(t.workspaceInvites.expiresAt, Date.now())))
+}
+
 async function listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
+  await dropExpiredInvites(eq(t.workspaceInvites.workspaceId, workspaceId))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.workspaceId, workspaceId))
   const inviterIds = [...new Set(rows.map((r) => r.invitedBy))]
   const names = await userRows(inviterIds)
@@ -437,6 +446,7 @@ async function acceptInvite(
  *  reactivating the workspace does not lose the people it invited. */
 export async function acceptInvites(userId: string, email: string): Promise<void> {
   const clean = email.trim().toLowerCase()
+  await dropExpiredInvites(eq(t.workspaceInvites.email, clean))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.email, clean))
   for (const invite of rows) {
     const ws = records.get(invite.workspaceId)
@@ -463,8 +473,10 @@ export interface WorkspaceInviteLink {
  *  still able to take members. */
 export async function workspaceInviteByToken(tokenHash: string): Promise<WorkspaceInviteLink | null> {
   const [row] = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.tokenHash, tokenHash))
+  const expired = !!row?.expiresAt && row.expiresAt <= Date.now()
+  if (row && expired) await dropExpiredInvites(eq(t.workspaceInvites.id, row.id))
   const ws = row && records.get(row.workspaceId)
-  if (!row || !ws || !isActive(ws) || !row.expiresAt || row.expiresAt <= Date.now()) return null
+  if (!row || !ws || !isActive(ws) || !row.expiresAt || expired) return null
   return {
     id: row.id,
     email: row.email,
@@ -484,6 +496,7 @@ export async function acceptWorkspaceInviteLink(link: WorkspaceInviteLink, userI
 
 /** Reactivation catches up on invites whose people signed up meanwhile. */
 async function acceptPendingInvitesFor(ws: WorkspaceRecord): Promise<void> {
+  await dropExpiredInvites(eq(t.workspaceInvites.workspaceId, ws.id))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.workspaceId, ws.id))
   if (!rows.length) return
   const users = await db

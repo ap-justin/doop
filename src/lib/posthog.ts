@@ -19,6 +19,7 @@ import 'posthog-js/dist/web-vitals'
 import 'posthog-js/dist/conversations'
 import posthog from 'posthog-js/dist/module.no-external'
 import { installFrameReplay } from './frameReplay'
+import { redactInviteTokensDeep } from './inviteRedaction'
 import { desktopPlatform, isDesktopShell, shellVersion } from './shell'
 
 const key = import.meta.env.VITE_POSTHOG_KEY
@@ -65,6 +66,9 @@ if (!key) {
       maskInputOptions: { password: true, email: true },
     },
     disable_session_recording: localStorage.getItem(NO_REPLAY_KEY) === '1',
+    /* every event, $snapshot included: URLs, referrers and replay meta/network
+       entries carry the token of an open /invite/<token> page */
+    before_send: (event) => event && redactInviteTokensDeep(event),
     defaults: '2026-05-30',
   })
 

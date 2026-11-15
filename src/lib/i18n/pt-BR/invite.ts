@@ -9,7 +9,7 @@ export const invite: Catalog['invite'] = {
   waiting: 'Aguardando cadastro',
   revoke: 'Revogar',
   revokeAria: 'Revogar o convite de {email}',
-  revokeFailed: 'não foi possível revogar o convite',
+  revokeFailed: 'Não foi possível revogar o convite',
   invitedLink: '{email} foi convidado — envie o link abaixo',
 
   titleWorkspace: 'Entrar em {name}',
@@ -23,13 +23,18 @@ export const invite: Catalog['invite'] = {
   create: 'Criar conta e entrar',
   creating: 'Criando sua conta…',
   failed: 'Não foi possível aceitar o convite',
+  tooManyAttempts: 'Muitas tentativas. Aguarde um momento e tente novamente.',
+  stillWorking: 'Este convite ainda está sendo aceito. Tente novamente em um momento.',
+  passwordRejected: 'Essa senha não pode ser usada. Escolha uma com 8 a 128 caracteres.',
 
   existsTitle: 'Você já tem uma conta',
   existsText: 'Já existe uma conta com {email}. Entre para participar.',
   signIn: 'Entrar',
   joining: 'Entrando…',
+  joinFailed: 'Não foi possível entrar agora. O link continua válido.',
   wrongAccount: 'Você está conectado como {current}, mas este convite é para {email}.',
   signOut: 'Sair',
+  wrongAccountHint: 'Saia para continuar como {email}.',
 
   invalidTitle: 'Este link de convite não é mais válido',
   invalidText: 'Peça um novo.',

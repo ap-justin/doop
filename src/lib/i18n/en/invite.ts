@@ -8,7 +8,7 @@ export const invite = {
   waiting: 'Waiting to sign up',
   revoke: 'Revoke',
   revokeAria: 'Revoke the invite for {email}',
-  revokeFailed: 'could not revoke the invite',
+  revokeFailed: 'Could not revoke the invite',
   invitedLink: '{email} is invited — send them the link below',
 
   titleWorkspace: 'Join {name}',
@@ -22,13 +22,18 @@ export const invite = {
   create: 'Create account and join',
   creating: 'Creating your account…',
   failed: 'Could not accept the invite',
+  tooManyAttempts: 'Too many attempts. Wait a moment and try again.',
+  stillWorking: 'This invite is still being accepted. Try again in a moment.',
+  passwordRejected: 'That password can’t be used. Choose one with 8 to 128 characters.',
 
   existsTitle: 'You already have an account',
   existsText: 'An account with {email} already exists. Sign in to join.',
   signIn: 'Sign in',
   joining: 'Joining…',
+  joinFailed: 'Could not join just now. The link still works.',
   wrongAccount: 'You are signed in as {current}, but this invite is for {email}.',
   signOut: 'Sign out',
+  wrongAccountHint: 'Sign out to continue as {email}.',
 
   invalidTitle: 'This invite link isn’t valid any more',
   invalidText: 'Ask for a new one.',

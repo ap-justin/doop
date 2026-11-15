@@ -175,10 +175,8 @@ export function ShareModal({
       await api.revokeCanvasInvite(canvas.id, invite.id)
       setPending((current) => current.filter((other) => other.id !== invite.id))
       setSent((current) => (current?.email === invite.email ? null : current))
-    } catch (caught) {
-      setError(
-        caught instanceof ApiError ? String(caught.body.error ?? t('invite.revokeFailed')) : t('invite.revokeFailed'),
-      )
+    } catch {
+      setError(t('invite.revokeFailed'))
     } finally {
       setBusy(false)
     }
@@ -262,7 +260,7 @@ export function ShareModal({
           </>
         )}
         {error && <p className="mx-[2px] mt-2 text-label text-accent-ink">{error}</p>}
-        {isOwner && sent && <InviteLinkNotice email={sent.email} link={sent.link} />}
+        {isOwner && sent && <InviteLinkNotice key={sent.link} email={sent.email} link={sent.link} />}
         <div className="mt-[14px] mb-1 flex max-h-[40vh] flex-col gap-[2px] overflow-y-auto">
           {(people ?? []).map((person) => (
             <PersonRow
