@@ -1,1 +1,0 @@
-CREATE INDEX "canvas_invites_email_idx" ON "canvas_invites" USING btree ("email");

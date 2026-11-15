@@ -1,5 +1,5 @@
 {
-  "id": "9890198a-f5ae-4ed8-bc9b-7fe0e8a277fc",
+  "id": "092d60dc-185f-4f2c-8ed6-9bc7aebe1dd7",
   "prevId": "a992e5bf-8e84-47b5-9087-39b9b5069b2a",
   "version": "7",
   "dialect": "postgresql",
@@ -865,6 +865,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "canvas_invites_email_idx": {
+          "name": "canvas_invites_email_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
