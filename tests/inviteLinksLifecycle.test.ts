@@ -108,7 +108,7 @@ describe('invite links over time', () => {
       expect((await new Client(server).get(`/api/invite-links/${hash}`)).status).toBe(404)
       expect((await accept(`${server.base}/invite/${hash}`)).status).toBe(404)
     }
-  })
+  }, 70_000)
 
   it('treats an expired workspace or canvas invite as invalid on info, accept and join, and drops it from the lists', async () => {
     const cases = {

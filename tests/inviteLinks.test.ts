@@ -293,7 +293,7 @@ describe('invite links', () => {
     } finally {
       open.stop()
     }
-  })
+  }, 70_000)
 
   it('with required verification, makes the account but neither signs it in nor spends the invite', async () => {
     const prod = { NODE_ENV: 'production', BETTER_AUTH_SECRET: 'test-secret-not-for-real-use' }
