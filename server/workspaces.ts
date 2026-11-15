@@ -658,11 +658,20 @@ workspacesRouter.post('/:id/members', async (req, res) => {
   }
   const { invite, link } = await createInvite(ws.id, email, role, req.user!.id)
   if (mailerConfigured) {
-    sendMail({
-      to: email,
-      subject: `${req.user!.name} invited you to "${ws.name}" on doop`,
-      text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
-    }).catch((err) => console.error('[workspaces] invite email failed', err))
+    try {
+      await sendMail({
+        to: email,
+        subject: `${req.user!.name} invited you to "${ws.name}" on doop`,
+        text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
+      })
+    } catch (err) {
+      /* nobody holds this link, so the invite could never be opened */
+      console.error('[workspaces] invite email failed', err)
+      await db
+        .delete(t.workspaceInvites)
+        .where(and(eq(t.workspaceInvites.workspaceId, ws.id), eq(t.workspaceInvites.id, invite.id)))
+      return res.status(502).json({ error: 'could not send the invite email — try again' })
+    }
   }
   const pending: WorkspaceInvite = {
     id: invite.id,

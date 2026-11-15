@@ -305,8 +305,8 @@ describe('invite links', () => {
       return /https?:\/\/\S+\/invite\/[\w-]+/.exec(mail?.data ?? '')?.[0]
     }
 
-    it('mails the link to the address alone, and opening it verifies the address and lands', async () => {
-      const sink = await startSmtpSink()
+    /** A server mailing through `smtpPort`, with boss@test.dev signed in. */
+    async function mailedServer(smtpPort: number) {
       /* the inviter signs up and is verified while no mailer is set, since an
          unverified account cannot sign in once verification is required */
       const before = await startServer(prod)
@@ -318,15 +318,18 @@ describe('invite links', () => {
       await pg.query(`update "user" set email_verified = true`)
       await pg.close()
 
-      const mailed = await startServer(
-        { ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(sink.port) },
-        before.dataDir,
-      )
+      const mailed = await startServer({ ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort) }, before.dataDir)
+      const boss = new Client(mailed)
+      const signIn = await boss.post('/api/auth/sign-in/email', { email: 'boss@test.dev', password: 'password12345' })
+      if (signIn.status !== 200) mailed.stop()
+      expect(signIn.status).toBe(200)
+      return { mailed, boss }
+    }
+
+    it('mails the link to the address alone, and opening it verifies the address and lands', async () => {
+      const sink = await startSmtpSink()
+      const { mailed, boss } = await mailedServer(sink.port)
       try {
-        const boss = new Client(mailed)
-        expect(
-          (await boss.post('/api/auth/sign-in/email', { email: 'boss@test.dev', password: 'password12345' })).status,
-        ).toBe(200)
         const wsId = (await (await boss.post('/api/workspaces', { name: 'Mail Co' })).json()).id
         const cvId = (await (await boss.post('/api/canvases', { name: 'Mail board' })).json()).id
         const invited = [
@@ -368,6 +371,32 @@ describe('invite links', () => {
       } finally {
         mailed.stop()
         await sink.stop()
+      }
+    }, 70_000)
+
+    it('answers a failed invite email with an error and drops the invite, never handing out the link', async () => {
+      /* a port that was just listening and no longer is: every send is refused */
+      const gone = await startSmtpSink()
+      await gone.stop()
+      const { mailed, boss } = await mailedServer(gone.port)
+      try {
+        const wsId = (await (await boss.post('/api/workspaces', { name: 'Bounce Co' })).json()).id
+        const cvId = (await (await boss.post('/api/canvases', { name: 'Bounce board' })).json()).id
+        for (const res of [
+          await boss.post(`/api/workspaces/${wsId}/members`, { email: 'wsbounce@test.dev' }),
+          await boss.post(`/api/canvases/${cvId}/members`, { email: 'cvbounce@test.dev' }),
+        ]) {
+          const text = await res.text()
+          expect(res.status, text).toBe(502)
+          expect(JSON.parse(text).error).toBe('could not send the invite email — try again')
+          expect(text).not.toContain('/invite/')
+        }
+        const detail = await (await boss.get(`/api/workspaces/${wsId}`)).json()
+        expect(emailsOf(detail.invites)).not.toContain('wsbounce@test.dev')
+        const pending = await (await boss.get(`/api/canvases/${cvId}/invites`)).json()
+        expect(emailsOf(pending)).not.toContain('cvbounce@test.dev')
+      } finally {
+        mailed.stop()
       }
     }, 70_000)
   })

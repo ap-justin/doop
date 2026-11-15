@@ -1429,7 +1429,14 @@ app.post('/api/canvases/:id/members', async (req, res) => {
     /* no account yet: the invite becomes a link that creates one */
     if (!email.includes('@')) return res.status(400).json({ error: 'a valid email is required' })
     const { invite, link } = await createCanvasInvite(c.id, email, req.user!.id)
-    emailCanvasInvite(req.user!, email, c.name, link)
+    try {
+      await emailCanvasInvite(req.user!, email, c.name, link)
+    } catch (err) {
+      /* nobody holds this link, so the invite could never be opened */
+      console.error('[invites] canvas invite email failed', err)
+      await revokeCanvasInvite(c.id, invite.id)
+      return res.status(502).json({ error: 'could not send the invite email — try again' })
+    }
     /* with a mailer the link goes by email alone: the inviter never holds it */
     return res.json(mailerConfigured ? { invite, emailed: true } : { invite, link, emailed: false })
   }

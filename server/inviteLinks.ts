@@ -66,13 +66,14 @@ export async function revokeCanvasInvite(canvasId: string, inviteId: string): Pr
   await db.delete(t.canvasInvites).where(and(eq(t.canvasInvites.canvasId, canvasId), eq(t.canvasInvites.id, inviteId)))
 }
 
-export function emailCanvasInvite(inviter: { name: string }, email: string, canvasName: string, link: string) {
+/** Rejects when the mail cannot be sent; does nothing without a mailer. */
+export async function emailCanvasInvite(inviter: { name: string }, email: string, canvasName: string, link: string) {
   if (!mailerConfigured) return
-  sendMail({
+  await sendMail({
     to: email,
     subject: `${inviter.name} shared “${canvasName}” with you`,
     text: `${inviter.name} invited you to collaborate on “${canvasName}” on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
-  }).catch((err) => console.error('[invites] canvas invite email failed', err))
+  })
 }
 
 interface CanvasInviteRef {
