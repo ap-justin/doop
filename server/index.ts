@@ -90,6 +90,14 @@ import { colorFor } from '../shared/types.ts'
 import { isPeerViewport } from '../shared/viewport.ts'
 import { exportScaleSuffix, fitExportScale, parseExportScale } from '../shared/exportScale.ts'
 import { emailShare } from './canvasShares.ts'
+import { mailerConfigured } from './mailer.ts'
+import {
+  createCanvasInvite,
+  emailCanvasInvite,
+  inviteLinksRouter,
+  listCanvasInvites,
+  revokeCanvasInvite,
+} from './inviteLinks.ts'
 import * as userEvents from './userEvents.ts'
 import { activeExtensions, leanGate, leanMode, residentMention, unlessLean, unrecognisedLeanValue } from './lean.ts'
 import type { Canvas, ClientMessage, Presence, ServerMessage } from '../shared/types.ts'
@@ -729,6 +737,8 @@ declare global {
    whose session (if any) is not the app's: relay it back to the app before
    the gate looks at that session (shared/desktopConnect.ts) */
 app.get('/api/integrations/:provider/callback', relayDesktopCallback)
+/* public: the invite link's own token is the credential (server/inviteLinks.ts) */
+app.use('/api/invite-links', inviteLinksRouter)
 app.use('/api/live-activities', logLiveActivityRequests)
 app.use('/api', async (req, res, next) => {
   try {
@@ -1415,7 +1425,12 @@ app.post('/api/canvases/:id/members', async (req, res) => {
     })
     .from(authSchema.user)
     .where(eq(authSchema.user.email, email))
-  if (!row) return res.status(404).json({ error: 'no doop account with that email — ask them to sign up first' })
+  if (!row) {
+    /* no account yet: the invite becomes a link that creates one */
+    const { invite, link } = await createCanvasInvite(c.id, email, req.user!.id)
+    emailCanvasInvite(req.user!, email, c.name, link)
+    return res.json({ invite, link, emailed: mailerConfigured })
+  }
   if (row.id === c.ownerId) return res.status(400).json({ error: 'the owner already has access' })
   const isNew = !c.memberIds?.includes(row.id)
   store.addMember(c.id, row.id, req.user!.id)
@@ -1424,6 +1439,21 @@ app.post('/api/canvases/:id/members', async (req, res) => {
     userEvents.notifyUsers([row.id], { type: 'canvases' })
   }
   res.json({ userId: row.id, name: row.name, email: row.email, image: avatarUrl(row.image), owner: false })
+})
+
+app.get('/api/canvases/:id/invites', async (req, res) => {
+  const c = requireCanvas(req, res, req.params.id, 'edit')
+  if (!c) return
+  if (c.ownerId !== req.user!.id) return res.status(403).json({ error: 'only the owner can see pending invites' })
+  res.json(await listCanvasInvites(c.id))
+})
+
+app.delete('/api/canvases/:id/invites/:inviteId', async (req, res) => {
+  const c = requireCanvas(req, res, req.params.id, 'edit')
+  if (!c) return
+  if (c.ownerId !== req.user!.id) return res.status(403).json({ error: 'only the owner can revoke invites' })
+  await revokeCanvasInvite(c.id, req.params.inviteId)
+  res.json({ ok: true })
 })
 
 app.delete('/api/canvases/:id/members/:userId', (req, res) => {

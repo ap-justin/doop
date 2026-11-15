@@ -8,6 +8,7 @@ import * as authSchema from './db/auth-schema.ts'
 import { store } from './store.ts'
 import * as billing from './billing.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
+import { inviteLinkUrl, newInviteToken } from './inviteToken.ts'
 import { dropWorkspaceFonts } from './fonts.ts'
 import { notifyUsers } from './userEvents.ts'
 import { avatarUrl } from '../shared/avatar.ts'
@@ -61,8 +62,6 @@ interface Membership {
 const records = new Map<string, WorkspaceRecord>()
 /** workspaceId -> userId -> membership */
 const members = new Map<string, Map<string, Membership>>()
-
-const ORIGIN = env.BETTER_AUTH_URL
 
 function swallow(p: Promise<unknown>) {
   p.catch((err) => console.error('[workspaces] write failed', err))
@@ -375,16 +374,20 @@ export async function removeMember(workspaceId: string, userId: string): Promise
 
 /* ---- invites for people without an account ---- */
 
+/** One pending invite per workspace and address; inviting again re-issues the
+ *  link (a fresh token and a fresh seven days), the old one stops working. */
 async function createInvite(workspaceId: string, email: string, role: WorkspaceRole, invitedBy: string) {
+  const { token, hash, expiresAt } = newInviteToken()
   const invite = { id: nanoid(12), workspaceId, email, role, invitedBy, createdAt: Date.now() }
-  await db
+  const [saved] = await db
     .insert(t.workspaceInvites)
-    .values(invite)
+    .values({ ...invite, tokenHash: hash, expiresAt })
     .onConflictDoUpdate({
       target: [t.workspaceInvites.workspaceId, t.workspaceInvites.email],
-      set: { role, invitedBy, createdAt: invite.createdAt },
+      set: { role, invitedBy, createdAt: invite.createdAt, tokenHash: hash, expiresAt },
     })
-  return invite
+    .returning({ id: t.workspaceInvites.id })
+  return { invite: { ...invite, id: saved?.id ?? invite.id }, link: inviteLinkUrl(token) }
 }
 
 async function listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
@@ -400,15 +403,6 @@ async function listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
       createdAt: r.createdAt,
     }))
     .sort((a, b) => b.createdAt - a.createdAt)
-}
-
-/** Invites can only be honoured for an address someone has proven they
- *  own. With a mailer that is email verification; without one nobody can
- *  ever verify, so in production such invites are refused up front (the
- *  same line ADMIN_EMAILS draws) and local development takes the address
- *  at face value. */
-export function unknownEmailInvitesAllowed(): boolean {
-  return mailerConfigured || !env.isProduction
 }
 
 /** Turn an invite into a membership: the member row and the invite's
@@ -456,6 +450,38 @@ export async function acceptInvites(userId: string, email: string): Promise<void
   }
 }
 
+export interface WorkspaceInviteLink {
+  id: string
+  email: string
+  role: WorkspaceRole
+  invitedBy: string
+  workspaceId: string
+  workspaceName: string
+}
+
+/** The live invite behind a link's token hash: unexpired, and its workspace
+ *  still able to take members. */
+export async function workspaceInviteByToken(tokenHash: string): Promise<WorkspaceInviteLink | null> {
+  const [row] = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.tokenHash, tokenHash))
+  const ws = row && records.get(row.workspaceId)
+  if (!row || !ws || !isActive(ws) || !row.expiresAt || row.expiresAt <= Date.now()) return null
+  return {
+    id: row.id,
+    email: row.email,
+    role: isWorkspaceRole(row.role) ? row.role : 'member',
+    invitedBy: row.invitedBy,
+    workspaceId: ws.id,
+    workspaceName: ws.name,
+  }
+}
+
+/** Honour one link's invite for an account whose ownership of the address the
+ *  link (or a password sign-in after it) has shown. */
+export async function acceptWorkspaceInviteLink(link: WorkspaceInviteLink, userId: string): Promise<void> {
+  const ws = records.get(link.workspaceId)
+  if (ws) await acceptInvite(ws, userId, link)
+}
+
 /** Reactivation catches up on invites whose people signed up meanwhile. */
 async function acceptPendingInvitesFor(ws: WorkspaceRecord): Promise<void> {
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.workspaceId, ws.id))
@@ -470,7 +496,9 @@ async function acceptPendingInvitesFor(ws: WorkspaceRecord): Promise<void> {
       ),
     )
   for (const u of users) {
-    if (mailerConfigured && !u.emailVerified) continue
+    /* only an address someone has proven: verified, or local development
+       with no mailer, where signup takes it at face value */
+    if (!u.emailVerified && (mailerConfigured || env.isProduction)) continue
     const invite = rows.find((r) => r.email === u.email)
     if (invite) await acceptInvite(ws, u.id, invite)
   }
@@ -615,14 +643,12 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     }
     return res.json({ member })
   }
-  if (!unknownEmailInvitesAllowed())
-    return res.status(404).json({ error: 'no doop account with that email — ask them to sign up first' })
-  const invite = await createInvite(ws.id, email, role, req.user!.id)
+  const { invite, link } = await createInvite(ws.id, email, role, req.user!.id)
   if (mailerConfigured) {
     sendMail({
       to: email,
       subject: `${req.user!.name} invited you to "${ws.name}" on doop`,
-      text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nCreate an account with this email address and you'll be in:\n\n${ORIGIN}/\n`,
+      text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
     }).catch((err) => console.error('[workspaces] invite email failed', err))
   }
   const pending: WorkspaceInvite = {
@@ -632,7 +658,7 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     invitedByName: req.user!.name,
     createdAt: invite.createdAt,
   }
-  res.json({ invite: pending, emailed: mailerConfigured })
+  res.json({ invite: pending, emailed: mailerConfigured, link })
 })
 
 workspacesRouter.patch('/:id/members/:userId', (req, res) => {
