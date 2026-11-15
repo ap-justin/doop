@@ -638,7 +638,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   pending invite with a single-use token, 7 days to live, stored as its sha256 only (workspace invites in
   `workspace_invites`, canvas invites in `canvas_invites`, migration 0051) and returns
   `${BETTER_AUTH_URL}/invite/<token>`. With a mailer the link goes by email alone (the inviter's response has no
-  `link`), so opening it proves the address; a failed send answers 502 and drops the invite. Without one the inviter
+  `link`), so opening it proves the address; a failed send answers 502 and withdraws only that request's change (a re-invite keeps the earlier invite). Without one the inviter
   gets the link once and holds it too, so it proves nothing: an account made that way stays unverified. An expired invite
   is not pending: listing, resolving or honouring invites deletes the expired rows first, so none is hidden
   from its owner yet still honoured (workspace invites from before links have no expiry and stay). The public

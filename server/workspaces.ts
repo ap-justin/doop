@@ -378,16 +378,48 @@ export async function removeMember(workspaceId: string, userId: string): Promise
  *  link (a fresh token and a fresh seven days), the old one stops working. */
 async function createInvite(workspaceId: string, email: string, role: WorkspaceRole, invitedBy: string) {
   const { token, hash, expiresAt } = newInviteToken()
-  const invite = { id: nanoid(12), workspaceId, email, role, invitedBy, createdAt: Date.now() }
-  const [saved] = await db
-    .insert(t.workspaceInvites)
-    .values({ ...invite, tokenHash: hash, expiresAt })
-    .onConflictDoUpdate({
-      target: [t.workspaceInvites.workspaceId, t.workspaceInvites.email],
-      set: { role, invitedBy, createdAt: invite.createdAt, tokenHash: hash, expiresAt },
-    })
-    .returning({ id: t.workspaceInvites.id })
-  return { invite: { ...invite, id: saved?.id ?? invite.id }, link: inviteLinkUrl(token) }
+  const fresh = { role, invitedBy, createdAt: Date.now(), tokenHash: hash, expiresAt }
+  const sameAddress = and(eq(t.workspaceInvites.workspaceId, workspaceId), eq(t.workspaceInvites.email, email))
+  /* insert-or-lock rather than an upsert, so the row this call replaces is read before it is overwritten */
+  const { id, previous } = await db.transaction(async (tx) => {
+    for (;;) {
+      const [inserted] = await tx
+        .insert(t.workspaceInvites)
+        .values({ id: nanoid(12), workspaceId, email, ...fresh })
+        .onConflictDoNothing({ target: [t.workspaceInvites.workspaceId, t.workspaceInvites.email] })
+        .returning({ id: t.workspaceInvites.id })
+      if (inserted) return { id: inserted.id, previous: null }
+      const [prior] = await tx.select().from(t.workspaceInvites).where(sameAddress).for('update')
+      /* honoured or revoked between the two statements: insert again */
+      if (!prior) continue
+      await tx.update(t.workspaceInvites).set(fresh).where(eq(t.workspaceInvites.id, prior.id))
+      return { id: prior.id, previous: prior }
+    }
+  })
+  const invite = { id, workspaceId, email, role, invitedBy, createdAt: fresh.createdAt }
+  const write: InviteWrite = { id, tokenHash: hash, previous }
+  return { invite, link: inviteLinkUrl(token), write }
+}
+
+/** What one `createInvite` call wrote: the row it touched, the hash it set,
+ *  and the row as it stood before (null when the call inserted it). */
+interface InviteWrite {
+  id: string
+  tokenHash: string
+  previous: typeof t.workspaceInvites.$inferSelect | null
+}
+
+/** Take back one `createInvite` write: the row it replaced comes back, or the
+ *  row it inserted goes. A row rewritten since (another invite to the address,
+ *  a revoke, an accept) no longer carries this write's hash and is left alone. */
+async function undoInvite(write: InviteWrite): Promise<void> {
+  const stillMine = and(eq(t.workspaceInvites.id, write.id), eq(t.workspaceInvites.tokenHash, write.tokenHash))
+  if (!write.previous) {
+    await db.delete(t.workspaceInvites).where(stillMine)
+    return
+  }
+  const { role, invitedBy, createdAt, tokenHash, expiresAt } = write.previous
+  await db.update(t.workspaceInvites).set({ role, invitedBy, createdAt, tokenHash, expiresAt }).where(stillMine)
 }
 
 /** An expired invite is not pending: it is deleted the first time anything
@@ -656,7 +688,7 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     }
     return res.json({ member })
   }
-  const { invite, link } = await createInvite(ws.id, email, role, req.user!.id)
+  const { invite, link, write } = await createInvite(ws.id, email, role, req.user!.id)
   if (mailerConfigured) {
     try {
       await sendMail({
@@ -665,11 +697,12 @@ workspacesRouter.post('/:id/members', async (req, res) => {
         text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
       })
     } catch (err) {
-      /* nobody holds this link, so the invite could never be opened */
+      /* this link reached nobody: take back only this request's write, so an
+         invite already pending for the address keeps its link and its role */
       console.error('[workspaces] invite email failed', err)
-      await db
-        .delete(t.workspaceInvites)
-        .where(and(eq(t.workspaceInvites.workspaceId, ws.id), eq(t.workspaceInvites.id, invite.id)))
+      await undoInvite(write).catch((undoErr) =>
+        console.error('[workspaces] could not take back the unsent invite', undoErr),
+      )
       return res.status(502).json({ error: 'could not send the invite email. Try again.' })
     }
   }

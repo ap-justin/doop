@@ -400,6 +400,49 @@ describe('invite links', () => {
         mailed.stop()
       }
     }, 70_000)
+
+    it('keeps an invite already pending when a re-invite to the address cannot be mailed', async () => {
+      const sink = await startSmtpSink()
+      const { mailed, boss } = await mailedServer(sink.port)
+      let sinkUp = true
+      try {
+        const wsId = (await (await boss.post('/api/workspaces', { name: 'Resend Co' })).json()).id
+        const cvId = (await (await boss.post('/api/canvases', { name: 'Resend board' })).json()).id
+        const routes = [
+          ['wsresend@test.dev', `/api/workspaces/${wsId}/members`, { role: 'admin' }],
+          ['cvresend@test.dev', `/api/canvases/${cvId}/members`, {}],
+        ] as const
+        const delivered = new Map<string, string>()
+        for (const [email, route, extra] of routes) {
+          const res = await boss.post(route, { email, ...extra })
+          expect(res.status, await res.clone().text()).toBe(200)
+          await vi.waitFor(() => expect(sinkLink(sink.mails, email)).toBeTruthy(), { timeout: 10_000 })
+          delivered.set(email, sinkLink(sink.mails, email)!)
+        }
+
+        /* the sink goes away, so every later send is refused */
+        await sink.stop()
+        sinkUp = false
+        for (const [email, route] of routes) {
+          const res = await boss.post(route, { email })
+          expect(res.status, await res.clone().text()).toBe(502)
+        }
+
+        const detail = await (await boss.get(`/api/workspaces/${wsId}`)).json()
+        const wsInvite = detail.invites.find((i: { email: string }) => i.email === 'wsresend@test.dev')
+        /* the earlier invite as it was, its admin role included */
+        expect(wsInvite?.role).toBe('admin')
+        const pending = await (await boss.get(`/api/canvases/${cvId}/invites`)).json()
+        expect(emailsOf(pending)).toContain('cvresend@test.dev')
+        for (const link of delivered.values()) {
+          const info = await new Client(mailed).get(`/api/invite-links/${tokenOf(link)}`)
+          expect(info.status, link).toBe(200)
+        }
+      } finally {
+        mailed.stop()
+        if (sinkUp) await sink.stop()
+      }
+    }, 70_000)
   })
 
   it('rate-limits the accept route per invited address, whatever address the request claims', async () => {

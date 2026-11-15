@@ -31,20 +31,52 @@ import type { InviteLinkError, InviteLinkInfo, PendingCanvasInvite } from '../sh
 
 /* ---- canvas invites ---- */
 
+/** What one `createCanvasInvite` call wrote: the row it touched, the hash it
+ *  set, and the row as it stood before (null when the call inserted it). */
+export interface CanvasInviteWrite {
+  id: string
+  tokenHash: string
+  previous: typeof t.canvasInvites.$inferSelect | null
+}
+
 /** One pending invite per canvas and address; inviting again re-issues the link. */
 export async function createCanvasInvite(canvasId: string, email: string, invitedBy: string) {
   const { token, hash, expiresAt } = newInviteToken()
   const createdAt = Date.now()
-  const [saved] = await db
-    .insert(t.canvasInvites)
-    .values({ id: nanoid(12), canvasId, email, invitedBy, createdAt, tokenHash: hash, expiresAt })
-    .onConflictDoUpdate({
-      target: [t.canvasInvites.canvasId, t.canvasInvites.email],
-      set: { invitedBy, createdAt, tokenHash: hash, expiresAt },
-    })
-    .returning({ id: t.canvasInvites.id })
-  const invite: PendingCanvasInvite = { id: saved!.id, email, createdAt, expiresAt }
-  return { invite, link: inviteLinkUrl(token) }
+  const fresh = { invitedBy, createdAt, tokenHash: hash, expiresAt }
+  const sameAddress = and(eq(t.canvasInvites.canvasId, canvasId), eq(t.canvasInvites.email, email))
+  /* insert-or-lock rather than an upsert, so the row this call replaces is read before it is overwritten */
+  const { id, previous } = await db.transaction(async (tx) => {
+    for (;;) {
+      const [inserted] = await tx
+        .insert(t.canvasInvites)
+        .values({ id: nanoid(12), canvasId, email, ...fresh })
+        .onConflictDoNothing({ target: [t.canvasInvites.canvasId, t.canvasInvites.email] })
+        .returning({ id: t.canvasInvites.id })
+      if (inserted) return { id: inserted.id, previous: null }
+      const [prior] = await tx.select().from(t.canvasInvites).where(sameAddress).for('update')
+      /* accepted or revoked between the two statements: insert again */
+      if (!prior) continue
+      await tx.update(t.canvasInvites).set(fresh).where(eq(t.canvasInvites.id, prior.id))
+      return { id: prior.id, previous: prior }
+    }
+  })
+  const invite: PendingCanvasInvite = { id, email, createdAt, expiresAt }
+  const write: CanvasInviteWrite = { id, tokenHash: hash, previous }
+  return { invite, link: inviteLinkUrl(token), write }
+}
+
+/** Take back one `createCanvasInvite` write: the row it replaced comes back,
+ *  or the row it inserted goes. A row rewritten since (another invite to the
+ *  address, a revoke, an accept) no longer carries this write's hash and is left alone. */
+export async function undoCanvasInvite(write: CanvasInviteWrite): Promise<void> {
+  const stillMine = and(eq(t.canvasInvites.id, write.id), eq(t.canvasInvites.tokenHash, write.tokenHash))
+  if (!write.previous) {
+    await db.delete(t.canvasInvites).where(stillMine)
+    return
+  }
+  const { invitedBy, createdAt, tokenHash, expiresAt } = write.previous
+  await db.update(t.canvasInvites).set({ invitedBy, createdAt, tokenHash, expiresAt }).where(stillMine)
 }
 
 /** An expired invite is not pending: it is deleted the first time anything

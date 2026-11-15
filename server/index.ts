@@ -97,6 +97,7 @@ import {
   inviteLinksRouter,
   listCanvasInvites,
   revokeCanvasInvite,
+  undoCanvasInvite,
 } from './inviteLinks.ts'
 import * as userEvents from './userEvents.ts'
 import { activeExtensions, leanGate, leanMode, residentMention, unlessLean, unrecognisedLeanValue } from './lean.ts'
@@ -1428,13 +1429,16 @@ app.post('/api/canvases/:id/members', async (req, res) => {
   if (!row) {
     /* no account yet: the invite becomes a link that creates one */
     if (!email.includes('@')) return res.status(400).json({ error: 'a valid email is required' })
-    const { invite, link } = await createCanvasInvite(c.id, email, req.user!.id)
+    const { invite, link, write } = await createCanvasInvite(c.id, email, req.user!.id)
     try {
       await emailCanvasInvite(req.user!, email, c.name, link)
     } catch (err) {
-      /* nobody holds this link, so the invite could never be opened */
+      /* this link reached nobody: take back only this request's write, so an
+         invite already pending for the address keeps its link */
       console.error('[invites] canvas invite email failed', err)
-      await revokeCanvasInvite(c.id, invite.id)
+      await undoCanvasInvite(write).catch((undoErr) =>
+        console.error('[invites] could not take back the unsent canvas invite', undoErr),
+      )
       return res.status(502).json({ error: 'could not send the invite email. Try again.' })
     }
     /* with a mailer the link goes by email alone: the inviter never holds it */

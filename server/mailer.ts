@@ -19,6 +19,10 @@ if (mailerConfigured) {
     /* 465 = implicit TLS; anything else negotiates STARTTLS */
     secure: env.SMTP_SECURE || env.SMTP_PORT === 465,
     auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
+    /* an invite request answers only once its email is sent; nodemailer's defaults wait minutes */
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   })
 }
 
