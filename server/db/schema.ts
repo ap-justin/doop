@@ -152,10 +152,35 @@ export const workspaceInvites = pgTable(
     role: text('role').notNull(),
     invitedBy: text('invited_by').notNull(),
     createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    /** sha256 of the invite link's token; null for an invite made before links existed */
+    tokenHash: text('token_hash'),
+    expiresAt: bigint('expires_at', { mode: 'number' }),
   },
   (t) => [
     uniqueIndex('workspace_invites_workspace_email_idx').on(t.workspaceId, t.email),
     index('workspace_invites_email_idx').on(t.email),
+    index('workspace_invites_token_idx').on(t.tokenHash),
+  ],
+)
+
+/** A canvas shared with an email that has no account yet. The link's token
+ *  (hash only) is the credential; accepting it creates the account
+ *  and adds the person to the canvas. */
+export const canvasInvites = pgTable(
+  'canvas_invites',
+  {
+    id: text('id').primaryKey(),
+    canvasId: text('canvas_id').notNull(),
+    email: text('email').notNull(),
+    invitedBy: text('invited_by').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('canvas_invites_canvas_email_idx').on(t.canvasId, t.email),
+    index('canvas_invites_email_idx').on(t.email),
+    index('canvas_invites_token_idx').on(t.tokenHash),
   ],
 )
 

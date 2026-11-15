@@ -4,6 +4,8 @@ import { toLinkAccess, type LinkAccess } from '../../shared/canvasRole'
 import { navigate } from '../App'
 import type { WorkspaceSummary } from '../../shared/types'
 import { api, ApiError, paywalledWorkspace, type CanvasMember } from '../lib/api'
+import type { PendingCanvasInvite } from '../../shared/inviteLinks'
+import { InviteLinkNotice } from './InviteLinkNotice'
 import { PERSONAL_WORKSPACE, UpgradeModal } from './WorkspaceModals'
 import { authClient } from '../lib/auth'
 import { posthog } from '../lib/posthog'
@@ -76,6 +78,9 @@ export function ShareModal({
   const [people, setPeople] = useState<CanvasMember[] | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
   const [upgrade, setUpgrade] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingCanvasInvite[]>([])
+  /* the address just invited, and its link when no mailer sent it (the server keeps only its hash) */
+  const [sent, setSent] = useState<{ email: string; link?: string } | null>(null)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +94,11 @@ export function ShareModal({
       .listMembers(canvas.id)
       .then((members) => active && setPeople(members))
       .catch(() => active && setPeople([]))
+    if (isOwner)
+      api
+        .listCanvasInvites(canvas.id)
+        .then((invites) => active && setPending(invites))
+        .catch(() => {})
     api
       .listWorkspaces()
       .then((res) => active && setWorkspaces(res.workspaces))
@@ -96,7 +106,7 @@ export function ShareModal({
     return () => {
       active = false
     }
-  }, [canvas.id])
+  }, [canvas.id, isOwner])
 
   const workspace = canvas.workspaceId ? workspaces.find((w) => w.id === canvas.workspaceId) : undefined
 
@@ -128,8 +138,18 @@ export function ShareModal({
     if (!clean || busy || people === null) return
     setBusy(true)
     setError(null)
+    setSent(null)
     try {
-      const member = await api.inviteMember(canvas.id, clean)
+      const result = await api.inviteMember(canvas.id, clean)
+      if ('invite' in result) {
+        const { invite } = result
+        setPending((current) => [invite, ...current.filter((other) => other.id !== invite.id)])
+        setSent({ email: invite.email, link: result.link })
+        setEmail('')
+        setBusy(false)
+        return
+      }
+      const member = result
       setPeople((current) =>
         current?.some((person) => person.userId === member.userId) ? current : [...(current ?? []), member],
       )
@@ -145,6 +165,21 @@ export function ShareModal({
       )
     }
     setBusy(false)
+  }
+
+  async function revoke(invite: PendingCanvasInvite) {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.revokeCanvasInvite(canvas.id, invite.id)
+      setPending((current) => current.filter((other) => other.id !== invite.id))
+      setSent((current) => (current?.email === invite.email ? null : current))
+    } catch {
+      setError(t('invite.revokeFailed'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function remove(userId: string) {
@@ -225,6 +260,12 @@ export function ShareModal({
           </>
         )}
         {error && <p className="mx-[2px] mt-2 text-label text-accent-ink">{error}</p>}
+        {isOwner && (
+          // mounted before any invite, so the notice arriving inside it is announced
+          <div role="status">
+            {sent && <InviteLinkNotice key={sent.link ?? sent.email} email={sent.email} link={sent.link} />}
+          </div>
+        )}
         <div className="mt-[14px] mb-1 flex max-h-[40vh] flex-col gap-[2px] overflow-y-auto">
           {(people ?? []).map((person) => (
             <PersonRow
@@ -255,6 +296,30 @@ export function ShareModal({
             />
           ))}
           {people === null && <p className="text-label text-ink-faint">{t('common.loading')}</p>}
+          {isOwner && pending.length > 0 && (
+            <>
+              <span className="mt-2 px-[2px] text-caption text-ink-faint">{t('invite.waiting')}</span>
+              {pending.map((invite) => (
+                <PersonRow
+                  key={invite.id}
+                  className="px-[2px] py-1.5"
+                  avatar={<Avatar name={invite.email} size={28} />}
+                  name={invite.email}
+                  trailing={
+                    <Button
+                      variant="bare"
+                      size="sm"
+                      aria-label={t('invite.revokeAria', { email: invite.email })}
+                      disabled={busy}
+                      onClick={() => void revoke(invite)}
+                    >
+                      {t('invite.revoke')}
+                    </Button>
+                  }
+                />
+              ))}
+            </>
+          )}
           {canvas.workspaceId && (
             <PersonRow
               className="px-[2px] py-1.5"

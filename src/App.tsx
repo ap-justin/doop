@@ -1,6 +1,7 @@
 import { startLocalAgent } from './lib/localAgent'
 import { navigate } from './lib/navigate'
 import { useEffect, useRef, useState } from 'react'
+import { InviteAccept } from './pages/InviteAccept'
 import { Home } from './pages/Home'
 import { Community } from './pages/Community'
 import { Settings } from './pages/Settings'
@@ -156,6 +157,17 @@ export function App() {
       <>
         <ShellDragBar />
         <DesktopConnect />
+      </>
+    )
+
+  /* an invite link works signed out (creating the account) and signed in (an
+     existing account joining), so it sits ahead of the sign-in gate */
+  const inviteToken = path.match(/^\/invite\/([^/]+)\/?$/)?.[1]
+  if (inviteToken)
+    return (
+      <>
+        <ShellDragBar />
+        <InviteAccept token={inviteToken} signedInAs={session?.user.email} key={inviteToken} />
       </>
     )
 

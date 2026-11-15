@@ -1,6 +1,6 @@
 import { env } from './env.ts'
 import express from 'express'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, lte, type SQL } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
@@ -8,6 +8,7 @@ import * as authSchema from './db/auth-schema.ts'
 import { store } from './store.ts'
 import * as billing from './billing.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
+import { inviteLinkUrl, newInviteToken } from './inviteToken.ts'
 import { dropWorkspaceFonts } from './fonts.ts'
 import { notifyUsers } from './userEvents.ts'
 import { avatarUrl } from '../shared/avatar.ts'
@@ -61,8 +62,6 @@ interface Membership {
 const records = new Map<string, WorkspaceRecord>()
 /** workspaceId -> userId -> membership */
 const members = new Map<string, Map<string, Membership>>()
-
-const ORIGIN = env.BETTER_AUTH_URL
 
 function swallow(p: Promise<unknown>) {
   p.catch((err) => console.error('[workspaces] write failed', err))
@@ -375,19 +374,64 @@ export async function removeMember(workspaceId: string, userId: string): Promise
 
 /* ---- invites for people without an account ---- */
 
+/** One pending invite per workspace and address; inviting again re-issues the
+ *  link (a fresh token and a fresh seven days), the old one stops working. */
 async function createInvite(workspaceId: string, email: string, role: WorkspaceRole, invitedBy: string) {
-  const invite = { id: nanoid(12), workspaceId, email, role, invitedBy, createdAt: Date.now() }
-  await db
-    .insert(t.workspaceInvites)
-    .values(invite)
-    .onConflictDoUpdate({
-      target: [t.workspaceInvites.workspaceId, t.workspaceInvites.email],
-      set: { role, invitedBy, createdAt: invite.createdAt },
-    })
-  return invite
+  const { token, hash, expiresAt } = newInviteToken()
+  const fresh = { role, invitedBy, createdAt: Date.now(), tokenHash: hash, expiresAt }
+  const sameAddress = and(eq(t.workspaceInvites.workspaceId, workspaceId), eq(t.workspaceInvites.email, email))
+  /* insert-or-lock rather than an upsert, so the row this call replaces is read before it is overwritten */
+  const { id, previous } = await db.transaction(async (tx) => {
+    for (;;) {
+      const [inserted] = await tx
+        .insert(t.workspaceInvites)
+        .values({ id: nanoid(12), workspaceId, email, ...fresh })
+        .onConflictDoNothing({ target: [t.workspaceInvites.workspaceId, t.workspaceInvites.email] })
+        .returning({ id: t.workspaceInvites.id })
+      if (inserted) return { id: inserted.id, previous: null }
+      const [prior] = await tx.select().from(t.workspaceInvites).where(sameAddress).for('update')
+      /* honoured or revoked between the two statements: insert again */
+      if (!prior) continue
+      await tx.update(t.workspaceInvites).set(fresh).where(eq(t.workspaceInvites.id, prior.id))
+      return { id: prior.id, previous: prior }
+    }
+  })
+  const invite = { id, workspaceId, email, role, invitedBy, createdAt: fresh.createdAt }
+  const write: InviteWrite = { id, tokenHash: hash, previous }
+  return { invite, link: inviteLinkUrl(token), write }
+}
+
+/** What one `createInvite` call wrote: the row it touched, the hash it set,
+ *  and the row as it stood before (null when the call inserted it). */
+interface InviteWrite {
+  id: string
+  tokenHash: string
+  previous: typeof t.workspaceInvites.$inferSelect | null
+}
+
+/** Take back one `createInvite` write: the row it replaced comes back, or the
+ *  row it inserted goes. A row rewritten since (another invite to the address,
+ *  a revoke, an accept) no longer carries this write's hash and is left alone. */
+async function undoInvite(write: InviteWrite): Promise<void> {
+  const stillMine = and(eq(t.workspaceInvites.id, write.id), eq(t.workspaceInvites.tokenHash, write.tokenHash))
+  if (!write.previous) {
+    await db.delete(t.workspaceInvites).where(stillMine)
+    return
+  }
+  const { role, invitedBy, createdAt, tokenHash, expiresAt } = write.previous
+  await db.update(t.workspaceInvites).set({ role, invitedBy, createdAt, tokenHash, expiresAt }).where(stillMine)
+}
+
+/** An expired invite is not pending: it is deleted the first time anything
+ *  lists, resolves or honours it, so an admin never has one that is hidden
+ *  but still honoured. Rows from before links have no expiry (null compares
+ *  as unknown, so `lte` keeps them) and stay pending. */
+async function dropExpiredInvites(scope: SQL): Promise<void> {
+  await db.delete(t.workspaceInvites).where(and(scope, lte(t.workspaceInvites.expiresAt, Date.now())))
 }
 
 async function listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
+  await dropExpiredInvites(eq(t.workspaceInvites.workspaceId, workspaceId))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.workspaceId, workspaceId))
   const inviterIds = [...new Set(rows.map((r) => r.invitedBy))]
   const names = await userRows(inviterIds)
@@ -400,15 +444,6 @@ async function listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
       createdAt: r.createdAt,
     }))
     .sort((a, b) => b.createdAt - a.createdAt)
-}
-
-/** Invites can only be honoured for an address someone has proven they
- *  own. With a mailer that is email verification; without one nobody can
- *  ever verify, so in production such invites are refused up front (the
- *  same line ADMIN_EMAILS draws) and local development takes the address
- *  at face value. */
-export function unknownEmailInvitesAllowed(): boolean {
-  return mailerConfigured || !env.isProduction
 }
 
 /** Turn an invite into a membership: the member row and the invite's
@@ -443,6 +478,7 @@ async function acceptInvite(
  *  reactivating the workspace does not lose the people it invited. */
 export async function acceptInvites(userId: string, email: string): Promise<void> {
   const clean = email.trim().toLowerCase()
+  await dropExpiredInvites(eq(t.workspaceInvites.email, clean))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.email, clean))
   for (const invite of rows) {
     const ws = records.get(invite.workspaceId)
@@ -456,8 +492,43 @@ export async function acceptInvites(userId: string, email: string): Promise<void
   }
 }
 
+export interface WorkspaceInviteLink {
+  id: string
+  email: string
+  role: WorkspaceRole
+  invitedBy: string
+  workspaceId: string
+  workspaceName: string
+}
+
+/** The live invite behind a link's token hash: unexpired, and its workspace
+ *  still able to take members. */
+export async function workspaceInviteByToken(tokenHash: string): Promise<WorkspaceInviteLink | null> {
+  const [row] = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.tokenHash, tokenHash))
+  const expired = !!row?.expiresAt && row.expiresAt <= Date.now()
+  if (row && expired) await dropExpiredInvites(eq(t.workspaceInvites.id, row.id))
+  const ws = row && records.get(row.workspaceId)
+  if (!row || !ws || !isActive(ws) || !row.expiresAt || expired) return null
+  return {
+    id: row.id,
+    email: row.email,
+    role: isWorkspaceRole(row.role) ? row.role : 'member',
+    invitedBy: row.invitedBy,
+    workspaceId: ws.id,
+    workspaceName: ws.name,
+  }
+}
+
+/** Honour one link's invite for the account its accept or join route has
+ *  signed in as the invited address. */
+export async function acceptWorkspaceInviteLink(link: WorkspaceInviteLink, userId: string): Promise<void> {
+  const ws = records.get(link.workspaceId)
+  if (ws) await acceptInvite(ws, userId, link)
+}
+
 /** Reactivation catches up on invites whose people signed up meanwhile. */
 async function acceptPendingInvitesFor(ws: WorkspaceRecord): Promise<void> {
+  await dropExpiredInvites(eq(t.workspaceInvites.workspaceId, ws.id))
   const rows = await db.select().from(t.workspaceInvites).where(eq(t.workspaceInvites.workspaceId, ws.id))
   if (!rows.length) return
   const users = await db
@@ -470,7 +541,9 @@ async function acceptPendingInvitesFor(ws: WorkspaceRecord): Promise<void> {
       ),
     )
   for (const u of users) {
-    if (mailerConfigured && !u.emailVerified) continue
+    /* only an address someone has proven: verified, or local development
+       with no mailer, where signup takes it at face value */
+    if (!u.emailVerified && (mailerConfigured || env.isProduction)) continue
     const invite = rows.find((r) => r.email === u.email)
     if (invite) await acceptInvite(ws, u.id, invite)
   }
@@ -615,15 +688,23 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     }
     return res.json({ member })
   }
-  if (!unknownEmailInvitesAllowed())
-    return res.status(404).json({ error: 'no doop account with that email — ask them to sign up first' })
-  const invite = await createInvite(ws.id, email, role, req.user!.id)
+  const { invite, link, write } = await createInvite(ws.id, email, role, req.user!.id)
   if (mailerConfigured) {
-    sendMail({
-      to: email,
-      subject: `${req.user!.name} invited you to "${ws.name}" on doop`,
-      text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nCreate an account with this email address and you'll be in:\n\n${ORIGIN}/\n`,
-    }).catch((err) => console.error('[workspaces] invite email failed', err))
+    try {
+      await sendMail({
+        to: email,
+        subject: `${req.user!.name} invited you to "${ws.name}" on doop`,
+        text: `${req.user!.name} invited you to the "${ws.name}" workspace on doop.\n\nOpen this link to create your account and join (it works once and expires in 7 days):\n\n${link}\n`,
+      })
+    } catch (err) {
+      /* this link reached nobody: take back only this request's write, so an
+         invite already pending for the address keeps its link and its role */
+      console.error('[workspaces] invite email failed', err)
+      await undoInvite(write).catch((undoErr) =>
+        console.error('[workspaces] could not take back the unsent invite', undoErr),
+      )
+      return res.status(502).json({ error: 'could not send the invite email. Try again.' })
+    }
   }
   const pending: WorkspaceInvite = {
     id: invite.id,
@@ -632,7 +713,8 @@ workspacesRouter.post('/:id/members', async (req, res) => {
     invitedByName: req.user!.name,
     createdAt: invite.createdAt,
   }
-  res.json({ invite: pending, emailed: mailerConfigured })
+  /* with a mailer the link goes by email alone: the inviter never holds it */
+  res.json(mailerConfigured ? { invite: pending, emailed: true } : { invite: pending, emailed: false, link })
 })
 
 workspacesRouter.patch('/:id/members/:userId', (req, res) => {

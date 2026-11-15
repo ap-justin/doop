@@ -633,6 +633,33 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   them). A daily prune deletes expired token rows but keeps the newest per user and client,
   since `allowance.ts` reads any row as proof an agent once connected.
 
+- Invite links (`server/inviteToken.ts`, `server/inviteLinks.ts`, `shared/inviteLinks.ts`): inviting an
+  email with no account (`POST /api/workspaces/:id/members`, `POST /api/canvases/:id/members`) makes a
+  pending invite with a single-use token, 7 days to live, stored as its sha256 only (workspace invites in
+  `workspace_invites`, canvas invites in `canvas_invites`, migration 0051) and returns
+  `${BETTER_AUTH_URL}/invite/<token>`. With a mailer the link goes by email alone (the inviter's response has no
+  `link`), so opening it proves the address; a failed send answers 502 and withdraws only that request's change (a re-invite keeps the earlier invite). Without one the inviter
+  gets the link once and holds it too, so it proves nothing: an account made that way stays unverified. An expired invite
+  is not pending: listing, resolving or honouring invites deletes the expired rows first, so none is hidden
+  from its owner yet still honoured (workspace invites from before links have no expiry and stay). The public
+  `/api/invite-links/:token` routes (`GET` for what the page shows, `POST …/accept` with a name and password,
+  `POST …/join` for an account that already exists and is signed in as the invited address) answer one
+  `invalid` (404) for an unknown, expired, used or revoked token; the other codes are `InviteLinkError` in
+  `shared/inviteLinks.ts`. Accepting runs better-auth's own `signUpEmail`
+  inside `withInviteSignup`, a per-request async-local bypass for that one address of the
+  `SIGNUP_EMAIL_DOMAINS` check and the verification email in `server/auth.ts`; unless the user id it returns
+  names a row it just made for the address (when verification is required, better-auth answers an existing
+  address with a made-up one), the answer is 409 `account-exists` and nothing is honoured. With a mailer it then
+  marks the address verified (the only place an invite makes an account verified); either way it signs the
+  person in and only then spends this link's invite, no other (the member row
+  and the invite's deletion in one transaction for both kinds), so a failed step leaves the link for
+  `join`, which needs the session's address to equal the invite's. A second accept of a link already being accepted gets 409 `in-progress`, and the account that spent a
+  link may `join` with it again and land, for as long as this process remembers it. Accept and join share a
+  3-per-10-seconds budget per invited address (not per IP) like better-auth's sign-in. A token never
+  reaches PostHog: `before_send` runs `src/lib/inviteRedaction.ts` over every event, replay included. The page is
+  `src/pages/InviteAccept.tsx`, the link and its Copy button `InviteLinkNotice.tsx`. Tests:
+  `inviteLinks.test.ts` (the mailer case reads the emailed link from `tests/smtpSink.ts`), `inviteLinksLifecycle.test.ts` (expiry and the attempt window on a shifted
+  clock), `inviteToken.test.ts`, `inviteAccept.test.tsx`, `inviteRedaction.test.ts`.
 - Workspace limits (`server/workspaceLimit.ts`): an agent key (fixed at creation) and an account
   webhook (changeable, `null` lifts it) may carry `workspace_ids` (migration 0050; null is no
   limit, `[]` is refused by a CHECK). A canvas is inside a limit only when it lives in a listed

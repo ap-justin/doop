@@ -1,0 +1,43 @@
+import type { Catalog } from '..'
+
+export const invite: Catalog['invite'] = {
+  linkLine: 'Envie este link para {email}. Ele funciona uma vez e expira em 7 dias.',
+  sent: 'Convite enviado para {email}',
+  linkAria: 'Link de convite para {email}',
+  copyLink: 'Copiar link',
+  linkCopied: 'Link copiado',
+  copyFailed: 'Não foi possível copiar — selecione o link e copie manualmente',
+  waiting: 'Aguardando cadastro',
+  revoke: 'Revogar',
+  revokeAria: 'Revogar o convite de {email}',
+  revokeFailed: 'Não foi possível revogar o convite',
+
+  titleWorkspace: 'Entrar em {name}',
+  titleCanvas: 'Abrir {name}',
+  ledeWorkspace: '{inviter} convidou você para o workspace “{name}”.',
+  ledeCanvas: '{inviter} convidou você para colaborar em “{name}”.',
+  email: 'E-mail',
+  name: 'Seu nome',
+  password: 'Senha',
+  passwordHint: 'Pelo menos 8 caracteres',
+  create: 'Criar conta e entrar',
+  creating: 'Criando sua conta…',
+  failed: 'Não foi possível aceitar o convite',
+  tooManyAttempts: 'Muitas tentativas. Aguarde um momento e tente novamente.',
+  stillWorking: 'Este convite ainda está sendo aceito. Tente novamente em um momento.',
+  passwordRejected: 'Essa senha não pode ser usada. Escolha uma com 8 a 128 caracteres.',
+
+  existsTitle: 'Você já tem uma conta',
+  existsText: 'Já existe uma conta com {email}. Entre para participar.',
+  signIn: 'Entrar',
+  joining: 'Entrando…',
+  joinFailed: 'Não foi possível entrar agora. O link continua válido.',
+  wrongAccount: 'Você está conectado como {current}, mas este convite é para {email}.',
+  signOut: 'Sair',
+  wrongAccountHint: 'Saia para continuar como {email}.',
+
+  invalidTitle: 'Este link de convite não é mais válido',
+  invalidText: 'Peça um novo a quem convidou você.',
+  loadFailedTitle: 'Não foi possível carregar este convite',
+  loadFailed: 'Verifique sua conexão e tente novamente.',
+}
