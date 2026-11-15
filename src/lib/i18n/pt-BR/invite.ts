@@ -10,7 +10,6 @@ export const invite: Catalog['invite'] = {
   revoke: 'Revogar',
   revokeAria: 'Revogar o convite de {email}',
   revokeFailed: 'Não foi possível revogar o convite',
-  invitedLink: '{email} foi convidado — envie o link abaixo',
 
   titleWorkspace: 'Entrar em {name}',
   titleCanvas: 'Abrir {name}',
@@ -38,4 +37,8 @@ export const invite: Catalog['invite'] = {
 
   invalidTitle: 'Este link de convite não é mais válido',
   invalidText: 'Peça um novo.',
+  loadFailed: 'Não foi possível carregar este convite. Verifique sua conexão e tente novamente.',
+
+  verifyTitle: 'Confira sua caixa de entrada',
+  verifyText: 'Enviamos um link para {email}. Abra-o para confirmar seu endereço e entrar.',
 }

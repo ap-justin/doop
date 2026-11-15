@@ -30,10 +30,14 @@ function failureOf(caught: unknown, fallback: PlainMessageKey): Failure {
 
 /** The page behind `/invite/<token>`: who invited you and to what, the fixed
  *  email, and a name and password that create the account. Every link that is
- *  expired, used, revoked or unknown shows the one same message. */
+ *  expired, used, revoked or unknown shows the one same message, except to the
+ *  signed-in account that spent it, which the server's join sends on to its
+ *  landing. Every landing replaces this page's history entry, so Back skips it. */
 export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?: string }) {
   const t = useT()
-  const [info, setInfo] = useState<InviteLinkInfo | 'invalid' | null>(null)
+  const [info, setInfo] = useState<InviteLinkInfo | 'invalid' | 'failed' | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [verifySent, setVerifySent] = useState(false)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -49,11 +53,28 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
     api
       .inviteLink(token)
       .then((found) => active && setInfo(found))
-      .catch(() => active && setInfo('invalid'))
+      .catch((caught: unknown) => {
+        if (!active) return
+        if (failureOf(caught, 'invite.loadFailed').kind !== 'invalid') {
+          setInfo('failed')
+          return
+        }
+        /* a spent link answers the lookup `invalid`; join still lands the account that spent it */
+        if (signedInAs === undefined) {
+          setInfo('invalid')
+          return
+        }
+        api.joinInviteLink(token).then((done) => location.replace(done.landing), () => active && setInfo('invalid'))
+      })
     return () => {
       active = false
     }
-  }, [token])
+  }, [token, signedInAs, loadAttempt])
+
+  function retryLoad() {
+    setInfo(null)
+    setLoadAttempt((attempt) => attempt + 1)
+  }
 
   const found = typeof info === 'object' && info !== null ? info : null
   const signedInElsewhere = found !== null && signedInAs !== undefined && signedInAs.toLowerCase() !== found.email
@@ -65,7 +86,7 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
     joining.current = true
     api
       .joinInviteLink(token)
-      .then((done) => location.assign(done.landing))
+      .then((done) => location.replace(done.landing))
       .catch((caught: unknown) => {
         joining.current = false
         const failure = failureOf(caught, 'invite.joinFailed')
@@ -91,7 +112,9 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
     setError(null)
     try {
       const done = await api.acceptInviteLink(token, { name: name.trim(), password })
-      location.assign(done.landing)
+      /* no session yet: the emailed verification link signs them in and lands them */
+      if ('verify' in done) setVerifySent(true)
+      else location.replace(done.landing)
     } catch (caught) {
       submitting.current = false
       setBusy(false)
@@ -109,6 +132,12 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
         {info === 'invalid' ? (
           <AuthCard title={t('invite.invalidTitle')}>
             <AuthCardText>{t('invite.invalidText')}</AuthCardText>
+          </AuthCard>
+        ) : info === 'failed' ? (
+          <AuthCard title={t('invite.loadFailed')}>
+            <Button variant="solid" onClick={retryLoad}>
+              {t('common.retry')}
+            </Button>
           </AuthCard>
         ) : (
           <AuthCard title={t('common.loading')}>{null}</AuthCard>
@@ -156,6 +185,15 @@ export function InviteAccept({ token, signedInAs }: { token: string; signedInAs?
               </Button>
             </>
           )}
+        </AuthCard>
+      </AuthScreen>
+    )
+
+  if (verifySent)
+    return (
+      <AuthScreen>
+        <AuthCard title={t('invite.verifyTitle')}>
+          <AuthCardText>{t('invite.verifyText', { email: found.email })}</AuthCardText>
         </AuthCard>
       </AuthScreen>
     )

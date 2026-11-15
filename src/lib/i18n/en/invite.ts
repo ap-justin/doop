@@ -9,7 +9,6 @@ export const invite = {
   revoke: 'Revoke',
   revokeAria: 'Revoke the invite for {email}',
   revokeFailed: 'Could not revoke the invite',
-  invitedLink: '{email} is invited — send them the link below',
 
   titleWorkspace: 'Join {name}',
   titleCanvas: 'Open {name}',
@@ -37,4 +36,8 @@ export const invite = {
 
   invalidTitle: 'This invite link isn’t valid any more',
   invalidText: 'Ask for a new one.',
+  loadFailed: 'Could not load this invite. Check your connection and try again.',
+
+  verifyTitle: 'Check your inbox',
+  verifyText: 'We sent a link to {email}. Open it to confirm your address and join.',
 } as const

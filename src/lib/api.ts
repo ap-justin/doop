@@ -703,7 +703,7 @@ export const api = {
      joining with an account that already exists */
   inviteLink: (token: string) => req<InviteLinkInfo>(`/api/invite-links/${encodeURIComponent(token)}`),
   acceptInviteLink: (token: string, person: { name: string; password: string }) =>
-    req<{ landing: string }>(`/api/invite-links/${encodeURIComponent(token)}/accept`, {
+    req<{ landing: string } | { verify: true }>(`/api/invite-links/${encodeURIComponent(token)}/accept`, {
       method: 'POST',
       body: JSON.stringify(person),
     }),
