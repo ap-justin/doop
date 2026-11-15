@@ -35,7 +35,7 @@ export const workspace: Catalog['workspace'] = {
 
   invitedMember: '{name} entrou',
   inviteEmailed: 'Convite enviado por e-mail para {email}',
-  invitePending: '{email} entra quando se cadastrar com esse e-mail',
+  invitePending: '{email} pode entrar pelo link de convite',
   inviteFailed: 'Não foi possível convidar',
   roleChangeFailed: 'Não foi possível mudar o papel',
   removeFailed: 'Não foi possível remover',

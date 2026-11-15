@@ -6,6 +6,7 @@ import type { AgentRunners, RunnerPick, RunnerProvider } from '../../shared/agen
 import type { NotificationPrefs, NotificationSettings } from '../../shared/notifications'
 import type { WebhookDeliveryResult, WebhookEventType, WebhookInfo } from '../../shared/webhooks'
 import type { AgentFeedbackKind, AgentFeedbackReport } from '../../shared/agentFeedback'
+import type { InviteLinkInfo, PendingCanvasInvite } from '../../shared/inviteLinks'
 import type {
   ActivityItem,
   Canvas,
@@ -265,7 +266,12 @@ export interface PlansResponse {
 
 /** An invite lands one of two ways: an existing account is a member at
  *  once; an unknown email waits (and was emailed, when SMTP is set up). */
-export type WorkspaceInviteResult = { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean }
+export type WorkspaceInviteResult =
+  { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean; link: string }
+
+/** Sharing a canvas lands one of two ways too: an existing account is a
+ *  collaborator at once; an unknown email gets an invite link for the inviter. */
+export type CanvasInviteResult = CanvasMember | { invite: PendingCanvasInvite; link: string; emailed: boolean }
 
 function actor() {
   const { clientId, name } = getIdentity()
@@ -388,7 +394,10 @@ export const api = {
   /* collaborators: the owner plus invited members */
   listMembers: (canvasId: string) => req<CanvasMember[]>(`/api/canvases/${canvasId}/members`),
   inviteMember: (canvasId: string, email: string) =>
-    req<CanvasMember>(`/api/canvases/${canvasId}/members`, { method: 'POST', body: JSON.stringify({ email }) }),
+    req<CanvasInviteResult>(`/api/canvases/${canvasId}/members`, { method: 'POST', body: JSON.stringify({ email }) }),
+  listCanvasInvites: (canvasId: string) => req<PendingCanvasInvite[]>(`/api/canvases/${canvasId}/invites`),
+  revokeCanvasInvite: (canvasId: string, inviteId: string) =>
+    req(`/api/canvases/${canvasId}/invites/${inviteId}`, { method: 'DELETE' }),
   removeMember: (canvasId: string, userId: string) =>
     req(`/api/canvases/${canvasId}/members/${userId}`, { method: 'DELETE' }),
   /* design-sync keys for the embeddable snippet */
@@ -690,6 +699,16 @@ export const api = {
     req(`/api/workspaces/${id}/members/${userId}`, { method: 'DELETE' }),
   revokeWorkspaceInvite: (id: string, inviteId: string) =>
     req(`/api/workspaces/${id}/invites/${inviteId}`, { method: 'DELETE' }),
+  /* invite links: what a link shows, creating the invited account, and
+     joining with an account that already exists */
+  inviteLink: (token: string) => req<InviteLinkInfo>(`/api/invite-links/${encodeURIComponent(token)}`),
+  acceptInviteLink: (token: string, person: { name: string; password: string }) =>
+    req<{ landing: string }>(`/api/invite-links/${encodeURIComponent(token)}/accept`, {
+      method: 'POST',
+      body: JSON.stringify(person),
+    }),
+  joinInviteLink: (token: string) =>
+    req<{ landing: string }>(`/api/invite-links/${encodeURIComponent(token)}/join`, { method: 'POST' }),
   /* billing: the catalogue, and the hosted Stripe pages */
   billingPlans: () => req<PlansResponse>('/api/billing/plans'),
   workspaceCheckout: (id: string, interval: BillingInterval) =>

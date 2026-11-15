@@ -633,6 +633,21 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   them). A daily prune deletes expired token rows but keeps the newest per user and client,
   since `allowance.ts` reads any row as proof an agent once connected.
 
+- Invite links (`server/inviteToken.ts`, `server/inviteLinks.ts`, `shared/inviteLinks.ts`): inviting an
+  email with no account (`POST /api/workspaces/:id/members`, `POST /api/canvases/:id/members`) makes a
+  pending invite with a single-use token, 7 days to live, stored as its sha256 only (workspace invites in
+  `workspace_invites`, canvas invites in `canvas_invites`, migration 0051) and returns
+  `${BETTER_AUTH_URL}/invite/<token>` to the inviter once; with a mailer it is emailed too. The link is the
+  proof of the address, which is why production without a mailer now takes such invites. The public
+  `/api/invite-links/:token` routes (`GET` for what the page shows, `POST …/accept` with a name and password,
+  `POST …/join` for an account that already exists and is signed in as the invited address) answer one
+  `invalid` for an unknown, expired, used or revoked token. Accepting runs better-auth's own `signUpEmail`
+  inside `withInviteSignup`, a per-request async-local bypass for that one address of the
+  `SIGNUP_EMAIL_DOMAINS` check and the verification email in `server/auth.ts`, then marks the address verified,
+  honours the invites for it and signs the person in; the accept and join routes share a 3-per-10-seconds
+  budget per address like better-auth's sign-in. OAuth sign-up is untouched. The page is
+  `src/pages/InviteAccept.tsx`, the link and its Copy button `InviteLinkNotice.tsx`. Tests:
+  `inviteLinks.test.ts`.
 - Workspace limits (`server/workspaceLimit.ts`): an agent key (fixed at creation) and an account
   webhook (changeable, `null` lifts it) may carry `workspace_ids` (migration 0050; null is no
   limit, `[]` is refused by a CHECK). A canvas is inside a limit only when it lives in a listed

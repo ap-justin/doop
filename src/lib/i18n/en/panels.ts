@@ -207,7 +207,7 @@ export const panels = {
   sharePublishFailed: 'publish failed',
   shareCopyFailed: 'Couldn’t copy the link. Copy the URL from your browser instead.',
   shareTitle: 'Share “{name}”',
-  shareInvitePlaceholder: 'Invite by email (doop account)',
+  shareInvitePlaceholder: 'Invite by email',
   shareInvite: 'Invite',
   shareYou: '{name} (you)',
   shareOwner: 'Owner',

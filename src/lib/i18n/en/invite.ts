@@ -1,0 +1,35 @@
+/** Invite links: the link shown to the inviter and the page its holder opens. */
+export const invite = {
+  linkLine: 'Send this link to {email}. It works once and expires in 7 days.',
+  linkAria: 'Invite link for {email}',
+  copyLink: 'Copy link',
+  linkCopied: 'Link copied',
+  copyFailed: 'Could not copy — select the link and copy it by hand',
+  waiting: 'Waiting to sign up',
+  revoke: 'Revoke',
+  revokeAria: 'Revoke the invite for {email}',
+  revokeFailed: 'could not revoke the invite',
+  invitedLink: '{email} is invited — send them the link below',
+
+  titleWorkspace: 'Join {name}',
+  titleCanvas: 'Open {name}',
+  ledeWorkspace: '{inviter} invited you to the workspace “{name}”.',
+  ledeCanvas: '{inviter} invited you to collaborate on “{name}”.',
+  email: 'Email',
+  name: 'Your name',
+  password: 'Password',
+  passwordHint: 'At least 8 characters',
+  create: 'Create account and join',
+  creating: 'Creating your account…',
+  failed: 'Could not accept the invite',
+
+  existsTitle: 'You already have an account',
+  existsText: 'An account with {email} already exists. Sign in to join.',
+  signIn: 'Sign in',
+  joining: 'Joining…',
+  wrongAccount: 'You are signed in as {current}, but this invite is for {email}.',
+  signOut: 'Sign out',
+
+  invalidTitle: 'This invite link isn’t valid any more',
+  invalidText: 'Ask for a new one.',
+} as const

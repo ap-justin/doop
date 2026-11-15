@@ -22,6 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Toast } from '../components/ui/toast'
 import { ChevronRightIcon } from '../components/ui/icons'
 import { FontLibrary } from '../components/FontLibrary'
+import { InviteLinkNotice } from '../components/InviteLinkNotice'
 import { DashContent, DashHeader, DashLayout, DashMain, DashSubtitle, DashTitle } from '../components/ui/dash'
 import { timeAgo } from '../lib/time'
 import { getLocale, t as translate, useT, type PlainMessageKey } from '../lib/i18n'
@@ -295,6 +296,8 @@ function MembersPane({
   const [role, setRole] = useState<WorkspaceRole>('member')
   const [busy, setBusy] = useState(false)
   const [removing, setRemoving] = useState<{ userId: string; name: string } | null>(null)
+  /* the link for the address just invited; the server keeps only its hash */
+  const [sent, setSent] = useState<{ email: string; link: string } | null>(null)
 
   async function invite() {
     const clean = email.trim()
@@ -303,13 +306,17 @@ function MembersPane({
     try {
       const result = await api.inviteToWorkspace(ws.id, clean, role)
       posthog.capture('workspace_member_invited', { pending: 'invite' in result })
-      if ('member' in result) onToast(t('workspace.invitedMember', { name: result.member.name }))
-      else
+      if ('member' in result) {
+        onToast(t('workspace.invitedMember', { name: result.member.name }))
+        setSent(null)
+      } else {
         onToast(
           result.emailed
             ? t('workspace.inviteEmailed', { email: clean })
             : t('workspace.invitePending', { email: clean }),
         )
+        setSent({ email: result.invite.email, link: result.link })
+      }
       setEmail('')
       onChange()
     } catch (caught) {
@@ -379,6 +386,7 @@ function MembersPane({
             </Button>
           </div>
         )}
+        {admin && sent && <InviteLinkNotice email={sent.email} link={sent.link} />}
       </CardHeader>
       <div>
         {ws.members.map((m) => {

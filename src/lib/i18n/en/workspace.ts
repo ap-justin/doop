@@ -34,7 +34,7 @@ export const workspace = {
 
   invitedMember: '{name} is in',
   inviteEmailed: 'Invite emailed to {email}',
-  invitePending: '{email} joins when they sign up with that email',
+  invitePending: '{email} can join with the invite link',
   inviteFailed: 'Couldn’t invite',
   roleChangeFailed: 'Couldn’t change the role',
   removeFailed: 'Couldn’t remove',

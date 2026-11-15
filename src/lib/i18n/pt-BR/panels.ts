@@ -207,7 +207,7 @@ export const panels: Catalog['panels'] = {
   sharePublishFailed: 'falha ao publicar',
   shareCopyFailed: 'Não foi possível copiar o link. Copie a URL do seu navegador.',
   shareTitle: 'Compartilhar “{name}”',
-  shareInvitePlaceholder: 'Convidar por e-mail (conta doop)',
+  shareInvitePlaceholder: 'Convidar por e-mail',
   shareInvite: 'Convidar',
   shareYou: '{name} (você)',
   shareOwner: 'Dono',

@@ -20,6 +20,7 @@ import { workspace } from './workspace'
 import { community } from './community'
 import { admin } from './admin'
 import { ui } from './ui'
+import { invite } from './invite'
 
 export const ptBR: Catalog = {
   common,
@@ -43,4 +44,5 @@ export const ptBR: Catalog = {
   community,
   admin,
   ui,
+  invite,
 }
