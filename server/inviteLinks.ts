@@ -24,10 +24,9 @@ import type { InviteLinkError, InviteLinkInfo, PendingCanvasInvite } from '../sh
  * /invite/<token>, goes by email when a mailer is configured, so only the
  * address's owner holds it; without a mailer the inviter gets it instead.
  * Opening it lets the invited address create its account, or an account it
- * already has join. Workspace
- * invites live in `workspace_invites` (they predate links), canvas invites
- * in `canvas_invites`; this file is the canvas half plus the public routes
- * both kinds share.
+ * already has join. Workspace invites live in `workspace_invites` (they
+ * predate links), canvas invites in `canvas_invites`; this file is the canvas
+ * half plus the public routes both kinds share.
  */
 
 /* ---- canvas invites ---- */
@@ -274,9 +273,9 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
     }
     const created = await createdAccount(signedUp.user.id, found.email)
     if (!created) return refuse(res, 409, 'account-exists')
-    /* With a mailer the link went to the address by email alone (the inviter
-       never held it), so opening it proves the address. Without one the inviter
-       holds the link too, so it proves nothing and the account stays unverified. */
+    /* with a mailer the link went to the address alone (the inviter never held
+       it), so opening it proves the address; without one the inviter holds the
+       link too, so it proves nothing and the account stays unverified */
     if (mailerConfigured)
       await db.update(authSchema.user).set({ emailVerified: true }).where(eq(authSchema.user.id, created.id))
     /* sign in before spending the invite: a failed sign-in leaves it for the

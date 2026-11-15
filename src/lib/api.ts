@@ -271,7 +271,8 @@ export type WorkspaceInviteResult =
   { member: WorkspaceMember } | { invite: WorkspaceInvite; emailed: boolean; link?: string }
 
 /** Sharing a canvas lands one of two ways too: an existing account is a
- *  collaborator at once; an unknown email gets an invite link for the inviter, or, with SMTP, by email alone. */
+ *  collaborator at once; an unknown email gets an invite link: shown to the inviter, or, when SMTP is set up,
+ *  sent to the address alone. */
 export type CanvasInviteResult = CanvasMember | { invite: PendingCanvasInvite; link?: string; emailed: boolean }
 
 function actor() {

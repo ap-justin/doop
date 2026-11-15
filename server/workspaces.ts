@@ -670,7 +670,7 @@ workspacesRouter.post('/:id/members', async (req, res) => {
       await db
         .delete(t.workspaceInvites)
         .where(and(eq(t.workspaceInvites.workspaceId, ws.id), eq(t.workspaceInvites.id, invite.id)))
-      return res.status(502).json({ error: 'could not send the invite email — try again' })
+      return res.status(502).json({ error: 'could not send the invite email. Try again.' })
     }
   }
   const pending: WorkspaceInvite = {

@@ -307,8 +307,9 @@ describe('invite links', () => {
 
     /** A server mailing through `smtpPort`, with boss@test.dev signed in. */
     async function mailedServer(smtpPort: number) {
-      /* the inviter signs up and is verified while no mailer is set, since an
-         unverified account cannot sign in once verification is required */
+      /* the inviter signs up while no mailer is set, then is marked verified in
+         the database, since an unverified account cannot sign in once
+         verification is required */
       const before = await startServer(prod)
       await new Client(before).signUp('boss@test.dev', 'Boss')
       before.stop({ keepData: true })
@@ -388,7 +389,7 @@ describe('invite links', () => {
         ]) {
           const text = await res.text()
           expect(res.status, text).toBe(502)
-          expect(JSON.parse(text).error).toBe('could not send the invite email — try again')
+          expect(JSON.parse(text).error).toBe('could not send the invite email. Try again.')
           expect(text).not.toContain('/invite/')
         }
         const detail = await (await boss.get(`/api/workspaces/${wsId}`)).json()

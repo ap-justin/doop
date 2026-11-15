@@ -79,7 +79,7 @@ export function ShareModal({
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
   const [upgrade, setUpgrade] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingCanvasInvite[]>([])
-  /* the address just invited, with its link unless a mailer sent it alone (the server keeps only its hash) */
+  /* the address just invited, and its link when no mailer sent it (the server keeps only its hash) */
   const [sent, setSent] = useState<{ email: string; link?: string } | null>(null)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)

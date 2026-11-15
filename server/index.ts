@@ -1435,7 +1435,7 @@ app.post('/api/canvases/:id/members', async (req, res) => {
       /* nobody holds this link, so the invite could never be opened */
       console.error('[invites] canvas invite email failed', err)
       await revokeCanvasInvite(c.id, invite.id)
-      return res.status(502).json({ error: 'could not send the invite email — try again' })
+      return res.status(502).json({ error: 'could not send the invite email. Try again.' })
     }
     /* with a mailer the link goes by email alone: the inviter never holds it */
     return res.json(mailerConfigured ? { invite, emailed: true } : { invite, link, emailed: false })

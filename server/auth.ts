@@ -468,7 +468,7 @@ function buildAuth() {
         await acceptInvites(user.id, user.email)
       },
       sendVerificationEmail: async ({ user, url }) => {
-        /* an account made from an invite link is verified by the emailed link itself */
+        /* an invite-link sign-up gets no email: the accept route verifies it, since the link itself came by email */
         if (inviteSignupAllows(user.email)) return
         await sendMail({
           to: user.email,
@@ -505,8 +505,11 @@ function buildAuth() {
                With SMTP on, a fresh signup is never verified yet, so the
                promotion happens in afterEmailVerification instead. */
             if (mayPromote(user)) await promote(user.id, user.email)
-            /* workspace invites are keyed by email: with a mailer they are
-               honoured on verification (afterEmailVerification); without one
+            /* workspace invites are keyed by email: with a mailer an ordinary
+               sign-up honours them on verification (afterEmailVerification),
+               while an account made from an invite link is verified by the
+               accept route, which spends only that link's invite (the
+               address's other invites wait on their own links); without one
                nobody can verify, so only local development takes the
                address at face value — production honours such an invite
                only through its link (server/inviteLinks.ts), the line
