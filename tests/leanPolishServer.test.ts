@@ -12,7 +12,7 @@ vi.mock('../server/imagePrefs.ts', () => ({ getImagePref: vi.fn(() => Promise.re
 import { getAccounts } from '../server/modelAccounts.ts'
 import { getImagePref } from '../server/imagePrefs.ts'
 import { generatorFor, imageModelAvailability } from '../server/imageGen.ts'
-import { doopGuide } from '../server/guide.ts'
+import { doopGuide, guideFor } from '../server/guide.ts'
 
 afterEach(() => {
   vi.mocked(getAccounts).mockReset()
@@ -121,7 +121,7 @@ function guideSection(heading: string): string {
 
 describe('the agent guide', () => {
   it('keeps the resident-agent reason a comment reply inherits its anchor when lean is off', () => {
-    expect(doopGuide()).toContain(
+    expect(guideFor('comments-and-agents')).toContain(
       "reply inherits the root's element anchor, so an @mention reaches the resident agent with\nthe same context the conversation is about.",
     )
   })
@@ -135,7 +135,8 @@ describe('the agent guide', () => {
 
   it('sends nobody to Settings or a connected account for generated images when lean is on', () => {
     stubEnv('DOOP_LEAN', '1')
-    const images = doopGuide().slice(doopGuide().indexOf('**Generated imagery'), doopGuide().indexOf('**Your own file'))
+    const topic = guideFor('images')
+    const images = topic.slice(topic.indexOf('**Generated imagery'), topic.indexOf('**Your own file'))
     expect(images).toContain('generate_image')
     expect(images).not.toMatch(/Settings|connected account/)
   })

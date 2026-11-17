@@ -12,6 +12,8 @@ interface FakeBrowser {
   connected: boolean
   close: ReturnType<typeof vi.fn>
   createBrowserContext: ReturnType<typeof vi.fn>
+  process: () => null
+  disconnect: ReturnType<typeof vi.fn>
   contexts: Array<{ close: ReturnType<typeof vi.fn> }>
 }
 
@@ -19,6 +21,8 @@ function fakeBrowser(): FakeBrowser {
   const browser: FakeBrowser = {
     connected: true,
     contexts: [],
+    process: () => null,
+    disconnect: vi.fn(async () => {}),
     close: vi.fn(async () => {
       browser.connected = false
     }),

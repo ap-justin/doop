@@ -2350,7 +2350,7 @@ export function buildMcpServer(
           canRead: (id) => !!canvasFor(id, 'view'),
           canEdit: (id) => !!canvasFor(id, 'edit'),
           readableCanvases: () =>
-            workspaces.canvasesFor(ownerId ?? '').flatMap((meta) => store.getCanvas(meta.id) ?? []),
+            workspaces.canvasesFor(ownerId ?? '').flatMap((meta) => canvasFor(meta.id, 'view') ?? []),
           userId: ownerId,
         })
         if (!outcome.ok) return err(outcome.error)

@@ -157,6 +157,12 @@ async function withToolInputs(who: Client, secret: string, seeded: Awaited<Retur
   await callTool(secret, 'set_guidelines', { canvas_id: seeded.canvasId, name: 'brand', markdown: '# Seed', ...bot })
   await callTool(secret, 'set_frame_html', { frame_id: seeded.frameId, html: '<p>first</p>', ...bot })
   await callTool(secret, 'set_frame_html', { frame_id: seeded.frameId, html: '<p>second</p>', ...bot })
+  /* a component with two revisions, and one deleted, for the component tools */
+  const button = { canvas_id: seeded.canvasId, component: 'Button', ...bot }
+  await callTool(secret, 'create_component', { canvas_id: seeded.canvasId, name: 'Button', html: '<b>Go</b>', ...bot })
+  await callTool(secret, 'update_component', { ...button, find: 'Go', replace: 'Run' })
+  await callTool(secret, 'create_component', { canvas_id: seeded.canvasId, name: 'Gone', html: '<i>x</i>', ...bot })
+  await callTool(secret, 'delete_component', { canvas_id: seeded.canvasId, component: 'Gone', ...bot })
   const versions = JSON.parse((await callTool(secret, 'list_frame_versions', { frame_id: seeded.frameId })).text) as {
     versions: { id: string }[]
   }
@@ -278,6 +284,30 @@ describe('a key limited to one workspace over /mcp', () => {
     ['list_frame_versions', (t) => ({ frame_id: t.frameId, ...bot })],
     ['restore_frame_version', (t) => ({ frame_id: t.frameId, version_id: t.versionId, ...bot })],
     ['delete_frame', (t) => ({ frame_id: t.frameId, ...bot })],
+    ['set_frame_approval', (t) => ({ frame_id: t.frameId, status: 'draft', ...bot })],
+    ['export_layer', (t) => ({ frame_id: t.frameId, element_id: 'abc123' })],
+    ['upload_font', (t) => ({ canvas_id: t.canvasId, source_url: 'https://example.com/a.ttf', ...bot })],
+    ['list_components', (t) => ({ canvas_id: t.canvasId, libraries: true })],
+    ['get_component', (t) => ({ canvas_id: t.canvasId, component: 'Button' })],
+    ['get_component_preview', (t) => ({ canvas_id: t.canvasId, component: 'Button' })],
+    ['create_component', (t) => ({ canvas_id: t.canvasId, name: 'Chip', html: '<span>x</span>', ...bot })],
+    [
+      'create_components',
+      (t) => ({ canvas_id: t.canvasId, components: [{ name: 'Chip', html: '<span>x</span>' }], ...bot }),
+    ],
+    ['update_component', (t) => ({ canvas_id: t.canvasId, component: 'Button', name: 'Renamed', ...bot })],
+    ['insert_instance', (t) => ({ canvas_id: t.canvasId, frame_id: t.frameId, component: 'Button', ...bot })],
+    [
+      'update_instances',
+      (t) => ({ canvas_id: t.canvasId, frame_id: t.frameId, instances: [{ instance_id: 'x' }], ...bot }),
+    ],
+    ['delete_component', (t) => ({ canvas_id: t.canvasId, component: 'Button', ...bot })],
+    ['restore_component', (t) => ({ canvas_id: t.canvasId, component: 'Gone', ...bot })],
+    ['restore_component_version', (t) => ({ canvas_id: t.canvasId, component: 'Button', rev: 1, ...bot })],
+    ['import_component', (t) => ({ canvas_id: t.canvasId, source_canvas_id: a.canvasId, component: 'Button', ...bot })],
+    ['sync_component', (t) => ({ canvas_id: t.canvasId, ...bot })],
+    ['publish_library', (t) => ({ canvas_id: t.canvasId, dry_run: true, ...bot })],
+    ['update_library_everywhere', (t) => ({ canvas_id: t.canvasId, dry_run: true, ...bot })],
   ]
   const madeUp: Target = {
     canvasId: 'zz-no-canvas',
@@ -369,10 +399,18 @@ describe('a key limited to one workspace over /mcp', () => {
   }, 30_000)
 
   /* calls that cannot finish inside the test rig (no image model, no network,
-     no Chrome): on a canvas the key reaches they still answer something other
+     no Chrome, no published library): on a canvas the key reaches they still answer something other
      than a missing canvas, which is as far as the control can go */
   const needsOutsideWorld = (tool: string, args: Record<string, unknown>) =>
-    ['generate_image', 'import_webpage', 'get_frame_screenshot'].includes(tool) || args.format === 'pdf'
+    [
+      'generate_image',
+      'import_webpage',
+      'get_frame_screenshot',
+      'get_component_preview',
+      'export_layer',
+      'upload_font',
+      'update_library_everywhere',
+    ].includes(tool) || args.format === 'pdf'
 
   it.each(toolCalls.map(([tool, args], i) => [`${tool} #${i}`, tool, args] as const))(
     'positive control: %s with valid arguments works on a canvas in its workspace',
@@ -441,6 +479,15 @@ describe('a key limited to one workspace over /mcp', () => {
   )
 
   it('leaves no trace on a canvas outside its limit', async () => {
+    const framesOfB = async () =>
+      (
+        (await (await owner.get(`/api/canvases/${b.canvasId}`)).json()) as {
+          frames: { id: string; name: string }[]
+        }
+      ).frames.map((f) => [f.id, f.name])
+    /* the frames B was seeded with, components' mains included */
+    const seededFrames = await framesOfB()
+    expect(seededFrames).toContainEqual([b.frameId, 'In B frame'])
     /* try every tool on B first, so the check holds whatever ran before it */
     for (const key of [limitedFull, limitedComment]) {
       for (const [tool, args] of toolCalls) await callTool(key, tool, args(b))
@@ -448,10 +495,7 @@ describe('a key limited to one workspace over /mcp', () => {
         await callTool(key, tool, { ...args, canvas_id: b.canvasId, ...bot })
       }
     }
-    const canvas = (await (await owner.get(`/api/canvases/${b.canvasId}`)).json()) as {
-      frames: { id: string; name: string }[]
-    }
-    expect(canvas.frames.map((f) => [f.id, f.name])).toEqual([[b.frameId, 'In B frame']])
+    expect(await framesOfB()).toEqual(seededFrames)
     expect((await activeTask(b.canvasId, 'Seeder'))?.status).toBe('Seeded B')
     expect(await activeTask(b.canvasId, bot.agent_name)).toBeUndefined()
     const comments = await callTool(unlimited, 'get_comments', { canvas_id: b.canvasId })

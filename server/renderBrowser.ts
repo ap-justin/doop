@@ -53,8 +53,10 @@ export interface RendererTuning {
   /** how long one browser lives before it is recycled */
   maxBrowserAgeMs: number
   /** close a browser that has had no page open this long; unset keeps it.
-   *  A remote browser is billed while its session is open, so it gets one */
-  idleCloseMs?: number
+   *  A remote browser is billed while its session is open, so it gets one.
+   *  A function is read each time a browser goes idle, so a setting changed
+   *  while the server runs applies from the next idle period. */
+  idleCloseMs?: number | (() => number | undefined)
 }
 
 export const DEFAULT_RENDERER_TUNING: RendererTuning = {
@@ -379,7 +381,7 @@ export function createRenderer(deps: RendererDeps): Renderer {
   }
 
   function scheduleIdleClose(generation: Generation): void {
-    const idleMs = tuning.idleCloseMs
+    const idleMs = typeof tuning.idleCloseMs === 'function' ? tuning.idleCloseMs() : tuning.idleCloseMs
     if (idleMs === undefined) return
     if (generation.idleTimer) clearTimeout(generation.idleTimer)
     generation.idleTimer = setTimeout(() => {

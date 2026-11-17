@@ -148,9 +148,7 @@ const renderer = createRenderer({
     maxConcurrent: Math.max(1, env.RENDER_CONCURRENCY),
     ...(remoteBrowserUrl
       ? { idleCloseMs: REMOTE_IDLE_CLOSE_MS, closeTimeoutMs: REMOTE_CLOSE_TIMEOUT_MS }
-      : localIdleCloseMs() > 0
-        ? { idleCloseMs: localIdleCloseMs() }
-        : {}),
+      : { idleCloseMs: () => localIdleCloseMs() || undefined }),
   },
 })
 

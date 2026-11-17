@@ -25,7 +25,7 @@ vi.mock('../server/db/index.ts', () => {
   })
   return { db: { transaction: (run: (tx: unknown) => Promise<void>) => run(chain), insert: chain, delete: chain } }
 })
-vi.mock('../server/store.ts', () => ({ store: { detachWorkspace: vi.fn() } }))
+vi.mock('../server/store.ts', () => ({ store: { detachWorkspace: vi.fn(() => []) } }))
 vi.mock('../server/fonts.ts', () => ({ dropWorkspaceFonts: vi.fn(async () => undefined) }))
 vi.mock('../server/userEvents.ts', () => ({ notifyUsers: vi.fn() }))
 

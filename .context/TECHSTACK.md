@@ -98,7 +98,7 @@
   agents are `AgentRole`s with `custom: true`: a fixed handle (its role id and its only @mention
   spelling) and name (its presence identity), editable colour, one-liner, instructions (up to 2,000
   characters) and reviewer flag, at most 20 per scope, in `custom_agents`. `scope` is `ws:<id>` or
-  `user:<id>` in both tables (migration 0057), mirrored in memory. Instructions a team wrote (a
+  `user:<id>` in both tables (migration 0060), mirrored in memory. Instructions a team wrote (a
   custom agent's, a rewritten built-in's: `briefByTeam`) sit in the resident's system prompt inside
   `<role_instructions>`, under the shared rules. Every role lookup takes a `Roster`
   (`actions.canvasRoster` / `rosterFor` on the server, `useRoster` / `useCanvasRoster` in the
@@ -160,7 +160,7 @@
   URL, an optional key and the models it offers (each with "Sees images" and an optional max output
   tokens, which caps the turn's budget). One is a `model_accounts` row of kind `custom:<id>` (id
   minted by the server, at most 10 per person) with its description in `custom` (jsonb) and extra
-  headers in `custom_headers` (sealed; migration 0051), so on/off, the default, the composer pick and
+  headers in `custom_headers` (sealed; migration 0054), so on/off, the default, the composer pick and
   disconnect are the ordinary account routes. `POST /api/custom-providers` adds, `PUT
 /api/custom-providers/:kind` edits (a key or headers left out are kept, empty clears them);
   `/models` lists the endpoint's ids and `/test` runs one turn that must call a tool, both rationed per
@@ -181,12 +181,12 @@
   `shared/imageDescriptions.ts`): raster uploads emit `asset.stored` and get an asynchronous
   description. Billing resolves uploader → eligible canvas owner → server; Off on either
   person stops analysis, and a server-only uploader bypasses both accounts. The stable uploader
-  ID is `assets.owner_id`; migration 0050 persists `describe_payer_id` and `describe_provider`
+  ID is `assets.owner_id`; migration 0052 persists `describe_payer_id` and `describe_provider`
   before work so retries never change payer. Runtime errors do not trigger billing fallback.
   The in-memory queue defaults to two concurrent jobs, three attempts 30s apart, and 200
   attempts per canvas per UTC day (counter resets on restart). A 20s deadline bounds storage,
   resizing and model work. Deleted canvases are skipped. Startup recovers unfinished assets;
-  migration 0050 excludes pre-feature history. Settings uses `image_description_prefs` and
+  migration 0052 excludes pre-feature history. Settings uses `image_description_prefs` and
   `GET`/`PUT /api/image-descriptions`. Agents read `images` on frame summaries and in resident
   kickoff; only standalone image layers are marked pasted references. Success broadcasts
   `asset:described` without changing frame HTML. Tests: `imageDescriptions.test.ts`,
@@ -286,7 +286,7 @@
   frame names into its own `<style data-doop-tokens>` block wherever `withFontFaces` runs (the
   component preview sheet included), and a
   token change rewrites that block in every frame naming it as an annotation (sign-off stands, no
-  version). Stored in `design_tokens` + `canvases.token_themes` (migration 0050); REST under
+  version). Stored in `design_tokens` + `canvases.token_themes` (migration 0044); REST under
   `/api/canvases/:id/tokens`, `/token-themes` and `/styleguide.md` (tokens + guidelines as one
   markdown); MCP `get_tokens` (json / css / tailwind / markdown), `create_tokens`, `set_tokens`,
   `set_token_themes`, mirrored on the resident agent; the Layers panel's Tokens tab
@@ -342,7 +342,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   workspace, or names a new one that checkout creates, or says which workspace they are on Pro
   through. Its name is a placeholder (`plans.defaultWorkspaceName`): when checkout comes back paid the
   Workspace page asks for the real one once (`NameWorkspaceModal`, a per-browser note from
-  `noteNameAfterCheckout`). Seats are a minimum (`workspaces.seats_bought`, migration 0059): the owner
+  `noteNameAfterCheckout`). Seats are a minimum (`workspaces.seats_bought`, migration 0062): the owner
   picks them at checkout (`SeatStepper`) or on the billing pane (`PUT /api/workspaces/:id/billing/seats`),
   and Stripe bills `billedSeats` = the larger of seats bought and members, so invites fill bought seats
   first. "Team API keys for CLI and CI" is listed as Soon: not built. Tests: `planLimits.test.ts`,
@@ -883,7 +883,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   tasks, each composer prompt (a board card without a `kind`) and any feedback left on it is a
   turn, oldest first, with the agent's answer under it: waiting, working, the run's closing words,
   or the failure reason. A finished resident run keeps those words on the cards and feedback it
-  handled (`actions.recordWorkReply`, `reply` on `tasks` and `feedback`, migration 0056; a later
+  handled (`actions.recordWorkReply`, `reply` on `tasks` and `feedback`, migration 0059; a later
   pipeline stage replaces an earlier one's), so the answer survives a reload. The line between
   Recent tasks and the chat drags, ↑/↓ on focus, double-click resets (`src/lib/agentsSplit.ts`,
   per browser under `doop:agents-split`). Tests: `agentChat.test.ts`.
@@ -910,7 +910,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   or a double-click on its name in that tab, or from its main's Layers row (`renameComponent`; instances are
   linked by id, so they follow). As in Figma, renaming an instance's row names that layer
   alone (`data-doop-name`, kept as an override of that instance, still linked). Stored in `components`
-  (migration `0052_components`). Tests: `components.test.ts`, `componentsEdgeCases.test.ts`,
+  (migration `0055_components`). Tests: `components.test.ts`, `componentsEdgeCases.test.ts`,
   `componentTools.test.ts`, `componentsRoutes.test.ts`, `componentsBrowser.test.ts`. A bare
   `data-doop-prop="name"` binds an element's text, except where there is none: on `img`, `source`,
   `video`, `audio`, `iframe` and `embed` it binds `src`, on `input` its `value` (`parseBindings`
@@ -955,18 +955,18 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `DESIGN_BRIEF` and `COMPONENTS` say the same. Tests: `existingStyle.test.ts`.
 - Workspace component libraries (`.context/specs/workspace-component-library.md`,
   `server/componentLibrary.ts`): a workspace canvas publishes snapshots of its components
-  (`library_components`, migration `0053_library_components`, mirrored in memory) and every other
+  (`library_components`, migration `0056_library_components`, mirrored in memory) and every other
   canvas of the workspace can use them. Using one adds a linked definition with no main
   (`source.library`), by `import_component`, by a click in the Components panel, or by a write
   naming it (`contextFor`'s `LibraryAdoption` in `prepareFrameHtml` / `prepareChunk`); the tokens it
   names come along (`actions.announceAdopted`). Updates wait until `sync_component` pulls them.
   `update_library_everywhere` (`updateLibraryConsumers`) is the one explicit push: it loads each canvas
-  that is behind and pulls there. `workspaces.library_publish` (migration `0054_library_publish_policy`)
+  that is behind and pulls there. `workspaces.library_publish` (migration `0057_library_publish_policy`)
   can keep publishing, and that push, to the owner and admins.
   `libraryBlock` is the entitlement (a canvas in an active workspace; every workspace with billing
   off), refused as a 402 the panel turns into `LibraryUpgradeFlow`, which resumes after Stripe
   Checkout from a per-browser note (`src/lib/libraryResume.ts`). A workspace can keep publishing
-  to its owner and admins (`workspaces.library_publish`, migration `0054_library_publish_policy`,
+  to its owner and admins (`workspaces.library_publish`, migration `0057_library_publish_policy`,
   set in the Workspace page's General pane; `requireLibraryPublisher`, a 403). Agents: `publish_library`,
   `workspaceLibraries` in `get_canvas`. Editor: `LibrarySection.tsx`, and the Workspace page's Libraries pane
   (`WorkspaceLibraries.tsx`). A library canvas opens on its components: the canvas GET and the
@@ -1027,7 +1027,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   provider (`AuthPage` starts the round trip on mount; never after a provider error, under
   `?manual=1`, or in the desktop shell), and a default workspace every new account joins as a member
   (`joinDefaultWorkspace`, in the user-create hook, or on verification when SMTP is on, like
-  invites). One row in `instance_settings` (migration 0050), read into memory at boot;
+  invites). One row in `instance_settings` (migration 0053), read into memory at boot;
   `GET /api/oidc-config` adds the public half as `emailPasswordSignup` / `ssoAutoRedirect`;
   `GET`/`PATCH /api/admin/instance-settings` edit it (409 with a `refusal`). Auto-redirect is
   refused until an admin has signed in through SSO, so a provider nobody has proven cannot lock the
@@ -1252,4 +1252,9 @@ image loaded with `crossOrigin` or a CSS `mask`, `clip-path` or `shape-outside` 
 drawn onto a canvas taints it, so pixel reads and WebGL textures fail too. Tests: `assetCors.test.ts`.
 Migrations 0040 (agent feedback) and 0041 (custom fonts) retain their shared timestamps; their OSS
 snapshots omit the deferred Figma `integrations.refresh_token` column, as does the credential
-encryption backfill. Desktop downloads use the platform-neutral `https://doop.design/download` page.
+encryption backfill. Migrations 0049 to 0051 (agent key scope, workspace limits, invite links) are this repository's own and were already applied
+in production; upstream's v0.15.0 migrations 0049 to 0059 are numbered 0052 to 0062 here, in the same order and with later `when`
+values, because drizzle's migrator skips a journal entry dated at or before the newest one a database has run. A later
+upstream migration takes the next free number the same way. The local Chromium is closed after 120 s without a page
+(`CHROME_IDLE_CLOSE_MS`, `0` keeps it; read each time the browser goes idle) through the renderer's `idleCloseMs` tuning in
+`server/screenshot.ts`. Desktop downloads use the platform-neutral `https://doop.design/download` page.

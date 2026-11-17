@@ -14,7 +14,7 @@ stays free.
 **A library is a workspace canvas that has published.** The team keeps its mains on a canvas they
 already know how to edit; there is no second editor.
 
-- `library_components` (migration `0053_library_components`, mirrored in memory by
+- `library_components` (migration `0056_library_components`, mirrored in memory by
   `server/componentLibrary.ts`): one snapshot per published component, keyed `canvasId` + `id`,
   holding name, description, template, css, rawCss, head, props, slots, code, `nested` (which
   other library each nested component came from), a `rev`,
@@ -43,7 +43,7 @@ already know how to edit; there is no second editor.
   by id and the scoped CSS work as published. No frame is written. What it is built from comes
   along, from its own library or from another library of the workspace (a Plan card published
   around the design system's Button), found through the source the publication recorded for
-  it (`nested`, migration `0055_library_nested_sources`), never by id alone, since copied canvases
+  it (`nested`, migration `0058_library_nested_sources`), never by id alone, since copied canvases
   share ids; a name already taken here gets a "(library)" suffix; an id that is the canvas's own
   component (a copied canvas shares ids) is refused before anything is written.
 - **Resolve on write.** `prepareFrameHtml` and `prepareChunk` pass `contextFor` a
@@ -116,7 +116,7 @@ sentence to relay to the person. Nothing about plans is added to `get_canvas`.
 
 A workspace sets who publishes to its library: everyone who can edit the library canvas (the
 default, and all there was before the setting) or its owner and admins only. It is
-`workspaces.library_publish` (migration `0054_library_publish_policy`; null is everyone, `admins`
+`workspaces.library_publish` (migration `0057_library_publish_policy`; null is everyone, `admins`
 restricts), `libraryPublish` on `WorkspaceSummary`, changed by an admin through
 `PATCH /api/workspaces/:id { libraryPublish }` from the Workspace page's General pane.
 

@@ -158,26 +158,24 @@ async function toolNames(b: Booted): Promise<string[]> {
 
 const LINEAR_TOOLS = ['list_linear_issues', 'get_linear_issue']
 
-/** The guide an MCP client is handed at `initialize`. */
-async function guide(b: Booted): Promise<string> {
-  const init = await mcp(b.server, await agentKey(b), 'initialize', {
-    protocolVersion: '2025-03-26',
-    capabilities: {},
-    clientInfo: { name: 'lean-test', version: '1.0.0' },
-  })
-  return init.result?.instructions ?? ''
+/** Guide lines about features lean mode turns off: the Linear extension (closing the main guide)
+ *  and metered resident @mentions (in the comments topic). */
+const LEAN_DROPPED_GUIDE = ['- Linear:', 'Writing is metered only when a reply @mentions a resident role']
+
+/** One page of the playbook `get_guide` serves. */
+async function guideTopic(b: Booted, topic: string): Promise<string> {
+  const res = await mcp(b.server, await agentKey(b), 'tools/call', { name: 'get_guide', arguments: { topic } })
+  return res.result?.content?.[0]?.text ?? ''
 }
 
-/** Guide lines about features lean mode turns off: the Linear extension, resident @mentions. */
-const LEAN_DROPPED_GUIDE = ['- Linear:', 'A reply that @mentions a resident role']
-
-/** The full playbook `get_guide` serves. */
+/** The main guide. */
 async function fullGuide(b: Booted): Promise<string> {
-  const res = await mcp(b.server, await agentKey(b), 'tools/call', {
-    name: 'get_guide',
-    arguments: { topic: 'doop-instructions' },
-  })
-  return res.result?.content?.[0]?.text ?? ''
+  return guideTopic(b, 'doop-instructions')
+}
+
+/** The guide as a client reads it: the main page and the comments topic. */
+async function guide(b: Booted): Promise<string> {
+  return (await fullGuide(b)) + (await guideTopic(b, 'comments-and-agents'))
 }
 
 async function toolDescription(b: Booted, name: string): Promise<string> {
@@ -287,7 +285,7 @@ describe('lean mode on', () => {
 
   it('leaves turned-off features out of the MCP guide, and keeps the comment tools', async () => {
     const text = await guide(b)
-    expect(text).toContain('- Comments: call get_comments')
+    expect(text).toContain('get_comments')
     for (const line of LEAN_DROPPED_GUIDE) expect(text).not.toContain(line)
   })
 
@@ -385,8 +383,8 @@ describe('lean mode off', () => {
 
   it('describes the in-app agent, board cards and metering in the guide and reply_to_comment', async () => {
     const text = await fullGuide(b)
-    expect(text).toContain('## The Doop Agent')
-    expect(text).toContain('Writing is metered')
+    expect(text).toContain('## Comments and the Doop Agent')
+    expect(await guideTopic(b, 'comments-and-agents')).toContain('Writing is metered')
     expect(text).toContain('Humans reply to agent tasks from the canvas UI.')
     expect(text).not.toContain("Humans reply to MCP agents' tasks")
     expect(text).not.toContain('## Who answers comments')

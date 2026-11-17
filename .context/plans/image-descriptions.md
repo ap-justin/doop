@@ -24,7 +24,7 @@ implementation; the spec above describes the current behavior.
 1. **Schema.** `tests/imageDescriptions.test.ts`: a stored image asset reads back with
    `description null`, `describeAttempts 0`. Add `description`, `described_at`, `described_by`,
    `describe_attempts` to `assets` and `image_descriptions` to `local_agent_preferences` in
-   `server/db/schema.ts`; `npx drizzle-kit generate` → `0049_image_descriptions.sql`.
+   `server/db/schema.ts`; `npx drizzle-kit generate` → `0052_image_descriptions.sql`.
 2. **Event.** Same test file: `storeAsset` of a png with a `canvasId` emits `asset.stored` on
    `server/events.ts`; a woff, an svg and an asset without a canvas emit nothing. Add the event
    to the `CanvasEvent` union and the emit after the row insert in `server/assets.ts`.

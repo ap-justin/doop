@@ -370,7 +370,7 @@ export async function describeAsset(
 }
 
 /** Queue what an earlier process left undescribed. Rows from before
- *  descriptions existed were marked out of attempts by migration 0049, so
+ *  descriptions existed were marked out of attempts by migration 0052, so
  *  this never bills an owner for their history. */
 export async function enqueuePending(): Promise<number> {
   const rows = await db

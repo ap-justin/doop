@@ -6,7 +6,7 @@ it('excludes historical assets from billing while new uploads start eligible wit
   const db = new PGlite()
   try {
     await db.exec("CREATE TABLE assets (id text PRIMARY KEY); INSERT INTO assets VALUES ('old')")
-    await db.exec(await readFile('server/db/migrations/0049_image_descriptions.sql', 'utf8'))
+    await db.exec(await readFile('server/db/migrations/0052_image_descriptions.sql', 'utf8'))
     await db.exec("INSERT INTO assets (id) VALUES ('new')")
     const result = await db.query(
       'SELECT id, describe_attempts, describe_payer_id, describe_provider FROM assets ORDER BY id',
