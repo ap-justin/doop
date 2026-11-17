@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express'
 import { env } from './env.ts'
-import { mentionedRole, type AgentRole } from '../shared/agents.ts'
+import { mentionedRole, type AgentRole, type Roster } from '../shared/agents.ts'
 
 /**
  * Lean mode (DOOP_LEAN=1 or true, any case): Doop as a shared canvas for MCP
@@ -67,8 +67,8 @@ export function activeExtensions<T>(all: readonly T[]): readonly T[] {
 
 /** The resident role a comment @mentions: none in lean mode, where the in-app
  *  agent is off, so an @mention is plain text — not queued, metered or refused. */
-export function residentMention(text: string): AgentRole | undefined {
-  return leanMode() ? undefined : mentionedRole(text)
+export function residentMention(text: string, roster: Roster): AgentRole | undefined {
+  return leanMode() ? undefined : mentionedRole(text, roster)
 }
 
 /** Starts background work that lean mode leaves off. */

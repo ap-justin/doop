@@ -4,18 +4,22 @@ import { useT, type PlainMessageKey } from '../lib/i18n'
 import { useLean } from '../lib/lean'
 import { ModelAccountPanel } from '../components/ModelAccount'
 import { ImageModelCard } from '../components/ImageModelCard'
+import { ImageDescriptionsCard } from '../components/ImageDescriptionsCard'
 import { useAllowance } from '../components/TeamAllowance'
 import { AccountSettings } from '../components/AccountSettings'
+import { PlanSettings } from '../components/PlanSettings'
 import { AppearanceSettings } from '../components/AppearanceSettings'
 import { GeneralSettings } from '../components/GeneralSettings'
 import { AgentKeys } from '../components/AgentKeys'
 import { Webhooks } from '../components/Webhooks'
 import { FontLibrary } from '../components/FontLibrary'
+import { CustomAgents } from '../components/CustomAgents'
 import { AccountMenu } from '../components/DashShell'
 import { railLayout } from '../components/AppRail'
 import {
   BellIcon,
   ChevronLeftIcon,
+  CreditCardIcon,
   KeyIcon,
   MoonIcon,
   GearIcon,
@@ -39,7 +43,7 @@ import {
   DashTitle,
 } from '../components/ui/dash'
 
-type Pane = 'general' | 'agent' | 'fonts' | 'keys' | 'webhooks' | 'account' | 'appearance'
+type Pane = 'general' | 'account' | 'plan' | 'appearance' | 'agent' | 'keys' | 'webhooks' | 'fonts'
 
 /* the heading over each pane, and the line under it */
 const panes: Record<Pane, { title: PlainMessageKey; blurb: PlainMessageKey }> = {
@@ -49,6 +53,7 @@ const panes: Record<Pane, { title: PlainMessageKey; blurb: PlainMessageKey }> = 
   keys: { title: 'settings.keysTitle', blurb: 'settings.keysBlurb' },
   webhooks: { title: 'settings.webhooksTitle', blurb: 'settings.webhooksBlurb' },
   account: { title: 'settings.accountTitle', blurb: 'settings.accountBlurb' },
+  plan: { title: 'plans.settingsTitle', blurb: 'plans.settingsBlurb' },
   appearance: { title: 'settings.appearanceTitle', blurb: 'settings.appearanceBlurb' },
 }
 
@@ -121,6 +126,30 @@ export function Settings() {
           >
             {t('settings.generalTitle')}
           </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<UserIcon size="rail" />}
+            active={pane === 'account'}
+            onClick={() => setPane('account')}
+          >
+            {t('settings.accountTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<CreditCardIcon size="rail" />}
+            active={pane === 'plan'}
+            onClick={() => setPane('plan')}
+          >
+            {t('plans.settingsTitle')}
+          </DashNavItem>
+          <DashNavItem
+            density="rail"
+            icon={<MoonIcon size="rail" />}
+            active={pane === 'appearance'}
+            onClick={() => setPane('appearance')}
+          >
+            {t('settings.appearanceTitle')}
+          </DashNavItem>
           {!lean && (
             <DashNavItem
               density="rail"
@@ -131,14 +160,6 @@ export function Settings() {
               {t('settings.agentTitle')}
             </DashNavItem>
           )}
-          <DashNavItem
-            density="rail"
-            icon={<TextIcon size="rail" />}
-            active={pane === 'fonts'}
-            onClick={() => setPane('fonts')}
-          >
-            {t('settings.fontsTitle')}
-          </DashNavItem>
           <DashNavItem
             density="rail"
             icon={<KeyIcon size="rail" />}
@@ -157,19 +178,11 @@ export function Settings() {
           </DashNavItem>
           <DashNavItem
             density="rail"
-            icon={<UserIcon size="rail" />}
-            active={pane === 'account'}
-            onClick={() => setPane('account')}
+            icon={<TextIcon size="rail" />}
+            active={pane === 'fonts'}
+            onClick={() => setPane('fonts')}
           >
-            {t('settings.accountTitle')}
-          </DashNavItem>
-          <DashNavItem
-            density="rail"
-            icon={<MoonIcon size="rail" />}
-            active={pane === 'appearance'}
-            onClick={() => setPane('appearance')}
-          >
-            {t('settings.appearanceTitle')}
+            {t('settings.fontsTitle')}
           </DashNavItem>
         </nav>
         <div className="mt-auto flex items-center gap-2.5 px-1 pt-4">
@@ -219,6 +232,9 @@ export function Settings() {
               <TabsTrigger value="account">
                 <UserIcon size="rail" /> {t('settings.accountTab')}
               </TabsTrigger>
+              <TabsTrigger value="plan">
+                <CreditCardIcon size="rail" /> {t('plans.settingsTitle')}
+              </TabsTrigger>
               <TabsTrigger value="appearance">
                 <MoonIcon size="rail" /> {t('settings.appearanceTitle')}
               </TabsTrigger>
@@ -245,6 +261,8 @@ export function Settings() {
               )}
               <ModelAccountPanel onChange={refresh} />
               <ImageModelCard />
+              <ImageDescriptionsCard />
+              <CustomAgents />
             </>
           ) : pane === 'fonts' ? (
             <FontLibrary />
@@ -254,6 +272,8 @@ export function Settings() {
             <Webhooks />
           ) : pane === 'account' ? (
             <AccountSettings />
+          ) : pane === 'plan' ? (
+            <PlanSettings />
           ) : (
             <AppearanceSettings />
           )}
