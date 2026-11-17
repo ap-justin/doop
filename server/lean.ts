@@ -41,7 +41,7 @@ const LEAN_DISABLED_PATHS: readonly RegExp[] = [
   /^\/webhooks\//i,
   /^\/(local-agent|gemini-cloud)\/mcp\//i,
   /^\/api\/(live-activities|community|automations|integrations|local-agent|agent-allowance|image-model|billing)(\/|$)/i,
-  /^\/api\/(model-account|agent-runners|github)(\/|$)/i,
+  /^\/api\/(model-account|custom-providers|agent-runners|agents|github)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/(github|cards)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/publish\/?$/i,
   /^\/api\/(feedback|comments)\/[^/]+\/retry\/?$/i,
