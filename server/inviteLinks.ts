@@ -319,9 +319,9 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
       returnHeaders: true,
     })
     await honour(hash, found, created.id)
-    /* the user-create hook left the default workspace for verification, which
-       this route did itself; after the invite, so its role wins when the
-       invite is to the default workspace */
+    /* with a mailer the user-create hook leaves the default workspace to
+       verification, which this route did itself; joined after the invite so
+       the invite's role stands when it is to the default workspace */
     if (mailerConfigured) joinDefaultWorkspace(created.id, defaultWorkspaceId())
     for (const cookie of signedIn.headers.getSetCookie()) res.append('Set-Cookie', cookie)
     res.json({ landing: found.landing })

@@ -1143,9 +1143,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
   `residentMention` makes an @mention a plain comment (not queued, metered or refused);
   `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
-  lines, and `inAppAgentText` drops the metered-@mention sentence from the MCP `initialize`
-  instructions. `doopGuide()` (`get_guide`) and the `reply_to_comment` description read the
-  same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
+  lines. `get_guide` (`doopGuide()` for the main guide, `guideFor` for the comments topic) and
+  the `reply_to_comment` description read the same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
   `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'
   tasks; `addTaskFeedback` addresses a reply to no resident role, so any MCP agent claims it. `generate_image` draws on the server's image keys only, never a connected model
   account (`payerAccounts`), and the boot log keeps its image-generation line so a missing key

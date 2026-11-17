@@ -502,7 +502,7 @@ describe('a key limited to one workspace over /mcp', () => {
     const missing = await call(madeUp.canvasId)
     expect(outside.isError).toBe(true)
     expect(outside.text.replaceAll(b.canvasId, '<canvas>')).toBe(missing.text.replaceAll(madeUp.canvasId, '<canvas>'))
-    /* the positive control above imports from a readable canvas under this same key, so this refusal is the limit's */
+    /* import_component's positive control imports from a readable canvas under this same key, so this refusal is the limit's */
   })
 
   it('leaves no trace on a canvas outside its limit', async () => {
