@@ -5,13 +5,14 @@ import { fromNodeHeaders } from 'better-auth/node'
 import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
 import * as authSchema from './db/auth-schema.ts'
-import { auth } from './auth.ts'
+import { auth, defaultWorkspaceId } from './auth.ts'
 import { store } from './store.ts'
 import { notifyUsers } from './userEvents.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
 import {
   acceptWorkspaceInviteLink,
   isWorkspaceMember,
+  joinDefaultWorkspace,
   workspaceInviteByToken,
   type WorkspaceInviteLink,
 } from './workspaces.ts'
@@ -318,6 +319,10 @@ inviteLinksRouter.post('/:token/accept', async (req, res) => {
       returnHeaders: true,
     })
     await honour(hash, found, created.id)
+    /* the user-create hook left the default workspace for verification, which
+       this route did itself; after the invite, so its role wins when the
+       invite is to the default workspace */
+    if (mailerConfigured) joinDefaultWorkspace(created.id, defaultWorkspaceId())
     for (const cookie of signedIn.headers.getSetCookie()) res.append('Set-Cookie', cookie)
     res.json({ landing: found.landing })
   } catch (err) {
