@@ -97,8 +97,16 @@ function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledR
     ['DELETE', '/api/model-account/openai'],
     ['POST', '/api/model-account/chatgpt/authorize'],
     ['DELETE', '/api/model-account/chatgpt/device'],
+    ['POST', '/api/custom-providers'],
+    ['PUT', '/api/custom-providers/custom:cp-1'],
+    ['POST', '/api/custom-providers/models'],
+    ['POST', '/api/custom-providers/test'],
     ['GET', '/api/agent-runners'],
     ['PUT', '/api/agent-runners/default'],
+    ['GET', '/api/agents'],
+    ['DELETE', '/api/agents/my-agent'],
+    ['GET', '/api/agents/builtin'],
+    ['PATCH', '/api/agents/builtin/doop'],
     ['GET', '/api/agent-allowance'],
     ['GET', '/api/local-agent'],
     ['GET', '/api/image-model'],
@@ -286,6 +294,8 @@ describe('lean mode on', () => {
   it('leaves turned-off features out of the MCP guide, and keeps the comment tools', async () => {
     const text = await guide(b)
     expect(text).toContain('get_comments')
+    /* only the lean guide says this; the stock one names the built-in Doop Agent's roles instead */
+    expect(text).toContain('This server has no built-in Doop Agent')
     for (const line of LEAN_DROPPED_GUIDE) expect(text).not.toContain(line)
   })
 

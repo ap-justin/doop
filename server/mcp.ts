@@ -415,7 +415,9 @@ function limitToComments(server: McpServer) {
  *  same isolation the web UI gets. clientName names the connecting client
  *  (handleMcpRequest builds one server per stateless request, so it is the
  *  name remembered from initialize, else the OAuth application's): feedback
- *  records it and agent presence reads its brand from it. */
+ *  records it and agent presence reads its brand from it. workspaceLimit
+ *  narrows an agent key to the canvases of its workspaces
+ *  (server/workspaceLimit.ts). */
 export function buildMcpServer(
   owner?: string,
   ownerId?: string,

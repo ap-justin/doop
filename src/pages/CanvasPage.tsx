@@ -1294,7 +1294,8 @@ export function CanvasPage({
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
           onAsk={
-            guest || readOnly
+            /* lean mounts no composer, so a draft saved for it would be lost */
+            guest || readOnly || isLean()
               ? null
               : (prompt) => {
                   useStore.getState().setComposerDraft(canvasId, prompt)

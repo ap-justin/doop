@@ -1059,7 +1059,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   marks the address verified (the only place an invite makes an account verified); either way it signs the
   person in and only then spends this link's invite, no other (the member row
   and the invite's deletion in one transaction for both kinds), so a failed step leaves the link for
-  `join`, which needs the session's address to equal the invite's. A second accept of a link already being accepted gets 409 `in-progress`, and the account that spent a
+  `join`, which needs the session's address to equal the invite's. With a mailer it then joins the default
+  workspace (after the invite, so the invite's role stands), as the verification hook would have. A second accept of a link already being accepted gets 409 `in-progress`, and the account that spent a
   link may `join` with it again and land, for as long as this process remembers it. Accept and join share a
   3-per-10-seconds budget per invited address (not per IP) like better-auth's sign-in. A token never
   reaches PostHog: `before_send` runs `src/lib/inviteRedaction.ts` over every event, replay included. The page is
@@ -1136,16 +1137,16 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 
 - Lean mode (`server/lean.ts`, `DOOP_LEAN=1` or `true`, any case, surrounding whitespace ignored; any other value is off, and one that is neither an on nor an off spelling is named in a boot warning):
   Doop as a canvas for MCP agents. `leanGate`, mounted right after `/healthz`, sends the routes of
-  the in-app Doop Agent and model accounts, the image-model pick (`/api/image-model`), billing (the Stripe webhook,
+  the in-app Doop Agent and model accounts (custom agents `/api/agents` and custom providers
+  included), the image-model pick (`/api/image-model`), billing (the Stripe webhook,
   `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
   `residentMention` makes an @mention a plain comment (not queued, metered or refused);
   `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
-  lines, and `inAppAgentText` drops the metered-@mention sentence from the MCP `initialize`
-  instructions. `doopGuide()` (`get_guide`) and the `reply_to_comment` description read the
-  same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
+  lines. `get_guide` (`doopGuide()` for the main guide, `guideFor` for the comments topic) and
+  the `reply_to_comment` description read the same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
   `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'
   tasks; `addTaskFeedback` addresses a reply to no resident role, so any MCP agent claims it. `generate_image` draws on the server's image keys only, never a connected model
   account (`payerAccounts`), and the boot log keeps its image-generation line so a missing key
@@ -1158,7 +1159,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   otherwise after the request, keeping the cached value when it gives none, or with none cached
   asking again in the background after 2s, 5s and 15s, stopping at the first answer) and hides the entry points to what the server refused: the Settings Doop Agent pane
   (`?pane=agent` falls back to General) and Show Prompt Box switch, the canvas `PromptBar` (the
-  Agents tab's empty state points at MCP instead) and the home hero composer, the rail's Community /
+  Agents tab's empty state points at MCP instead), the ⌘K palette's Ask agent row, the Workspace
+  page's Agents pane (`workspacePanesFor`) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
   import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`,
   `leanPolish.test.tsx`, `leanPolishServer.test.ts`, `leanBilling.test.ts`, `leanImportPicker.test.tsx`, `leanTaskFeedback.test.ts`.

@@ -319,7 +319,11 @@ describe('invite links', () => {
       await pg.query(`update "user" set email_verified = true`)
       await pg.close()
 
-      const mailed = await startServer({ ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort) }, before.dataDir)
+      /* ADMIN_EMAILS: the boot reconcile promotes the verified boss, who may then set a default workspace */
+      const mailed = await startServer(
+        { ...prod, SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), ADMIN_EMAILS: 'boss@test.dev' },
+        before.dataDir,
+      )
       const boss = new Client(mailed)
       const signIn = await boss.post('/api/auth/sign-in/email', { email: 'boss@test.dev', password: 'password12345' })
       if (signIn.status !== 200) mailed.stop()
@@ -327,10 +331,13 @@ describe('invite links', () => {
       return { mailed, boss }
     }
 
-    it('mails the link to the address alone, and opening it verifies the address and lands', async () => {
+    it('mails the link to the address alone, and opening it verifies the address, joins the default workspace and lands', async () => {
       const sink = await startSmtpSink()
       const { mailed, boss } = await mailedServer(sink.port)
       try {
+        const defaultWsId = (await (await boss.post('/api/workspaces', { name: 'Everyone' })).json()).id
+        const setDefault = await boss.patch('/api/admin/instance-settings', { defaultWorkspaceId: defaultWsId })
+        expect(setDefault.status, await setDefault.clone().text()).toBe(200)
         const wsId = (await (await boss.post('/api/workspaces', { name: 'Mail Co' })).json()).id
         const cvId = (await (await boss.post('/api/canvases', { name: 'Mail board' })).json()).id
         const invited = [
@@ -364,6 +371,10 @@ describe('invite links', () => {
           expect(await accepted.json()).toEqual({ landing })
           const session = await (await person.get('/api/auth/get-session')).json()
           expect(session.user).toMatchObject({ email, emailVerified: true })
+          /* the accept route's verification stands in for afterEmailVerification, so it joins the default workspace */
+          const everyone = await person.get(`/api/workspaces/${defaultWsId}`)
+          expect(everyone.status, await everyone.clone().text()).toBe(200)
+          expect((await everyone.json()).role).toBe('member')
         }
         /* no verification mail went to either invitee: the link was the proof */
         expect(

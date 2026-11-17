@@ -64,7 +64,7 @@ function mayPromote(user: { email: string; emailVerified: boolean }): boolean {
   return !env.isProduction
 }
 
-function defaultWorkspaceId(): string | null {
+export function defaultWorkspaceId(): string | null {
   return getInstanceSettings().defaultWorkspaceId
 }
 
