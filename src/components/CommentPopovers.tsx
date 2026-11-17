@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ElementComment } from '../../shared/types'
 import { colorFor } from '../../shared/types'
 import { useLean } from '../lib/lean'
-import { AGENT_ROLES, DEFAULT_ROLE_ID, mentionedRole, roleName } from '../../shared/agents'
+import { DEFAULT_ROLE_NAME, mentionedRole } from '../../shared/agents'
+import { useRoster } from '../hooks/use-roster'
 import { cn } from '@/lib/utils'
 import { canCommentOpenCanvas, canEditOpenCanvas, useStore } from '../lib/store'
 import { clientToWorld, dropComment, DRAG_THRESHOLD_PX } from '../lib/commentMove'
@@ -170,7 +171,8 @@ export function CommentComposer({
   const lean = useLean()
   /* @mention a resident agent to route the comment to it; without one the
      comment is a note for the humans in the room */
-  const mentioned = lean ? undefined : mentionedRole(text)
+  const roster = useRoster()
+  const mentioned = lean ? undefined : mentionedRole(text, roster)
   return (
     <div className="w-[240px] rounded-[10px] border border-line bg-surface p-2 shadow-pop animate-[chip-in_0.18s_ease]">
       <Textarea
@@ -186,8 +188,9 @@ export function CommentComposer({
         }}
       />
       {!mentioned && !lean && (
-        <div className="mb-2 flex flex-wrap gap-1">
-          {AGENT_ROLES.map((role) => (
+        /* Leave room inside the scrollport for the pills' shadow outlines and focus rings. */
+        <div className="-mx-1 mb-2 flex max-h-[124px] flex-wrap gap-1 overflow-y-auto p-1">
+          {roster.map((role) => (
             <Button
               key={role.id}
               variant="ghost"
@@ -218,7 +221,7 @@ export function CommentComposer({
 
 /** Where an @agent request in the thread stands, or null for a human note. */
 function agentStatus(c: ElementComment, t: Translate): ReactNode {
-  const target = c.targetAgent ?? roleName(DEFAULT_ROLE_ID)
+  const target = c.targetAgent ?? DEFAULT_ROLE_NAME
   if (c.failedAt) return t('stage.agentStopped', { name: target })
   if (c.resolvedAt)
     return c.forAgent ? (
@@ -263,6 +266,7 @@ export function CommentThread({
      access, and re-running an agent needs edit (the server holds both) */
   const canComment = useStore(canCommentOpenCanvas)
   const canEdit = useStore(canEditOpenCanvas)
+  const roster = useRoster()
   const listRef = useRef<HTMLDivElement>(null)
   /* a long conversation opens (and grows) scrolled to its newest message */
   useEffect(() => {
@@ -280,7 +284,7 @@ export function CommentThread({
       .finally(() => setSending(false))
   }
   const lean = useLean()
-  const mentioned = lean ? undefined : mentionedRole(reply)
+  const mentioned = lean ? undefined : mentionedRole(reply, roster)
   return (
     <div
       data-comment-popover

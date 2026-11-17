@@ -11,6 +11,9 @@ vi.mock('../src/lib/api', () => ({
     addCard: vi.fn(() => Promise.resolve({})),
     agentAllowance: vi.fn(() => Promise.resolve({ used: 0, limit: 5, byoModel: false })),
     agentRunners: () => Promise.resolve({ runners: [] }),
+    listCustomAgents: () => Promise.resolve([]),
+    listBuiltInAgents: () => Promise.resolve([]),
+    imageDescriptions: () => Promise.resolve({ mode: 'off', describer: { label: null, reason: 'off' }, paidBy: null }),
   },
   ApiError: class ApiError extends Error {},
 }))
