@@ -17,8 +17,8 @@ ARG VITE_POSTHOG_HOST
 ARG VITE_POSTHOG_INTERNAL_DOMAINS
 
 RUN bun run build
-# The bundle directory holds server.mjs, the migrations and background seed it reads from its own
-# directory, and node_modules with just the external packages and their dependencies.
+# The bundle directory holds server.mjs, the migrations, background seed and stall watcher worker
+# it loads from its own directory, and node_modules with just the external packages and their dependencies.
 # --without=@electric-sql/pglite leaves the embedded database out of both and starts the
 # bundle through a check that prints why and exits 1 when DATABASE_URL is unset.
 RUN bun scripts/bundle-server.mjs --without=@electric-sql/pglite

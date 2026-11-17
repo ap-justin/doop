@@ -1,7 +1,8 @@
 // Bundles server/index.ts into <out>/ so the image runs `node <out>/server.mjs`
 // without tsx or esbuild's service. Packages with native or wasm parts stay external and are
 // copied, with their own dependencies, into <out>/node_modules; the files the server
-// resolves next to itself (migrations, the background seed) are copied beside the bundle.
+// resolves next to itself (migrations, the background seed, the stall watcher's worker) are
+// copied beside the bundle.
 import { build } from 'esbuild'
 import fs from 'node:fs'
 import { builtinModules } from 'node:module'
