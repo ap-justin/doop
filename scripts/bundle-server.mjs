@@ -74,6 +74,9 @@ const result = await build({
 
 fs.cpSync(path.join(root, 'server/db/migrations'), path.join(out, 'migrations'), { recursive: true })
 fs.copyFileSync(path.join(root, 'server/backgrounds.json'), path.join(out, 'backgrounds.json'))
+/* server/stallWatchdog.ts starts its watcher thread from ./stallWatcher.mjs next to the
+   running module, so the plain-JavaScript worker has to sit beside server.mjs */
+fs.copyFileSync(path.join(root, 'server/stallWatcher.mjs'), path.join(out, 'stallWatcher.mjs'))
 
 /* what the bundle still imports at run time, by package name */
 const imported = new Set()
