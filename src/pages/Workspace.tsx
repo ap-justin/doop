@@ -7,6 +7,7 @@ import { authClient } from '../lib/auth'
 import { cancelLibraryResume, confirmLibraryResume } from '../lib/libraryResume'
 import { takeNameAfterCheckout } from '../lib/upgrade'
 import { posthog } from '../lib/posthog'
+import { useLean } from '../lib/lean'
 import { cachedWorkspace, fetchWorkspace } from '../lib/workspaceCache'
 import { AppRail, railLayout, workspacePanesFor, type WorkspacePane } from '../components/AppRail'
 import { NameWorkspaceModal, UpgradeModal } from '../components/WorkspaceModals'
@@ -78,6 +79,7 @@ function dateText(at: number): string {
  */
 export function Workspace({ workspaceId }: { workspaceId: string }) {
   const t = useT()
+  const lean = useLean()
   const { data: session } = authClient.useSession()
   const meId = session?.user.id
   const [ws, setWs] = useState<WorkspaceDetail | null>(() => cachedWorkspace(workspaceId))
@@ -173,9 +175,9 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
 
   const admin = ws ? ws.role !== 'member' : false
   const isOwner = ws?.role === 'owner'
-  /* billing and settings are for the owner and admins; anyone else asking
-     for them (a stale link) sees the people */
-  const panes = workspacePanesFor(ws?.role)
+  /* billing and settings are for the owner and admins, agents are off in lean;
+     anyone else asking for them (a stale link) sees the people */
+  const panes = workspacePanesFor(ws?.role, lean)
   const pane: Pane = !ws || panes.includes(picked) ? picked : 'members'
 
   if (missing) {

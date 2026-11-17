@@ -41,6 +41,7 @@ const { ActivityPanel } = await import('../src/components/ActivityPanel')
 const { TooltipProvider } = await import('../src/components/ui/tooltip')
 const { GeneralSettings } = await import('../src/components/GeneralSettings')
 const { Settings } = await import('../src/pages/Settings')
+const { workspacePanesFor } = await import('../src/components/AppRail')
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -102,6 +103,20 @@ describe('Settings → General', () => {
     await act(async () => root.render(<GeneralSettings />))
     expect(promptBoxSwitch()).toBeNull()
     expect(container.textContent).not.toContain('Show Prompt Box')
+  })
+})
+
+/* one list drives both the rail's rows under a workspace and the panes the
+   Workspace page will open, so a ?pane=agents link falls back to members */
+describe("a workspace's panes", () => {
+  it('include Agents when lean is off', () => {
+    expect(workspacePanesFor('owner', false)).toContain('agents')
+    expect(workspacePanesFor('member', false)).toContain('agents')
+  })
+
+  it('leave Agents out when lean is on, for every role', () => {
+    expect(workspacePanesFor('owner', true)).toEqual(['members', 'fonts', 'libraries', 'billing', 'general'])
+    expect(workspacePanesFor('member', true)).toEqual(['members', 'fonts', 'libraries'])
   })
 })
 
