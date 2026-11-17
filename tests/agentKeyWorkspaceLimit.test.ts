@@ -478,6 +478,33 @@ describe('a key limited to one workspace over /mcp', () => {
     30_000,
   )
 
+  /* B holds the seeded Button component, so it is a library candidate for A */
+  it('leaves a canvas outside its limit out of the libraries list_components offers', async () => {
+    const listFor = (key: string) => callTool(key, 'list_components', { canvas_id: a.canvasId, libraries: true })
+    const open = await listFor(unlimited)
+    expect(open.isError, open.text).toBe(false)
+    expect(open.text).toContain(b.canvasId)
+    const limited = await listFor(limitedFull)
+    expect(limited.isError, limited.text).toBe(false)
+    expect(limited.text).not.toContain(b.canvasId)
+    expect(limited.text).not.toContain('In B')
+  })
+
+  it('answers import_component from a canvas outside its limit as from a made-up one', async () => {
+    const call = (source: string) =>
+      callTool(limitedFull, 'import_component', {
+        canvas_id: a.canvasId,
+        source_canvas_id: source,
+        component: 'Button',
+        ...bot,
+      })
+    const outside = await call(b.canvasId)
+    const missing = await call(madeUp.canvasId)
+    expect(outside.isError).toBe(true)
+    expect(outside.text.replaceAll(b.canvasId, '<canvas>')).toBe(missing.text.replaceAll(madeUp.canvasId, '<canvas>'))
+    /* the positive control above imports from a readable canvas under this same key, so this refusal is the limit's */
+  })
+
   it('leaves no trace on a canvas outside its limit', async () => {
     const framesOfB = async () =>
       (
