@@ -716,27 +716,26 @@ export async function fontAssetsByCanvas(exts: readonly string[]): Promise<Map<s
 
 /** Every `<style>` block, by canvas, that loads one of `assetIds` in a stored frame of
  *  `canvasIds`: the stylesheets only, cut out by Postgres, so a caller can tell whether a
- *  rewrite would change them before reading any canvas's frame html. */
+ *  rewrite would change them before reading any canvas's frame html. Each frame's html is
+ *  scanned once, and only when asset_refs says it loads one of the ids. */
 export async function styleBlocksLoading(
   canvasIds: readonly string[],
   assetIds: readonly string[],
 ): Promise<Map<string, string[]>> {
   const byCanvas = new Map<string, string[]>()
   if (!canvasIds.length || !assetIds.length) return byCanvas
+  // sql.param keeps each list one array parameter: a bare array expands to one per id, past the 65535 cap
+  const canvases = sql.param([...canvasIds])
+  const assets = sql.param([...assetIds])
   /* the body is "anything but a closing tag", not a lazy `.*?`: in Postgres' regex the
      first quantifier sets the whole match's greed, so `[^>]*` would make it greedy */
-  const list = (ids: readonly string[]) =>
-    sql.join(
-      ids.map((id) => sql`${id}`),
-      sql`, `,
-    )
   const result = await db.execute(sql`
     select distinct f.canvas_id as "canvasId", m[1] as block
-    from asset_refs r
-    join frames f on f.id = r.frame_id
+    from frames f
     cross join lateral regexp_matches(f.html, '<style[^>]*>(?:[^<]|<(?!/style>))*</style>', 'gi') as m
-    where r.asset_id in (${list(assetIds)}) and f.canvas_id in (${list(canvasIds)})
-      and position('/a/' || r.asset_id || '.' in m[1]) > 0`)
+    where f.canvas_id = any(${canvases}::text[])
+      and exists (select 1 from asset_refs r where r.frame_id = f.id and r.asset_id = any(${assets}::text[]))
+      and exists (select 1 from unnest(${assets}::text[]) as s(id) where position('/a/' || s.id || '.' in m[1]) > 0)`)
   for (const { canvasId, block } of (result as unknown as { rows: { canvasId: string; block: string }[] }).rows) {
     const blocks = byCanvas.get(canvasId) ?? []
     blocks.push(block)
