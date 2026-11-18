@@ -87,10 +87,14 @@ export interface FaceReplacement {
 
 const FACE_RULE_RE = /@font-face\s*\{[^}]*\}/gi
 
+/** A CSS string's text, or a bare value as written: `"O'Neil Sans"`, `'A \'B\''`, `Brand Sans`. */
+const FAMILY_RE = /font-family\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^;}]*))/i
+
 /** What a written `@font-face` rule says about its face; null for one with no url or family. */
 function readFaceRule(rule: string): { key: string; url: string } | null {
   const url = /url\(\s*(["']?)(.*?)\1\s*\)/i.exec(rule)?.[2]
-  const family = /font-family\s*:\s*(["']?)([^;"'}]*)\1/i.exec(rule)?.[2]
+  const match = FAMILY_RE.exec(rule)
+  const family = (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').replace(/\\(.)/g, '$1').trim()
   if (!url || !family) return null
   const weight = /font-weight\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? '400'
   const style = /font-style\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? 'normal'
@@ -99,6 +103,16 @@ function readFaceRule(rule: string): { key: string; url: string } | null {
 
 function faceKey(family: string, weight: string, style: string): string {
   return [family.trim().toLowerCase(), weight.trim().replace(/\s+/g, ' '), style.trim().toLowerCase()].join('|')
+}
+
+const fontKey = (font: CustomFont) => faceKey(font.family, font.weight, font.style)
+
+/** The library face a written rule's face was replaced by: one with the same family,
+ *  weight and style from another file. */
+function successorIn(library: readonly CustomFont[], rule: string): CustomFont | undefined {
+  const face = readFaceRule(rule)
+  if (!face || library.some((font) => font.url === face.url)) return undefined
+  return library.find((font) => fontKey(font) === face.key)
 }
 
 /** The stylesheet with each rule that loads a replaced face's URL rewritten to the face that took its place. */
@@ -110,21 +124,42 @@ export function swapFaceRules(css: string, replaced: readonly FaceReplacement[])
   })
 }
 
+/** The stylesheet with each rule for a face the library now has from another file
+ *  rewritten to the library's rule, so a component read from a main whose own
+ *  stylesheet still loads a replaced file reads the same as one already swapped. */
+export function withLibraryFaceRules(css: string, library: readonly CustomFont[]): string {
+  if (!library.length || !css.includes('@font-face')) return css
+  return css.replace(FACE_RULE_RE, (rule) => {
+    const successor = successorIn(library, rule)
+    return successor ? fontFaceRule(successor) : rule
+  })
+}
+
+export interface FontFacesOptions {
+  /** Drop the block's rules for replaced faces: the server, whose library is
+   *  current. Without it the pass only adds, so a browser holding an older
+   *  library cannot take the server's new rules out. */
+  rebuild?: boolean
+  /** faces just replaced, dropped by URL even where no library face covers them */
+  replaced?: readonly FaceReplacement[]
+}
+
 /**
- * The HTML with Doop's `<style data-doop-fonts>` block rebuilt from the
+ * The HTML with Doop's `<style data-doop-fonts>` block filled from the
  * library: a rule for every library font whose family the design uses and
- * that it does not already load (its URL appears nowhere in the document).
- * A rule already in the block is dropped when its face was replaced: its URL
- * is in `replaced`, or a library face covers the same family, weight and
- * style from another file. A rule whose font merely left the library stays,
- * since its asset is immutable and keeps rendering. Rules outside the block
- * are never touched. Returns the input string itself when nothing changes,
- * so callers can compare by identity.
+ * that it does not already load (its URL appears nowhere in the document, and
+ * the block has no rule for that family, weight and style). With `rebuild`, a
+ * rule already in the block is dropped when its face was replaced: its URL is
+ * in `replaced`, or a library face covers the same family, weight and style
+ * from another file. A rule whose font merely left the library stays, since
+ * its asset is immutable and keeps rendering. Rules outside the block are
+ * never touched. Returns the input string itself when nothing changes, so
+ * callers can compare by identity.
  */
 export function withFontFaces(
   html: string,
   library: readonly CustomFont[],
-  replaced: readonly FaceReplacement[] = [],
+  { rebuild = false, replaced = [] }: FontFacesOptions = {},
 ): string {
   if (!library.length) return html
   const decoded = decodeQuotes(html)
@@ -132,7 +167,7 @@ export function withFontFaces(
   /* our own rules name every family; scan the design without them */
   const design = block ? decoded.replace(BLOCK_RE, '') : decoded
   const libraryUrls = new Set(library.map((font) => font.url))
-  const covered = new Set(library.map((font) => faceKey(font.family, font.weight, font.style)))
+  const covered = new Set(library.map(fontKey))
   const stale = (rule: string): boolean => {
     const face = readFaceRule(rule)
     if (!face || libraryUrls.has(face.url)) return false
@@ -140,7 +175,7 @@ export function withFontFaces(
   }
   let base = html
   let kept = block
-  if (block) {
+  if (block && rebuild) {
     const inner = (block[1] ?? '').replace(FACE_RULE_RE, (rule) => (stale(rule) ? '' : rule))
     if (inner !== block[1]) {
       const open = block[0].slice(0, block[0].length - (block[1] ?? '').length - '</style>'.length)
@@ -149,9 +184,12 @@ export function withFontFaces(
       kept = BLOCK_RE.exec(base)
     }
   }
+  const blockFaces = new Set(
+    [...(kept?.[1] ?? '').matchAll(FACE_RULE_RE)].flatMap(([rule]) => readFaceRule(rule)?.key ?? []),
+  )
   const used = new Map<string, boolean>()
   const missing = library.filter((font) => {
-    if (base.includes(font.url)) return false
+    if (base.includes(font.url) || blockFaces.has(fontKey(font))) return false
     const key = font.family.toLowerCase()
     if (!used.has(key)) used.set(key, usesFamily(design, font.family))
     return used.get(key)

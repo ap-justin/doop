@@ -189,8 +189,8 @@ export async function addFontDetailed(
       swaps: swaps.filter((swap) => swap.from !== font.url),
     }
   })
-  /* outside the library's queue: refreshing frames can wait on a canvas load */
-  if (added.swaps.length) await announceFacesReplaced({ scope, userId: user.id, replaced: added.swaps })
+  /* after the library's queue, once the upload is stored for good */
+  if (added.swaps.length) announceFacesReplaced({ scope, userId: user.id, replaced: added.swaps })
   const { swaps: _swaps, ...result } = added
   return result
 }

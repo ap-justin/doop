@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fontFaceRule, swapFaceRules, withFontFaces, type CustomFont } from '../shared/fonts'
+import { fontFaceRule, swapFaceRules, withFontFaces, withLibraryFaceRules, type CustomFont } from '../shared/fonts'
 
 /**
  * `withFontFaces` rebuilds Doop's `<style data-doop-fonts>` block from the library:
@@ -33,14 +33,13 @@ describe('withFontFaces rebuilding the block', () => {
   const written = doc(`<style data-doop-fonts>\n${fontFaceRule(old500)}\n${fontFaceRule(old600)}\n</style>`)
 
   it('swaps a replaced face named by URL, without the frame being edited', () => {
-    const html = withFontFaces(
-      written,
-      [medium, bold],
-      [
+    const html = withFontFaces(written, [medium, bold], {
+      rebuild: true,
+      replaced: [
         { from: old500.url, to: medium },
         { from: old600.url, to: bold },
       ],
-    )
+    })
     expect(html).not.toContain(old500.url)
     expect(html).not.toContain(old600.url)
     expect(html).toContain(fontFaceRule(medium))
@@ -50,27 +49,28 @@ describe('withFontFaces rebuilding the block', () => {
 
   it('drops a rule when a library face now covers the same family, weight and style', () => {
     const next = face('500', 'medium-fixed')
-    const html = withFontFaces(doc(`<style data-doop-fonts>\n${fontFaceRule(medium)}\n</style>`), [next])
+    const html = withFontFaces(doc(`<style data-doop-fonts>\n${fontFaceRule(medium)}\n</style>`), [next], {
+      rebuild: true,
+    })
     expect(html).not.toContain(medium.url)
     expect(html).toContain(fontFaceRule(next))
     expect(count(html, '@font-face')).toBe(1)
   })
 
   it('an edit after a replace leaves one rule per face', () => {
-    const edited = withFontFaces(
-      written,
-      [medium, bold],
-      [
+    const edited = withFontFaces(written, [medium, bold], {
+      rebuild: true,
+      replaced: [
         { from: old500.url, to: medium },
         { from: old600.url, to: bold },
       ],
-    )
-    const again = withFontFaces(edited.replace('Hi', 'Hello'), [medium, bold])
+    })
+    const again = withFontFaces(edited.replace('Hi', 'Hello'), [medium, bold], { rebuild: true })
     expect(count(again, '@font-face')).toBe(2)
   })
 
   it('keeps the rule of a face that left the library with nothing replacing it', () => {
-    const html = withFontFaces(written, [medium])
+    const html = withFontFaces(written, [medium], { rebuild: true })
     expect(html).toContain(old500.url)
     expect(html).toContain(old600.url)
     expect(html).toContain(medium.url)
@@ -78,11 +78,10 @@ describe('withFontFaces rebuilding the block', () => {
 
   it('never touches a rule the design wrote outside the block', () => {
     const own = `<style>@font-face{font-family:"Swap Sans";src:url("https://doop.test/a/own.woff2");font-weight:500}</style>`
-    const html = withFontFaces(
-      doc(`${own}<style data-doop-fonts>\n${fontFaceRule(old500)}\n</style>`),
-      [medium],
-      [{ from: old500.url, to: medium }],
-    )
+    const html = withFontFaces(doc(`${own}<style data-doop-fonts>\n${fontFaceRule(old500)}\n</style>`), [medium], {
+      rebuild: true,
+      replaced: [{ from: old500.url, to: medium }],
+    })
     expect(html).toContain(own)
     expect(html).not.toContain(old500.url)
   })
@@ -96,9 +95,51 @@ describe('withFontFaces rebuilding the block', () => {
     const html = withFontFaces(
       `<html><head><style data-doop-fonts>\n${fontFaceRule(old500)}\n</style></head><body>x</body></html>`,
       [medium],
-      [{ from: old500.url, to: medium }],
+      { rebuild: true, replaced: [{ from: old500.url, to: medium }] },
     )
     expect(html).not.toContain('data-doop-fonts')
+  })
+})
+
+describe('withFontFaces without rebuild (a browser save)', () => {
+  const old = face('400', 'regular')
+  const next = face('400', 'regular-fixed')
+
+  it('keeps the server’s rule for a replaced face when the library it holds is out of date', () => {
+    const current = doc(`<style data-doop-fonts>\n${fontFaceRule(next)}\n</style>`)
+    expect(withFontFaces(current, [old])).toBe(current)
+  })
+
+  it('never removes a rule, even one the library has since replaced', () => {
+    const written = doc(`<style data-doop-fonts>\n${fontFaceRule(old)}\n</style>`)
+    expect(withFontFaces(written, [next])).toBe(written)
+  })
+})
+
+describe('a family with an apostrophe', () => {
+  const quoted = (weight: string, file: string): CustomFont => ({ ...face(weight, file), family: "O'Neil Sans" })
+  const page = (head: string) =>
+    `<html><head>${head}</head><body><p style="font-family:&quot;O'Neil Sans&quot;">Hi</p></body></html>`
+
+  it('is read from its rule, so a replaced face leaves one rule', () => {
+    const old = quoted('400', 'oneil')
+    const next = quoted('400', 'oneil-fixed')
+    const html = withFontFaces(page(`<style data-doop-fonts>\n${fontFaceRule(old)}\n</style>`), [next], {
+      rebuild: true,
+    })
+    expect(html).not.toContain(old.url)
+    expect(count(html, '@font-face')).toBe(1)
+  })
+})
+
+describe('withLibraryFaceRules', () => {
+  it('rewrites a rule for a face the library has from another file, and leaves the rest', () => {
+    const old = face('400', 'a')
+    const next = face('400', 'a2')
+    const other = `@font-face{font-family:"Elsewhere";src:url("https://example.test/e.woff2")}`
+    const css = `.x{color:red}\n${fontFaceRule(old)}\n${other}`
+    expect(withLibraryFaceRules(css, [next])).toBe(`.x{color:red}\n${fontFaceRule(next)}\n${other}`)
+    expect(withLibraryFaceRules(css, [old])).toBe(css)
   })
 })
 

@@ -39,7 +39,8 @@ import { hasElementId, stampElementId } from './elementIds.ts'
 import { decodeEscapedHtml, looksEscapedHtml, repairEscapedHtml } from './escapedHtml.ts'
 import { forgetLibrary, swapPublishedFaces } from './componentLibrary.ts'
 import { onFacesReplaced, type FacesReplaced } from './fontReplaced.ts'
-import { swapFaceRules, type FaceReplacement } from '../shared/fonts.ts'
+import { swapFaceRules, withLibraryFaceRules, type FaceReplacement } from '../shared/fonts.ts'
+import { fontsForCanvas } from './fonts.ts'
 import { withCanvasFaces, withCanvasFacesMidStream } from './canvasFaces.ts'
 import {
   MAX_TOKENS,
@@ -3007,34 +3008,86 @@ const swapReplacedFaces = atomic(function swapReplacedFaces(canvasId: string, re
   }
 })
 
+/** A component's CSS with replaced faces swapped, read the way its main's next write reads
+ *  it (components.ts `prepareMains`), so that write files no revision: a definition whose
+ *  main is on this canvas takes the canvas library's rule for every face that library now
+ *  has from another file; a library copy, with no main here, takes the replacement. */
+function swappedFaceCss(canvas: Canvas, def: ComponentDef, replaced: readonly FaceReplacement[]) {
+  if (def.source?.library) return { css: swapFaceRules(def.css, replaced), rawCss: swapFaceRules(def.rawCss, replaced) }
+  const library = fontsForCanvas(canvas)
+  return { css: withLibraryFaceRules(def.css, library), rawCss: withLibraryFaceRules(def.rawCss, library) }
+}
+
 const swapReplacedFacesInComponents = atomic(function swapReplacedFacesInComponents(
   canvasId: string,
   replaced: readonly FaceReplacement[],
 ) {
+  const canvas = store.getCanvas(canvasId)
+  if (!canvas) return
   for (const def of [...store.getComponents(canvasId)]) {
-    const css = swapFaceRules(def.css, replaced)
-    const rawCss = swapFaceRules(def.rawCss, replaced)
+    const { css, rawCss } = swappedFaceCss(canvas, def, replaced)
     if (css === def.css && rawCss === def.rawCss) continue
     store.saveComponent(canvasId, { ...def, css, rawCss })
   }
 })
 
-onFacesReplaced(async (event) => {
-  /* components can carry a face into any canvas, so every canvas is looked at;
-     frame HTML is read only for the canvases that use the library */
+/** One part of a swap: a failure is logged and the rest carries on, since the upload
+ *  that set it off has already been stored. */
+function swapPart(what: string, work: () => void) {
+  try {
+    work()
+  } catch (err) {
+    console.error(`[fonts] replaced face not swapped in ${what}:`, err)
+  }
+}
+
+/** The swap for canvases whose frame HTML is not in memory, after the upload's response:
+ *  only the canvases whose stored frames load a replaced file are read, one at a time. */
+async function swapReplacedFacesWhenLoaded(canvasIds: readonly string[], replaced: readonly FaceReplacement[]) {
+  let holding: string[]
+  try {
+    holding = await persist.canvasesWithFrameText(
+      canvasIds,
+      replaced.map(({ from }) => from),
+    )
+  } catch (err) {
+    console.error('[fonts] replaced face not swapped: finding the canvases that use it failed', err)
+    return
+  }
+  for (const canvasId of holding) {
+    try {
+      await store.withCanvas(canvasId, async () =>
+        runOperation('fonts.swap', canvasId, () => swapReplacedFaces(canvasId, replaced)),
+      )
+    } catch (err) {
+      console.error(`[fonts] replaced face not swapped in canvas ${canvasId}:`, err)
+    }
+  }
+}
+
+onFacesReplaced((event) => {
+  /* components can carry a face into any canvas, so every canvas is looked at; frame HTML
+     is swapped now where it is in memory, and read later only where a frame loads the file */
+  const unloaded: string[] = []
   for (const canvas of store.allCanvases()) {
     const own = usesLibrary(canvas, event)
+    if (own && !store.isLoaded(canvas.id)) unloaded.push(canvas.id)
+    const frames = own && store.isLoaded(canvas.id)
     const carries = (canvas.components ?? []).some((def) =>
       event.replaced.some(({ from }) => def.css.includes(from) || def.rawCss.includes(from)),
     )
-    if (!own && !carries) continue
-    if (own) await store.load(canvas.id)
-    runOperation('fonts.swap', canvas.id, () => {
-      if (own) swapReplacedFaces(canvas.id, event.replaced)
-      if (carries) swapReplacedFacesInComponents(canvas.id, event.replaced)
-    })
+    if (!frames && !carries) continue
+    swapPart(`canvas ${canvas.id}`, () =>
+      runOperation('fonts.swap', canvas.id, () => {
+        if (frames) swapReplacedFaces(canvas.id, event.replaced)
+        if (carries) swapReplacedFacesInComponents(canvas.id, event.replaced)
+      }),
+    )
   }
-  runOperation('fonts.swap', undefined, () => swapPublishedFaces(event.replaced))
+  swapPart('published library components', () =>
+    runOperation('fonts.swap', undefined, () => swapPublishedFaces(event.replaced)),
+  )
+  if (unloaded.length) afterCommit(() => detached(() => void swapReplacedFacesWhenLoaded(unloaded, event.replaced)))
 })
 
 function renameTokenRefs(html: string, from: string, to: string): string {

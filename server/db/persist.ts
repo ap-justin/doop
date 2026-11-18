@@ -679,6 +679,25 @@ export async function loadOneFrameHtml(frameId: string): Promise<string | undefi
   return row?.html
 }
 
+/** Which of these canvases have a stored frame whose html contains one of `texts`,
+ *  found without reading any html into memory. */
+export async function canvasesWithFrameText(canvasIds: readonly string[], texts: readonly string[]): Promise<string[]> {
+  if (!canvasIds.length || !texts.length) return []
+  const rows = await db
+    .selectDistinct({ canvasId: t.frames.canvasId })
+    .from(t.frames)
+    .where(
+      and(
+        inArray(t.frames.canvasId, [...canvasIds]),
+        sql.join(
+          texts.map((text) => sql`position(${text} in ${t.frames.html}) > 0`),
+          sql` or `,
+        ),
+      ),
+    )
+  return rows.map((row) => row.canvasId)
+}
+
 const frameMetaColumns = {
   id: t.frames.id,
   canvasId: t.frames.canvasId,

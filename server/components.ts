@@ -17,6 +17,8 @@ import {
   type ComponentProp,
 } from '../shared/components.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
+import { fontsForCanvas } from './fonts.ts'
+import { withLibraryFaceRules } from '../shared/fonts.ts'
 import {
   attrOf,
   derivePropsAndSlots,
@@ -217,7 +219,9 @@ function prepareMains(
      holding hundreds of mains re-parsed itself hundreds of times per propagation */
   let sheetCache: string | undefined
   let headCache: string[] | undefined
-  const sheet = () => (sheetCache ??= frameStylesheets(html))
+  /* a main whose own rule still loads a replaced face's file reads as the library's face,
+     the way the swap rewrote this definition (actions' swapReplacedFacesInComponents) */
+  const sheet = () => (sheetCache ??= withLibraryFaceRules(frameStylesheets(html), fontsForCanvas(canvas)))
   const headTags = () => [...(headCache ??= frameHeadTags(html))]
   for (const found of findMarked(html, COMPONENT_ATTR)) {
     const id = attrOf(found.el, COMPONENT_ATTR) ?? ''

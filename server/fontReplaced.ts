@@ -12,7 +12,7 @@ export interface FacesReplaced {
   replaced: FaceReplacement[]
 }
 
-type Listener = (event: FacesReplaced) => void | Promise<void>
+type Listener = (event: FacesReplaced) => void
 
 const listeners: Listener[] = []
 
@@ -20,6 +20,14 @@ export function onFacesReplaced(listener: Listener): void {
   listeners.push(listener)
 }
 
-export async function announceFacesReplaced(event: FacesReplaced): Promise<void> {
-  for (const listener of listeners) await listener(event)
+/** Never throws: the upload it follows is already stored, so a listener's failure is
+ *  logged rather than turned into a failed upload. */
+export function announceFacesReplaced(event: FacesReplaced): void {
+  for (const listener of listeners) {
+    try {
+      listener(event)
+    } catch (err) {
+      console.error('[fonts] refreshing what used a replaced face failed:', err)
+    }
+  }
 }

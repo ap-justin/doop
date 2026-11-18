@@ -259,12 +259,17 @@
   so racing uploads of one face leave one row.
   A frame stays self-contained: `withFontFaces` adds the `@font-face` rules for the library
   families its CSS names to one `<style data-doop-fonts>` block in its own HTML (it rebuilds that
-  block from the library: a face that left the library keeps its rule, but a replaced face's rule,
-  named by URL or covered by a library face of the same family, weight and style, is swapped for
-  its successor; rules outside the block are never touched). A replacing upload announces it
-  (`server/fontReplaced.ts`) and `actions` rewrites the block in every frame of the canvases using
-  that library, plus the component and published-library copies that carry the face, as
-  annotation writes (no version, no undo step). `actions.createFrame` / `updateFrame` / every append chunk run it on every write
+  block from the library on the server (`rebuild`): a face that left the library keeps its rule, but
+  a replaced face's rule, named by URL or covered by a library face of the same family, weight and
+  style, is swapped for its successor; rules outside the block are never touched; the browser's
+  pass only adds, so a stale library there cannot undo a swap). A replacing upload announces it
+  (`server/fontReplaced.ts`, a listener's failure is logged and never fails the upload) and
+  `actions` rewrites the block in the frames that load the old file on the canvases using that
+  library (loaded canvases at once; idle ones after the response, read only when a stored frame
+  names the file), plus the component and published-library copies that carry the face, as
+  annotation writes (no version, no undo step). A component whose main is on the canvas takes the
+  library's rule the way its main's next write reads it (`withLibraryFaceRules` in
+  `prepareMains`), so that write files no revision. `actions.createFrame` / `updateFrame` / every append chunk run it on every write
   (`withCanvasFaces` in `server/canvasFaces.ts`; mid-stream once a complete `<head>` or `<body>`
   tag has arrived, so the first section's screenshot already has its fonts and tokens),
   and `FrameView`'s save path runs it too, so a family picked from the Design panel's "Custom

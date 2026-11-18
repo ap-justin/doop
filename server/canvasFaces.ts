@@ -15,7 +15,7 @@ export function withCanvasFaces(canvasId: string, html: string, replaced: readon
   /* tokens first: a family named only through a font token is then in the
      document for the font scan to find */
   const withTokens = withTokenBlock(html, canvas.tokens ?? [], canvas.tokenThemes ?? [])
-  return withWebFontLinks(withFontFaces(withTokens, library, replaced), library)
+  return withWebFontLinks(withFontFaces(withTokens, library, { rebuild: true, replaced }), library)
 }
 
 /** A complete `<head>` or `<body>` tag: before one has arrived, the place a block
