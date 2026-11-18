@@ -77,10 +77,22 @@ it('swaps idle canvases after the upload, reading only those that use the face',
   expect(res.status).toBe(200)
   const next: CustomFont = await res.json()
 
-  await expect.poll(async () => (await frameHtml(using)).includes(next.url), { timeout: 10_000 }).toBe(true)
+  /* each poll's own read keeps `using` loaded, so a count above one means the swap read
+     `plain` as well; the peak over the polls does not depend on when the sweep next runs */
+  const loadedSamples: number[] = []
+  await expect
+    .poll(
+      async () => {
+        const html = await frameHtml(using)
+        loadedSamples.push(await loadedCanvases())
+        return html.includes(next.url)
+      },
+      { timeout: 10_000, interval: 100 },
+    )
+    .toBe(true)
   const swapped = await frameHtml(using)
   expect(swapped).not.toContain(regular.url)
-  expect(await loadedCanvases()).toBe(1)
+  expect(Math.max(...loadedSamples)).toBeLessThanOrEqual(1)
 }, 40_000)
 
 it('keeps a swap of two replaced faces to the library’s own canvases', async () => {

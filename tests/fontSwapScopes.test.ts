@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { Client, startServer, type Server } from './harness.ts'
-import { ttf, woff2 } from './fontFiles.ts'
+import { ttf, woff, woff2 } from './fontFiles.ts'
 import { fontFaceRule, type CustomFont } from '../shared/fonts.ts'
 
 /* A replacing upload reaching what carries the old file, on the real server: the person's
@@ -74,11 +74,76 @@ describe('the person’s own library', () => {
     const frameId = await newFrame(mine, doc('', `<p style="font-family:'Mine Sans'">Hi</p>`))
     expect((await frameOn(owner, mine, frameId)).html).toContain(regular.url)
 
+    /* another person's personal canvas whose font block names the same file; their own library
+       gets a face covering it only afterwards, so the block is stored as written and a swap
+       into it would be the only thing that could change it */
+    const other = await new Client(server).signUp('swap-scopes-other@test.dev', 'Other')
+    const theirs = (await (await other.post('/api/canvases', { name: 'Theirs' })).json()).id
+    const block = `<style data-doop-fonts>\n${fontFaceRule(regular)}\n</style>`
+    const theirFrame = (
+      await (
+        await other.post(`/api/canvases/${theirs}/frames`, {
+          name: 'F',
+          html: doc(block, `<p style="font-family:'Mine Sans'">Theirs</p>`),
+        })
+      ).json()
+    ).id
+    const covering = await (
+      await other.req('/api/fonts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': 'covering.ttf' },
+        body: new Uint8Array(ttf({ family: 'Mine Sans' })),
+      })
+    ).json()
+    expect(covering.family).toBe('Mine Sans')
+    const theirsBefore = (await frameOn(other, theirs, theirFrame)).html
+    expect(theirsBefore).toContain(regular.url)
+
     const next = await upload(ttf({ family: 'Mine Sans' }), 'm2.ttf')
     expect(next.url).not.toBe(regular.url)
     const after = (await frameOn(owner, mine, frameId)).html
     expect(after).toContain(next.url)
     expect(after).not.toContain(regular.url)
+    expect((await frameOn(other, theirs, theirFrame)).html).toBe(theirsBefore)
+  })
+})
+
+describe('a replacement stays in its own library', () => {
+  /** a canvas of `holder` whose block names `named`'s file, then a covering face in `holder`'s own
+   *  library (added after, so the block is stored as written); returns what to read back */
+  async function untouchedHolder(holderWorkspace: string | undefined, named: CustomFont, family: string) {
+    const canvasId = await newCanvas('Holder', holderWorkspace)
+    const frameId = await newFrame(
+      canvasId,
+      doc(`<style data-doop-fonts>\n${fontFaceRule(named)}\n</style>`, `<p style="font-family:'${family}'">Hi</p>`),
+    )
+    await upload(woff({ family }), 'covering.woff', holderWorkspace)
+    const before = (await frameOn(owner, canvasId, frameId)).html
+    expect(before).toContain(named.url)
+    return async () => ({ before, after: (await frameOn(owner, canvasId, frameId)).html })
+  }
+
+  it('leaves the owner’s workspace canvas alone when a personal face is replaced', async () => {
+    const workspaceId = await newWorkspace('Scope Co')
+    const personal = await upload(woff2({ family: 'Scope Sans' }), 'sp.woff2')
+    const read = await untouchedHolder(workspaceId, personal, 'Scope Sans')
+
+    const next = await upload(ttf({ family: 'Scope Sans' }), 'sp2.ttf')
+    expect(next.url).not.toBe(personal.url)
+    const { before, after } = await read()
+    expect(after).toBe(before)
+  })
+
+  it('leaves another workspace’s canvas alone when a workspace face is replaced', async () => {
+    const replacedIn = await newWorkspace('Replaced Co')
+    const otherWorkspace = await newWorkspace('Bystander Co')
+    const face = await upload(woff2({ family: 'Bystand Sans' }), 'bs.woff2', replacedIn)
+    const read = await untouchedHolder(otherWorkspace, face, 'Bystand Sans')
+
+    const next = await upload(ttf({ family: 'Bystand Sans' }), 'bs2.ttf', replacedIn)
+    expect(next.url).not.toBe(face.url)
+    const { before, after } = await read()
+    expect(after).toBe(before)
   })
 })
 
@@ -112,6 +177,19 @@ describe('a swap is an annotation', () => {
       expect(room.activity.length).toBe(activityBefore)
       const live = room.updates.find((m) => m.frame.id === frameId)
       expect(live?.frame.html).toContain(next.url)
+
+      /* the same read is live: a person's edit files exactly one version (the swapped
+         document it replaced, so the swap filed none of its own) and drops the sign-off */
+      const versionsOf = async () => (await (await owner.get(`/api/frames/${frameId}/versions`)).json()) as { id: string }[]
+      const edited = await owner.patch(`/api/frames/${frameId}`, { html: '<main>A different screen</main>' })
+      expect(edited.status).toBe(200)
+      await expect.poll(async () => (await versionsOf()).length, { timeout: 10_000 }).toBeGreaterThan(versionsBefore.length)
+      const filed = await versionsOf()
+      expect(filed).toHaveLength(versionsBefore.length + 1)
+      const replaced = await (await owner.get(`/api/frames/${frameId}/versions/${filed[0]!.id}`)).json()
+      expect(replaced.html).toContain(next.url)
+      expect(replaced.html).not.toContain(regular.url)
+      expect((await frameOn(owner, canvasId, frameId)).approval?.status).toBe('needs_review')
     } finally {
       room.close()
     }
