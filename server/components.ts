@@ -152,6 +152,13 @@ function closureOf(ids: Iterable<string>, canvasId: string): ComponentDef[] {
   return [...seen.values()].reverse()
 }
 
+/** The frame's component stylesheets rewritten from the canvas's definitions as they are now,
+ *  the way `prepareFrameHtml` leaves them, with the rest of the document as it is. */
+export function withCurrentComponentCss(canvasId: string, html: string): string {
+  if (!touchesComponents(html)) return html
+  return syncComponentHead(html, closureOf(usedComponentIds(html), canvasId))
+}
+
 /** Would a template using these components put `id` inside itself? */
 function wouldCycle(canvasId: string, id: string, template: string): boolean {
   const defs = store.getComponents(canvasId)

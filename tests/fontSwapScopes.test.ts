@@ -206,6 +206,28 @@ describe('components carrying a replaced face', () => {
     expect(reread.css).not.toContain(regular.url)
   }, 90_000)
 
+  it('carries the new file into the stylesheet an instance brings to its frame', async () => {
+    const workspaceId = await newWorkspace('Instance Co')
+    const regular = await upload(woff2({ family: 'Kit Sans' }), 'k.woff2', workspaceId)
+    const canvasId = await newCanvas('Kit', workspaceId)
+    const made = await owner.post(`/api/canvases/${canvasId}/components`, {
+      name: 'Chip',
+      html: '<span class="chip">Chip</span>',
+      css: `${fontFaceRule(regular)}\n.chip { font-family: "Kit Sans", sans-serif }`,
+    })
+    expect(made.status, await made.clone().text()).toBe(200)
+    const chip = (await made.json()).component as { id: string }
+    const frameId = await newFrame(canvasId, doc('', `<doop-use component="${chip.id}"></doop-use>`))
+    const block = (html: string) =>
+      new RegExp(`<style[^>]*data-doop-component-css="${chip.id}"[^>]*>([\\s\\S]*?)</style>`).exec(html)?.[1] ?? ''
+    expect(block((await frameOn(owner, canvasId, frameId)).html)).toContain(regular.url)
+
+    const next = await upload(ttf({ family: 'Kit Sans' }), 'k2.ttf', workspaceId)
+    const after = (await frameOn(owner, canvasId, frameId)).html
+    expect(block(after)).toContain(next.url)
+    expect(after).not.toContain(regular.url)
+  })
+
   it('swaps a library copy on a canvas that has left the workspace', async () => {
     const workspaceId = await newWorkspace('Carry Co')
     const regular = await upload(woff2({ family: 'Pub Sans' }), 'c.woff2', workspaceId)

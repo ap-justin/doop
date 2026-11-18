@@ -107,31 +107,48 @@ function faceKey(family: string, weight: string, style: string): string {
 
 const fontKey = (font: CustomFont) => faceKey(font.family, font.weight, font.style)
 
-/** The library face a written rule's face was replaced by: one with the same family,
- *  weight and style from another file. */
-function successorIn(library: readonly CustomFont[], rule: string): CustomFont | undefined {
-  const face = readFaceRule(rule)
-  if (!face || library.some((font) => font.url === face.url)) return undefined
-  return library.find((font) => fontKey(font) === face.key)
+/** A written rule pointed at the face that replaced the file it loaded: the `from`
+ *  source becomes `to`'s file and format, and a weight or style it states becomes
+ *  `to`'s. Its family (a carried layer's scoped name) and every other descriptor
+ *  (`unicode-range`, a `local()` source) stay as written. */
+function retargetFaceRule(rule: string, from: string, to: CustomFont): string {
+  const source = new RegExp(`url\\(\\s*(["']?)${escapeRegExp(from)}\\1\\s*\\)(\\s*format\\([^)]*\\))?`, 'gi')
+  return rule
+    .replace(source, (_, _quote, format?: string) => `url(${cssString(to.url)})${format ? ` format("${to.format}")` : ''}`)
+    .replace(/(font-weight\s*:\s*)[^;}]*/i, (_, name: string) => `${name}${to.weight}`)
+    .replace(/(font-style\s*:\s*)[^;}]*/i, (_, name: string) => `${name}${to.style}`)
 }
 
-/** The stylesheet with each rule that loads a replaced face's URL rewritten to the face that took its place. */
+/** The stylesheet with each rule that loads a replaced face's URL pointed at the face that took its place. */
 export function swapFaceRules(css: string, replaced: readonly FaceReplacement[]): string {
   if (!replaced.length || !css.includes('@font-face')) return css
   return css.replace(FACE_RULE_RE, (rule) => {
     const hit = replaced.find(({ from }) => rule.includes(from))
-    return hit ? fontFaceRule(hit.to) : rule
+    return hit ? retargetFaceRule(rule, hit.from, hit.to) : rule
   })
 }
 
-/** The stylesheet with each rule for a face the library now has from another file
- *  rewritten to the library's rule, so a component read from a main whose own
- *  stylesheet still loads a replaced file reads the same as one already swapped. */
+/** The `…/a/` prefix a library face's URL is served under: this server's uploads. */
+function uploadPrefix(url: string): string | undefined {
+  return /^(.*\/a\/)[^/?#.]+\.[a-z0-9]+$/i.exec(url)?.[1]
+}
+
+/** The stylesheet with each rule that loads an upload of this server the library no
+ *  longer lists, where the library has that family, weight and style from another
+ *  file, pointed at that file, so a component read from a main whose own stylesheet
+ *  still loads a replaced file reads the same as one already swapped. A rule loading
+ *  anything else (a hosted font, a file served elsewhere) is left as written. */
 export function withLibraryFaceRules(css: string, library: readonly CustomFont[]): string {
   if (!library.length || !css.includes('@font-face')) return css
+  const prefixes = new Set(library.flatMap((font) => uploadPrefix(font.url) ?? []))
+  const listed = new Set(library.map((font) => font.url))
   return css.replace(FACE_RULE_RE, (rule) => {
-    const successor = successorIn(library, rule)
-    return successor ? fontFaceRule(successor) : rule
+    const face = readFaceRule(rule)
+    if (!face || listed.has(face.url)) return rule
+    const prefix = uploadPrefix(face.url)
+    if (!prefix || !prefixes.has(prefix)) return rule
+    const successor = library.find((font) => fontKey(font) === face.key)
+    return successor ? retargetFaceRule(rule, face.url, successor) : rule
   })
 }
 

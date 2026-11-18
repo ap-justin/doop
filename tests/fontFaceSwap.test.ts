@@ -154,3 +154,28 @@ describe('swapFaceRules', () => {
     )
   })
 })
+
+describe('a written rule pointed at the face that replaced its file', () => {
+  const old = face('400', 'kept')
+  const next = face('400', 'kept2')
+  /* a carried layer's scoped family, with descriptors Doop never writes */
+  const written =
+    `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("${old.url}") format("woff2");` +
+    `font-weight:400;font-style:normal;unicode-range:U+0000-00FF}`
+
+  it('swapFaceRules keeps the family and every other descriptor', () => {
+    const swapped = swapFaceRules(written, [{ from: old.url, to: next }])
+    expect(swapped).toBe(written.replace(old.url, next.url))
+  })
+
+  it('withLibraryFaceRules keeps them too', () => {
+    const own = `@font-face{font-family:"Swap Sans";src:url("${old.url}");font-weight:400;unicode-range:U+0100}`
+    expect(withLibraryFaceRules(own, [next])).toBe(own.replace(old.url, next.url))
+  })
+
+  it('withLibraryFaceRules leaves a rule loading a file that is not an upload byte for byte', () => {
+    const hosted = `@font-face{font-family:"Swap Sans";src:url(https://fonts.gstatic.com/s/swapsans/v1/a.woff2) format("woff2");font-weight:400}`
+    const css = `${hosted}\n${fontFaceRule(old)}`
+    expect(withLibraryFaceRules(css, [next])).toBe(`${hosted}\n${fontFaceRule(next)}`)
+  })
+})
