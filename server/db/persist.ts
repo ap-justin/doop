@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { nanoid } from 'nanoid'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from './index.ts'
 import * as t from './schema.ts'
 import { extractAssetIds } from '../assets.ts'
@@ -689,10 +689,7 @@ export async function canvasesWithFrameText(canvasIds: readonly string[], texts:
     .where(
       and(
         inArray(t.frames.canvasId, [...canvasIds]),
-        sql.join(
-          texts.map((text) => sql`position(${text} in ${t.frames.html}) > 0`),
-          sql` or `,
-        ),
+        or(...texts.map((text) => sql`position(${text} in ${t.frames.html}) > 0`)),
       ),
     )
   return rows.map((row) => row.canvasId)
