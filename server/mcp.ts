@@ -1838,7 +1838,7 @@ export function buildMcpServer(
     'upload_font',
     {
       title: 'Add a font to the canvas’s library',
-      description: `Add a font file (ttf/otf/woff/woff2, one face per file, max 10 MB) to the font library this canvas designs with: its workspace's, or its owner's own on a personal canvas. Then name the family in CSS (font-family: "Family", sans-serif) and Doop writes the @font-face into every frame that uses it. This is how a font that is not in get_canvas's fonts or webFonts gets into a design: never inline the file as a base64 data: URI. Upload each weight and style you use as its own file; a file for a face the library already has replaces it. Pick ONE input: (1) source_url, a public URL of the font file itself (not a CSS file); (2) local_file=true for a file on your machine, which returns a one-time upload URL and a curl command to run; (3) data, base64, last resort for a small file when you cannot run shell commands. Shares upload_asset's limit of ${UPLOADS_PER_MIN} uploads a minute.`,
+      description: `Add a font file (ttf/otf/woff/woff2, one face per file, max 10 MB) to the font library this canvas designs with: its workspace's, or its owner's own on a personal canvas. Then name the family in CSS (font-family: "Family", sans-serif) and Doop writes the @font-face into every frame that uses it. This is how a font that is not in get_canvas's fonts or webFonts gets into a design: never inline the file as a base64 data: URI. Upload each weight and style you use as its own file; a file for a face the library already has replaces it. Weight and style are read from the file (OS/2 weight class, falling back to the subfamily name when the class is not a multiple of 100; italic from the file's flags, the subfamily name or the file name; a variable font keeps its wght range unless weight is set, which replaces the range with that one weight), and the result says what was stored and where each value came from (weight_from, style_from: file, name or override). When a file's metadata is wrong for the face it is (a Medium stored as 565, an Italic stored as normal), upload it again with weight (1-1000) and style (normal or italic), which win over the file for every input, local_file included. Pick ONE input: (1) source_url, a public URL of the font file itself (not a CSS file); (2) local_file=true for a file on your machine, which returns a one-time upload URL and a curl command to run; (3) data, base64, last resort for a small file when you cannot run shell commands. Shares upload_asset's limit of ${UPLOADS_PER_MIN} uploads a minute.`,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
       inputSchema: {
         canvas_id: z.string().describe('The canvas whose font library gets the font'),
@@ -1849,10 +1849,22 @@ export function buildMcpServer(
           .describe('true = the file is on YOUR machine: returns a one-time upload URL + curl command to run'),
         data: z.string().optional().describe('The file as base64 (raw or a data: URL). Last resort, small files only.'),
         file_name: z.string().optional().describe('The file name the library shows, e.g. "Oxanium-Light.ttf"'),
+        weight: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('CSS font-weight to store, overriding what the file says (e.g. 500). Applies to every input.'),
+        style: z
+          .enum(['normal', 'italic'])
+          .optional()
+          .describe('font-style to store, overriding what the file says. Applies to every input.'),
         agent_name: agentName,
       },
     },
-    async ({ canvas_id, source_url, local_file, data, file_name, agent_name }) => {
+    async ({ canvas_id, source_url, local_file, data, file_name, weight, style, agent_name }) => {
+      const fontOverride = { weight, style }
       if ([data, source_url, local_file].filter(Boolean).length !== 1)
         return err(
           'provide exactly one of: source_url (a public font file), local_file=true (a file on your machine — returns a curl command), or data (small base64)',
@@ -1867,6 +1879,7 @@ export function buildMcpServer(
           ownerId,
           uploadedBy: owner ?? agent_name,
           kind: 'font',
+          fontOverride,
         })
         /* the trailing slash makes curl append the local file name, which the library keeps */
         const upload_url = `${env.BETTER_AUTH_URL}/u/${token}/`
@@ -1884,8 +1897,14 @@ export function buildMcpServer(
           : await assets.fetchRemote(source_url!, MAX_FONT_BYTES)
         const name =
           file_name ?? (source_url ? decodeURIComponent(new URL(source_url).pathname.split('/').pop() ?? '') : '')
-        const font = await addCanvasFont(canvas_id, { id: ownerId, name: owner ?? agent_name }, buf, name || 'font')
-        return withFeedback(text(uploadedFontResult(font)), canvas_id, actorFrom(agent_name))
+        const added = await addCanvasFont(
+          canvas_id,
+          { id: ownerId, name: owner ?? agent_name },
+          buf,
+          name || 'font',
+          fontOverride,
+        )
+        return withFeedback(text(uploadedFontResult(added)), canvas_id, actorFrom(agent_name))
       } catch (e) {
         return err(e instanceof Error ? e.message : 'upload failed')
       }

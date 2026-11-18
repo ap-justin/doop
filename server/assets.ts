@@ -65,6 +65,8 @@ interface UploadTicket {
   uploadedBy: string
   /** what the curl brings: an image for upload_asset (the default), a font file for upload_font */
   kind?: 'asset' | 'font'
+  /** a font ticket's weight and style, which win over what the file says */
+  fontOverride?: { weight?: number; style?: 'normal' | 'italic' }
   expiresAt: number
   inFlight: boolean
 }
@@ -75,6 +77,7 @@ export function createUploadTicket(meta: {
   ownerId?: string
   uploadedBy: string
   kind?: 'asset' | 'font'
+  fontOverride?: { weight?: number; style?: 'normal' | 'italic' }
 }): {
   token: string
   expiresAt: number
