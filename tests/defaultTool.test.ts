@@ -4,13 +4,14 @@ import type { Canvas } from '../shared/types'
 
 vi.mock('../src/lib/posthog', () => ({ posthog: { capture: vi.fn() } }))
 
-const { useStore, defaultTool } = await import('../src/lib/store')
+const { useStore, defaultTool, pinsShown } = await import('../src/lib/store')
 
 const canvas = (id: string, role: Canvas['role']): Canvas => ({ id, name: id, frames: [], role }) as unknown as Canvas
 
 beforeEach(() => {
   useStore.getState().setCanvas(null)
   useStore.getState().setTool('select')
+  useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: true } })
 })
 
 describe('default tool', () => {
@@ -68,5 +69,20 @@ describe('default tool', () => {
     useStore.getState().setTool('hand')
     useStore.getState().setRole('comment')
     expect(useStore.getState().tool).toBe('hand')
+  })
+
+  it('opening in Comment does not unhide pins the person hid', () => {
+    useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: false } })
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    expect(useStore.getState().tool).toBe('comment')
+    expect(pinsShown(useStore.getState())).toBe(false)
+  })
+
+  it('picking Comment on purpose still shows hidden pins', () => {
+    useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: false } })
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('select')
+    useStore.getState().setTool('comment')
+    expect(pinsShown(useStore.getState())).toBe(true)
   })
 })

@@ -3,7 +3,7 @@ import type { ElementComment } from '../../shared/types'
 import { colorFor } from '../../shared/types'
 import { canvasPages } from '../../shared/pages'
 import { isCanvasComment, type CanvasComment } from '../../shared/comments'
-import { useStore } from '../lib/store'
+import { pinsShown as pinsVisible, useStore } from '../lib/store'
 import { api } from '../lib/api'
 import { getIdentity } from '../lib/identity'
 import type { ComposerPlacement } from '../lib/composerPlacement'
@@ -58,7 +58,7 @@ export function CanvasComments({
   )
   const [openThread, setOpenThread] = useState<string | null>(null)
   /* ⇧C hides the pins (an open thread stays); the Comment tool shows them */
-  const pinsShown = useStore((s) => s.viewOptions.comments || s.tool === 'comment')
+  const pinsShown = useStore(pinsVisible)
   const rootRef = useRef<HTMLDivElement>(null)
   /* a pin being dragged, from this layer or out of a frame: its ghost rides
      the pointer here, above every frame, where no frame surface clips it */

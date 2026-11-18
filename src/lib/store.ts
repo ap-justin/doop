@@ -71,6 +71,8 @@ interface State {
   selectedId: string | null
   /** the active canvas tool in the bottom toolbar */
   tool: Tool
+  /** the open tool is the role's default, not one the person picked: Comment then leaves hidden pins hidden */
+  toolIsDefault: boolean
   /** space bar held: the stage pans on drag instead of drawing a marquee */
   panMode: boolean
   /** a file is being dragged over the page: every frame keeps its shield up,
@@ -332,6 +334,7 @@ export const useStore = create<State>((set, get) => ({
   selectedIds: [],
   selectedId: null,
   tool: 'select',
+  toolIsDefault: false,
   panMode: false,
   fileDragging: false,
   inspectorOpen: false,
@@ -364,7 +367,7 @@ export const useStore = create<State>((set, get) => ({
   setCanvas: (canvas) =>
     set((s) => ({
       /* a canvas being opened starts in the tool its viewer's role defaults to */
-      ...(canvas && canvas.id !== s.canvas?.id ? { tool: defaultTool(roleOf({ canvas })) } : {}),
+      ...(canvas && canvas.id !== s.canvas?.id ? { tool: defaultTool(roleOf({ canvas })), toolIsDefault: true } : {}),
       /* the stage paints frames in array order: back to front */
       canvas: canvas && { ...canvas, frames: sortByStack(canvas.frames) },
       /* leaving a canvas (CanvasPage unmounts or its id changes) ends ⌘.
@@ -671,19 +674,17 @@ export const useStore = create<State>((set, get) => ({
         : { selectedIds: ids, selectedId, inspectorOpen: false, selectedElement: null, elementPanelOpen: false }
     })
   },
-  setTool: (tool) => set((s) => (toolAllowed(tool, roleOf(s)) ? { tool } : {})),
+  setTool: (tool) => set((s) => (toolAllowed(tool, roleOf(s)) ? { tool, toolIsDefault: false } : {})),
   setRole: (role) =>
     set((s) => {
       if (!s.canvas) return {}
       const demoted = !roleAllows(role, 'edit')
       return {
         canvas: { ...s.canvas, role },
-        tool: !toolAllowed(s.tool, role)
-          ? defaultTool(role)
-          : /* a promotion from view (Select was all it had) starts in the new role's default */
-            s.tool === 'select' && !roleAllows(roleOf(s), 'comment')
-            ? defaultTool(role)
-            : s.tool,
+        ...(!toolAllowed(s.tool, role) || (s.tool === 'select' && !roleAllows(roleOf(s), 'comment'))
+          ? /* a role change that takes the tool away, or a promotion from view (Select was all it had) */
+            { tool: defaultTool(role), toolIsDefault: true }
+          : {}),
         /* an open Design panel or Inspector would keep offering edits */
         ...(demoted ? { inspectorOpen: false, elementPanelOpen: false } : {}),
       }
@@ -837,6 +838,11 @@ export function roleOf(s: Pick<State, 'canvas'>): CanvasRole {
 /** May the caller change the open canvas? View and comment links may not. */
 export function canEditOpenCanvas(s: Pick<State, 'canvas'>): boolean {
   return roleAllows(roleOf(s), 'edit')
+}
+
+/** Comment pins show when the person has them on, or picked the Comment tool themselves. */
+export function pinsShown(s: Pick<State, 'viewOptions' | 'tool' | 'toolIsDefault'>): boolean {
+  return s.viewOptions.comments || (s.tool === 'comment' && !s.toolIsDefault)
 }
 
 /** May the caller comment on the open canvas? */
