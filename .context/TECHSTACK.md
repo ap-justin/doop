@@ -943,15 +943,25 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `server/components.ts`): a frame's own `.sl` rule must not match the `sl` element inside a placed
   component. When a main is read into its definition, the classes its stylesheet styles on elements
   below the root are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike. The
-  root's classes (the frame places and sizes it), classes the stylesheet never names (utilities),
-  classes a script, style, inline `on*` handler or prototype attribute inside the template reads, and
-  nested instances (their own component's) stay. The rename is idempotent, so a main regenerated from a renamed template derives the same one.
+  root's classes (the frame places and sizes it), classes a nested `<doop-use>` or instance root
+  wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
+  handler or prototype attribute inside the template reads, and nested instances (their own
+  component's) stay. The renamed names live in the definition and its instances only: a main in its
+  frame wears natural names, which its frame's stylesheet styles. `prepareMains` strips this
+  component's suffix from the main and the sheet before deriving (`withNaturalClasses`,
+  `naturalCss`), and every write of a main from stored or agent text (`update_component`'s `html`,
+  find/replace and `css`, restores, `writeNewMain`, library import) writes natural names, so either
+  vocabulary derives the same definition and a re-save makes no new revision.
   It is the one derivation point: library snapshots, imports, `sync_component`,
   `update_library_everywhere` and detached copies (`withDetachedCss` keeps the renamed classes; its
   `__<id>` keyframe rewrite does not match the `__in-` suffix) all copy the renamed fields.
   Definitions saved earlier are migrated by the same path: the next write of their main frame derives
   the renamed template and css, a new revision that upgrades instances; until then they render as
-  before. Tests: `componentClassIsolation.test.ts`.
+  before. A propagation into the main's frame (`propagateIntoFrame`) counts as that write. After it,
+  a frame's own rule on a component's inner class (`.hero .sl`) no longer reaches its instances. A
+  library's consumers keep the old fields until the main is written, `publish_library` runs and
+  each consumer pulls (`sync_component` or `update_library_everywhere`). Tests:
+  `componentClassIsolation.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
   gets `componentWriteNotes(frame, { review: true })`, which adds what the frame should have reused:
