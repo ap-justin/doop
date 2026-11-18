@@ -48,8 +48,8 @@ describe('canvasesWithFrameText', () => {
     ['one.woff2 first', ['/a/one.woff2', '/a/two.woff2']],
     ['two.woff2 first', ['/a/two.woff2', '/a/one.woff2']],
   ])('leaves out a canvas that was not listed, whichever text matches it (%s)', async (_order, texts) => {
-    /* other-one holds the first text and other-two the second: a filter bound to only
-       one of the texts would let the unlisted canvas holding the other through */
+    /* other-one holds one text and other-two the other: a canvas filter bound to the
+       first text alone lets through the unlisted canvas holding the second */
     expect(await persist.canvasesWithFrameText(['listed'], texts)).toEqual(['listed'])
   })
 
