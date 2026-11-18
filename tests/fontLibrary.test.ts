@@ -103,7 +103,7 @@ describe('a replaced face in frames', () => {
     return (await res.json()).id
   }
 
-  it('is swapped in untouched frames, kept for a deleted face, and left alone elsewhere', async () => {
+  it('is swapped in untouched frames, replaces a deleted face of a family the library has, and is left alone elsewhere', async () => {
     const workspaceId = (await (await owner.post('/api/workspaces', { name: 'Swap Co' })).json()).id
     const regular: CustomFont = await (
       await upload(owner, woff2({ family: 'Swap Sans' }), 'a.woff2', workspaceId)
@@ -130,7 +130,7 @@ describe('a replaced face in frames', () => {
     const personal: CustomFont = await (await upload(owner, woff2({ family: 'Swap Sans' }), 'p.woff2')).json()
     expect(personal.url).not.toBe(regular.url)
 
-    /* a deleted face keeps its rule */
+    /* a deleted face's rule is dropped at the next rebuild, the library having the family */
     expect((await owner.delete(`/api/fonts/${bold.id}`)).status).toBe(200)
 
     const next: CustomFont = await (await upload(owner, ttf({ family: 'Swap Sans' }), 'a2.ttf', workspaceId)).json()
@@ -139,7 +139,8 @@ describe('a replaced face in frames', () => {
     const after = await savedHtml(owner, inside, frameId)
     expect(after).toContain(next.url)
     expect(after).not.toContain(regular.url)
-    expect(after).toContain(bold.url)
+    /* the library still has the family, so its own faces stand in for the deleted one */
+    expect(after).not.toContain(bold.url)
     expect(after).toContain(OWN_RULE)
     expect(await savedHtml(owner, outside, foreignId)).toBe(foreignBefore)
 
@@ -148,8 +149,7 @@ describe('a replaced face in frames', () => {
     expect(patched.status).toBe(200)
     const edited = await savedHtml(owner, inside, frameId)
     expect(count(edited, `url("${next.url}")`)).toBe(1)
-    expect(count(edited, `url("${bold.url}")`)).toBe(1)
-    expect(count(edited, '@font-face')).toBe(3)
+    expect(count(edited, '@font-face')).toBe(2)
   })
 })
 

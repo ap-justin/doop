@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { fontFaceRule, swapFaceRules, withFontFaces, withLibraryFaceRules, type CustomFont } from '../shared/fonts'
+import {
+  fontFaceRule,
+  rewriteCarriedCss,
+  swapFaceRules,
+  withFontFaces,
+  withLibraryFaceRules,
+  type CustomFont,
+} from '../shared/fonts'
 import { rewriteComponentCss } from '../server/componentEngine.ts'
 
 /**
@@ -70,11 +77,28 @@ describe('withFontFaces rebuilding the block', () => {
     expect(count(again, '@font-face')).toBe(2)
   })
 
-  it('keeps the rule of a face that left the library with nothing replacing it', () => {
-    const html = withFontFaces(written, [medium], { rebuild: true })
+  it('keeps the rule of a family the library no longer has at all', () => {
+    const other: CustomFont = { ...medium, family: 'Other Sans', url: 'https://doop.test/a/other.woff2' }
+    const html = withFontFaces(written, [other], { rebuild: true })
     expect(html).toContain(old500.url)
     expect(html).toContain(old600.url)
-    expect(html).toContain(medium.url)
+  })
+
+  it('drops rules for files that left the library when it still has the family, writing its own faces', () => {
+    /* weights no library face has (596, 707): nothing replaced them by name */
+    const html = withFontFaces(written, [medium, bold], { rebuild: true })
+    expect(html).not.toContain(old500.url)
+    expect(html).not.toContain(old600.url)
+    expect(html).toContain(fontFaceRule(medium))
+    expect(html).toContain(fontFaceRule(bold))
+    expect(count(html, '@font-face')).toBe(2)
+    expect(withFontFaces(html, [medium, bold], { rebuild: true })).toBe(html)
+  })
+
+  it('leaves a font from another host in the block alone', () => {
+    const hosted = `@font-face{font-family:"Swap Sans";src:url("https://cdn.other.test/swap.woff2");font-weight:500}`
+    const html = withFontFaces(doc(`<style data-doop-fonts>\n${hosted}\n</style>`), [medium], { rebuild: true })
+    expect(html).toContain(hosted)
   })
 
   it('never touches a rule the design wrote outside the block', () => {
@@ -141,6 +165,19 @@ describe('withLibraryFaceRules', () => {
     const css = `.x{color:red}\n${fontFaceRule(old)}\n${other}`
     expect(withLibraryFaceRules(css, [next])).toBe(`.x{color:red}\n${fontFaceRule(next)}\n${other}`)
     expect(withLibraryFaceRules(css, [old])).toBe(css)
+  })
+})
+
+describe('rewriteCarriedCss', () => {
+  it('retargets a pasted layer’s rule and touches no other style block', () => {
+    const a = face('400', 'a')
+    const next = face('700', 'a2')
+    const carried = `<style data-doop-carried="c1">\n${fontFaceRule(a)}\n</style>`
+    const own = `<style>${fontFaceRule(a)}</style>`
+    const html = doc(`${carried}${own}`)
+    const swapped = rewriteCarriedCss(html, (css) => swapFaceRules(css, [{ from: a.url, to: next }]))
+    expect(swapped).toBe(doc(`<style data-doop-carried="c1">\n${fontFaceRule(next)}\n</style>${own}`))
+    expect(rewriteCarriedCss(swapped, (css) => swapFaceRules(css, []))).toBe(swapped)
   })
 })
 

@@ -695,6 +695,25 @@ export async function canvasesWithFrameText(canvasIds: readonly string[], texts:
   return rows.map((row) => row.canvasId)
 }
 
+/** The font files each canvas's frames load, by canvas: read from the asset_refs
+ *  projection, so no frame html is read. Only assets of a font type count. */
+export async function fontAssetsByCanvas(exts: readonly string[]): Promise<Map<string, Set<string>>> {
+  const byCanvas = new Map<string, Set<string>>()
+  if (!exts.length) return byCanvas
+  const rows = await db
+    .selectDistinct({ canvasId: t.frames.canvasId, assetId: t.assetRefs.assetId })
+    .from(t.assetRefs)
+    .innerJoin(t.assets, eq(t.assetRefs.assetId, t.assets.id))
+    .innerJoin(t.frames, eq(t.assetRefs.frameId, t.frames.id))
+    .where(inArray(t.assets.ext, [...exts]))
+  for (const { canvasId, assetId } of rows) {
+    const ids = byCanvas.get(canvasId) ?? new Set<string>()
+    ids.add(assetId)
+    byCanvas.set(canvasId, ids)
+  }
+  return byCanvas
+}
+
 const frameMetaColumns = {
   id: t.frames.id,
   canvasId: t.frames.canvasId,

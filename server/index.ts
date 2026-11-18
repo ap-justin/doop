@@ -224,8 +224,15 @@ unlessLean(() => {
    is ever deleted; asset_refs is the ledger any future cleanup would be
    built on. */
 reconcileAssetRefs()
-  .then((n) => n && console.log(`[assets] reconciled ${n} asset ref(s)`))
-  .catch((e) => console.error('[assets] reconcile failed', e))
+  .then((n) => {
+    if (n) console.log(`[assets] reconciled ${n} asset ref(s)`)
+    /* font rules left behind by faces replaced earlier: found through the refs just rebuilt */
+    return actions.repairStaleFaces()
+  })
+  .then(({ canvases, failed }) => {
+    if (canvases || failed) console.log(`[fonts] stale font rules: ${canvases} canvas(es) repaired, ${failed} failed`)
+  })
+  .catch((e) => console.error('[assets] reconcile or font repair failed', e))
 /* image descriptions for agents: recover the backlog and listen for new assets. */
 void imageDescriptions.startImageDescriptions(broadcast)
 
