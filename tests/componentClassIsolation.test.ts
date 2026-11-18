@@ -203,8 +203,8 @@ describe('a placed component and the classes of its frame', () => {
   /*
    * The main in its frame wears natural names (`sl`), which its frame's sheet styles; the stored
    * definition and get_component carry the renamed ones. A main written back from the stored text
-   * used to splice `sl__in-<id>` beside a `.sl` rule, so the rule was dropped on the next
-   * derivation and every instance lost its styling.
+   * must not splice `sl__in-<id>` beside a `.sl` rule: the next derivation would drop the rule and
+   * every instance would lose its styling.
    */
   describe('a main written from the stored definition', () => {
     const current = (id: string) => store.getComponents(canvasId).find((candidate) => candidate.id === id)!
