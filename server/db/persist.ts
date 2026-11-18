@@ -716,19 +716,19 @@ export async function fontAssetsByCanvas(exts: readonly string[]): Promise<Map<s
 
 /** Every `<style>` block, by canvas, that loads one of `assetIds` in a stored frame of
  *  `canvasIds`: the stylesheets only, cut out by Postgres, so a caller can tell whether a
- *  rewrite would change them before reading any canvas's frame html. Each frame's html is
- *  scanned once, and only when asset_refs says it loads one of the ids. */
+ *  rewrite would change them before reading any canvas's frame html. Only frames asset_refs
+ *  says load one of the ids qualify; the planner may still scan the others' html first. */
 export async function styleBlocksLoading(
   canvasIds: readonly string[],
   assetIds: readonly string[],
 ): Promise<Map<string, string[]>> {
   const byCanvas = new Map<string, string[]>()
   if (!canvasIds.length || !assetIds.length) return byCanvas
-  // sql.param keeps each list one array parameter: a bare array expands to one per id, past the 65535 cap
+  // sql.param binds each list as one array: a bare array expands to `($1, $2, …)`, which `::text[]` refuses
   const canvases = sql.param([...canvasIds])
   const assets = sql.param([...assetIds])
   /* the body is "anything but a closing tag", not a lazy `.*?`: in Postgres' regex the
-     first quantifier sets the whole match's greed, so `[^>]*` would make it greedy */
+     first quantifier sets the whole match's greed, so the opening tag's `[^>]*` would make a lazy body greedy */
   const result = await db.execute(sql`
     select distinct f.canvas_id as "canvasId", m[1] as block
     from frames f

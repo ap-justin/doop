@@ -360,7 +360,7 @@ describe('the boot repair pass across canvases', () => {
       .toBe(true)
     const healedStamp = await stamp(first.canvasId, first.frameId)
 
-    /* the pass is done when it has healed this canvas too, which it reaches only by running over the rest */
+    /* a run that changes nothing sends no signal, so this canvas healing stands in for the pass being over */
     const last = await staleFrame('Again Last')
     await reboot()
     await expect

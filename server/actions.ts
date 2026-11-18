@@ -3180,8 +3180,8 @@ const repairFacesInComponents = atomic(function repairFacesInComponents(
 })
 
 /** Heal what a replacement never named: frames, components and published copies whose font
- *  rules still load uploads their canvas's library no longer lists (faces replaced before the
- *  swap existed, or by a path that did not announce). Candidates come from the asset_refs
+ *  rules still load uploads their canvas's library no longer lists (a face replaced before the
+ *  swap existed, or removed from a library that still has its family). Candidates come from the asset_refs
  *  projection and the stored style blocks that load those files, so a canvas's frame html is
  *  read only where healing would change it; each is then rewritten as the swap does
  *  (annotation writes, no version, sign-off kept). A canvas counts only when something was

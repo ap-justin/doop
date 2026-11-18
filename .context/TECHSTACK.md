@@ -273,14 +273,16 @@
   annotation writes (no version, no undo step); the instance stylesheets inside those frames get
   the same in-place URL swap, never a rebuild from the definitions; so do the `<style
 data-doop-carried>` blocks a moved or pasted layer brings (`rewriteCarriedCss`; the rule keeps
-  its family, `unicode-range` and `local()` sources, and takes the successor's weight and style),
-  and the instance frames of a canvas that designs with another library but holds a copy of the
-  component. Faces replaced before the swap existed are healed by `actions.repairStaleFaces`, run
+  its family, `unicode-range` and `local()` sources, and takes the successor's weight and style;
+  a family a paste renamed `<family>-<scope>` counts as its library family, in a component's CSS
+  too), and the instance frames of a canvas that designs with another library but holds a copy of
+  the component. Faces replaced before the swap existed, or removed from a library that keeps
+  their family, are healed by `actions.repairStaleFaces`, run
   after the asset-ref reconcile at every boot: `persist.fontAssetsByCanvas` names, from
   `asset_refs`, the canvases whose frames load a font file their library lacks, and
   `persist.styleBlocksLoading` cuts out the stylesheets that do, so a canvas is read only where
-  healing would change something; their font blocks, carried and component stylesheets, the canvas's own components and
-  published copies (`repairPublishedFaces`) are rewritten as annotation writes, a failure is logged
+  healing would change something; their font blocks, carried and component stylesheets, the canvas's components
+  (library copies included) and published copies (`repairPublishedFaces`) are rewritten as annotation writes, a failure is logged
   per canvas, and a second run changes nothing. A component or published
   rule is pointed at the new file in place, keeping its family and descriptors. A main's
   stylesheet is read with each rule loading an upload the library no longer lists pointed at the
