@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /* The Notifications card of Settings → Your account follows lean mode. */
 
+const notificationSettings = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ commentEmails: true, emailConfigured: true })),
+)
+
 vi.mock('../src/lib/api', () => ({
-  api: { notificationSettings: () => Promise.resolve({ commentEmails: true, emailConfigured: true }) },
+  api: { notificationSettings },
   ApiError: class ApiError extends Error {},
 }))
 vi.mock('../src/lib/posthog', () => ({ posthog: { capture: vi.fn() } }))
@@ -27,6 +31,7 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
+  notificationSettings.mockClear()
 })
 
 afterEach(async () => {
@@ -38,14 +43,18 @@ afterEach(async () => {
 const commentEmailsSwitch = () => container.querySelector('input[type="checkbox"]')
 
 describe('Settings → Your account notifications', () => {
-  it('shows the comment email switch when lean is off', async () => {
+  it('shows the comment email switch and loads its setting when lean is off', async () => {
     await act(async () => root.render(<AccountSettings />))
     expect(commentEmailsSwitch()).not.toBeNull()
+    expect(notificationSettings).toHaveBeenCalled()
   })
 
-  it('hides the Notifications block when lean is on', async () => {
+  it('neither shows nor loads the Notifications block when lean is on', async () => {
     setLean(true)
     await act(async () => root.render(<AccountSettings />))
+    /* a card that appeared only once a load settled would show up here */
+    await act(async () => {})
     expect(commentEmailsSwitch()).toBeNull()
+    expect(notificationSettings).not.toHaveBeenCalled()
   })
 })

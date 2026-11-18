@@ -31,6 +31,63 @@ function errorNotice(message: string | undefined, fallback: PlainMessageKey): No
   return message ? { text: message } : { key: fallback }
 }
 
+/** Comment emails. Its own component so lean mode, which sends none,
+ *  skips the settings fetch along with the card. */
+function NotificationsCard() {
+  const t = useT()
+
+  /* null until the server has answered — the switch renders inert meanwhile */
+  const [notify, setNotify] = useState<NotificationSettings | null>(null)
+  const [notifyError, setNotifyError] = useState<Notice | null>(null)
+  /* one save at a time: two in flight could land out of order and show the older choice */
+  const [savingNotify, setSavingNotify] = useState(false)
+  const refreshNotify = useCallback(() => {
+    api.notificationSettings().then(setNotify, () => {})
+  }, [])
+  useEffect(refreshNotify, [refreshNotify])
+
+  async function setCommentEmails(on: boolean) {
+    if (!notify || savingNotify) return
+    setSavingNotify(true)
+    setNotify({ ...notify, commentEmails: on })
+    setNotifyError(null)
+    try {
+      setNotify(await api.setNotificationPrefs({ commentEmails: on }))
+      posthog.capture('comment_emails_toggled', { on })
+    } catch {
+      setNotifyError({ key: 'account.notifySaveFailed' })
+      refreshNotify()
+    } finally {
+      setSavingNotify(false)
+    }
+  }
+
+  return (
+    <SettingsCard>
+      <CardHeader>
+        <CardTitle>{t('account.notificationsTitle')}</CardTitle>
+        <CardDescription>{t('account.notificationsDescription')}</CardDescription>
+      </CardHeader>
+      <CardRow label={t('account.commentEmailsRow')}>
+        <label className="relative flex cursor-pointer items-center gap-2.5 text-body text-ink">
+          <Checkbox
+            checked={notify?.commentEmails ?? true}
+            disabled={!notify || !notify.emailConfigured || savingNotify}
+            onChange={(e) => void setCommentEmails(e.target.checked)}
+            aria-label={t('account.commentEmailsAria')}
+          />
+          <span>{t('account.commentEmailsLabel')}</span>
+        </label>
+        {notify && !notify.emailConfigured ? (
+          <Note>{t('account.emailNotConfigured')}</Note>
+        ) : notifyError ? (
+          <Note tone="error">{noticeText(t, notifyError)}</Note>
+        ) : null}
+      </CardRow>
+    </SettingsCard>
+  )
+}
+
 /** The "Your account" pane of /settings: who you are on a canvas, how you
  *  get back into one, and, last, deleting the account. Mostly better-auth's
  *  own account surface. */
@@ -64,16 +121,6 @@ export function AccountSettings() {
   const [pwError, setPwError] = useState<Notice | null>(null)
 
   const [verifyNote, setVerifyNote] = useState<Notice | null>(null)
-
-  /* null until the server has answered — the switch renders inert meanwhile */
-  const [notify, setNotify] = useState<NotificationSettings | null>(null)
-  const [notifyError, setNotifyError] = useState<Notice | null>(null)
-  /* one save at a time: two in flight could land out of order and show the older choice */
-  const [savingNotify, setSavingNotify] = useState(false)
-  const refreshNotify = useCallback(() => {
-    api.notificationSettings().then(setNotify, () => {})
-  }, [])
-  useEffect(refreshNotify, [refreshNotify])
 
   async function uploadPhoto(file: File) {
     setPhotoNote(null)
@@ -137,22 +184,6 @@ export function AccountSettings() {
     setCurrent('')
     setNext('')
     setPwNote({ key: 'account.passwordUpdated' })
-  }
-
-  async function setCommentEmails(on: boolean) {
-    if (!notify || savingNotify) return
-    setSavingNotify(true)
-    setNotify({ ...notify, commentEmails: on })
-    setNotifyError(null)
-    try {
-      setNotify(await api.setNotificationPrefs({ commentEmails: on }))
-      posthog.capture('comment_emails_toggled', { on })
-    } catch {
-      setNotifyError({ key: 'account.notifySaveFailed' })
-      refreshNotify()
-    } finally {
-      setSavingNotify(false)
-    }
   }
 
   async function resendVerification() {
@@ -264,30 +295,7 @@ export function AccountSettings() {
         </CardRow>
       </SettingsCard>
 
-      {!lean && (
-        <SettingsCard>
-          <CardHeader>
-            <CardTitle>{t('account.notificationsTitle')}</CardTitle>
-            <CardDescription>{t('account.notificationsDescription')}</CardDescription>
-          </CardHeader>
-          <CardRow label={t('account.commentEmailsRow')}>
-            <label className="relative flex cursor-pointer items-center gap-2.5 text-body text-ink">
-              <Checkbox
-                checked={notify?.commentEmails ?? true}
-                disabled={!notify || !notify.emailConfigured || savingNotify}
-                onChange={(e) => void setCommentEmails(e.target.checked)}
-                aria-label={t('account.commentEmailsAria')}
-              />
-              <span>{t('account.commentEmailsLabel')}</span>
-            </label>
-            {notify && !notify.emailConfigured ? (
-              <Note>{t('account.emailNotConfigured')}</Note>
-            ) : notifyError ? (
-              <Note tone="error">{noticeText(t, notifyError)}</Note>
-            ) : null}
-          </CardRow>
-        </SettingsCard>
-      )}
+      {!lean && <NotificationsCard />}
 
       <SettingsCard>
         <CardHeader>
