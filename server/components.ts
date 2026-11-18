@@ -16,6 +16,7 @@ import {
   type ComponentIssue,
   type ComponentProp,
 } from '../shared/components.ts'
+import { isolateClasses } from './componentClasses.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
 import {
   attrOf,
@@ -251,8 +252,8 @@ function prepareMains(
     claimed.add(id)
     const stamped = stampParts(found.el)
     if (stamped) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
-    const template = templateFromMain(found.el, ctx)
-    if (wouldCycle(canvas.id, id, template)) {
+    const drawn = templateFromMain(found.el, ctx)
+    if (wouldCycle(canvas.id, id, drawn)) {
       ctx.issues.push({
         code: 'nesting_cycle',
         message: `component “${def.name}” cannot contain itself; its change was not applied to other instances`,
@@ -260,7 +261,8 @@ function prepareMains(
       continue
     }
     const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
-    const { css, rawCss } = extractComponentCss(sheet(), found.el, id, variants)
+    const extracted = extractComponentCss(sheet(), found.el, id, variants)
+    const { template, css, rawCss } = isolateClasses({ template: drawn, ...extracted }, id)
     const head = headTags()
     const { props, slots } = derivePropsAndSlots(template, def.props)
     const same =

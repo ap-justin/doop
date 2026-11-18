@@ -934,6 +934,19 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   is said once per stream (`streamChunkNotes`), on the first chunk that shows a screen. Notes go
   right after a result's data, ahead of the generic nudges. Tests: `reuseNotes.test.ts`, the
   `create_components` cases in `componentTools.test.ts`, `tokenComponentGuidance.test.ts`.
+- Component class isolation (`server/componentClasses.ts`, run by `prepareMains` in
+  `server/components.ts`): a frame's own `.sl` rule must not match the `sl` element inside a placed
+  component. When a main is read into its definition, the classes its stylesheet styles on elements
+  below the root are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike. The
+  root's classes (the frame places and sizes it), classes the stylesheet never names (utilities),
+  classes a script or style inside the template reads, and nested instances (their own component's)
+  stay. The rename is idempotent, so a main regenerated from a renamed template derives the same one.
+  It is the one derivation point: library snapshots, imports, `sync_component`,
+  `update_library_everywhere` and detached copies (`withDetachedCss` keeps the renamed classes; its
+  `__<id>` keyframe rewrite does not match the `__in-` suffix) all copy the renamed fields.
+  Definitions saved earlier are migrated by the same path: the next write of their main frame derives
+  the renamed template and css, a new revision that upgrades instances; until then they render as
+  before. Tests: `componentClassIsolation.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
   gets `componentWriteNotes(frame, { review: true })`, which adds what the frame should have reused:
