@@ -251,7 +251,11 @@ describe.skipIf(!findBrowserPath() || !CLIPBOARD_IS_RELIABLE)('canvas clipboard 
     await chord('c')
     await chord('v')
     await expect.poll(() => count('section, p')).toBe(4)
-    expect(await page.evaluate(() => window.canvasClipboardHarness.picked())).toHaveLength(2)
+    /* the frame re-resolves the selection after the paste lands, so wait for
+       the pasted pair rather than reading it once */
+    await expect
+      .poll(() => page.evaluate(() => window.canvasClipboardHarness.picked()))
+      .toEqual(['#card-copy', '#other-copy'])
   })
 
   it('copies through the element menu and pastes with the keyboard', async () => {
