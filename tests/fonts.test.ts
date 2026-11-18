@@ -103,7 +103,6 @@ describe('readFontFile', () => {
     ['Ultra Light', '200'],
     ['Ultra Bold', '800'],
     ['Heavy', '900'],
-    ['Book', '400'],
     ['Semi-Bold', '600'],
     ['Semi Bold Italic', '600'],
   ])('reads the weight %s names when the class is not a multiple of 100', (subfamily, weight) => {
@@ -113,7 +112,7 @@ describe('readFontFile', () => {
     })
   })
 
-  it.each(['Regular', 'Italic', ''])('keeps the file’s class when the subfamily %j names no weight', (subfamily) => {
+  it.each(['Regular', 'Italic', 'Book', ''])('keeps the file’s class when the subfamily %j names no weight', (subfamily) => {
     expect(readFontFile(ttf({ family: 'B', subfamily, weight: 950 }))).toMatchObject({
       weight: '950',
       weightSource: 'file',

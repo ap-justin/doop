@@ -177,14 +177,15 @@ function nameRecords(name: Buffer): Map<number, string> {
 }
 
 /* "Regular", "Normal" and a bare "Italic" name no weight: legacy name ID 2 says
-   Regular for a Black or Semilight face too, so only a weight word overrides the class */
+   Regular for a Black or Semilight face too, so only a weight word overrides the class.
+   "Book" names none either: families set it between Light and Regular on purpose (350,
+   450), and reading it as 400 would replace the family's Regular. */
 const NAMED_WEIGHTS: Record<string, number> = {
   thin: 100,
   hairline: 100,
   extralight: 200,
   ultralight: 200,
   light: 300,
-  book: 400,
   medium: 500,
   semibold: 600,
   demibold: 600,
