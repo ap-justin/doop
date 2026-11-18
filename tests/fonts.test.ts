@@ -105,6 +105,11 @@ describe('readFontFile', () => {
     ['Heavy', '900'],
     ['Semi-Bold', '600'],
     ['Semi Bold Italic', '600'],
+    ['Thin', '100'],
+    ['Extra Light', '200'],
+    ['Light', '300'],
+    ['Bold', '700'],
+    ['Black', '900'],
   ])('reads the weight %s names when the class is not a multiple of 100', (subfamily, weight) => {
     expect(readFontFile(ttf({ family: 'B', typographicSubfamily: subfamily, weight: 565 }))).toMatchObject({
       weight,
@@ -112,20 +117,42 @@ describe('readFontFile', () => {
     })
   })
 
-  it.each(['Regular', 'Italic', 'Book', ''])('keeps the file’s class when the subfamily %j names no weight', (subfamily) => {
-    expect(readFontFile(ttf({ family: 'B', subfamily, weight: 950 }))).toMatchObject({
-      weight: '950',
-      weightSource: 'file',
-    })
-  })
+  it.each(['Regular', 'Normal', 'Italic', 'Book', ''])(
+    'keeps the file’s class when the subfamily %j names no weight',
+    (subfamily) => {
+      expect(readFontFile(ttf({ family: 'B', subfamily, weight: 950 }))).toMatchObject({
+        weight: '950',
+        weightSource: 'file',
+      })
+    },
+  )
 
   it.each([
     ['Italiana-Regular.ttf', 'normal'],
+    ['Italicus-Regular.ttf', 'normal'],
     ['Foo-Italic.ttf', 'italic'],
     ['Foo-BoldItalic.ttf', 'italic'],
     ['B-LightOblique.ttf', 'italic'],
   ])('reads the style of the file name %s', (fileName, style) => {
     expect(readFontFile(ttf({ family: 'B' }), fileName).style).toBe(style)
+  })
+
+  it.each(['Italic', 'Regular Italic', 'Oblique'])(
+    'reads italic from the subfamily %j alone, whatever the file name says',
+    (subfamily) => {
+      expect(readFontFile(ttf({ family: 'B', subfamily }), 'Brand.ttf')).toMatchObject({
+        weight: '400',
+        style: 'italic',
+        styleSource: 'name',
+      })
+    },
+  )
+
+  it('does not read a family word such as Italicus in the subfamily as italic', () => {
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Italicus' }), 'Brand.ttf')).toMatchObject({
+      style: 'normal',
+      styleSource: 'file',
+    })
   })
 
   it('lets an override win over the file', () => {

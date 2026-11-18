@@ -323,15 +323,23 @@ describe('over MCP', () => {
   })
 
   it.each([
-    ['weight 0', { weight: 0 }],
-    ['weight 1001', { weight: 1001 }],
-    ['weight 1.5', { weight: 1.5 }],
-    ['style bold', { style: 'bold' }],
-  ])('refuses %s and adds nothing', async (_name, override) => {
+    ['weight 0', { weight: 0 }, /weight/],
+    ['weight 1001', { weight: 1001 }, /weight/],
+    ['weight 1.5', { weight: 1.5 }, /weight/],
+    ['style bold', { style: 'bold' }, /style/],
+  ])('refuses %s and adds nothing', async (_name, override, reason) => {
     const data = ttf({ family: 'Oxanium' }).toString('base64')
     const result = await call('upload_font', { canvas_id: canvasId, data, ...override })
     expect(result.isError).toBe(true)
+    expect(result.text).toMatch(reason)
     expect(added).toEqual([])
+  })
+
+  it.each([1, 1000])('accepts the boundary weight %i', async (weight) => {
+    const data = ttf({ family: 'Oxanium' }).toString('base64')
+    const result = await call('upload_font', { canvas_id: canvasId, data, weight })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.text)).toMatchObject({ weight: String(weight), weight_from: 'override' })
   })
 
   it('hands out a font ticket whose URL keeps the file name', async () => {
@@ -431,16 +439,24 @@ describe('the resident agent', () => {
     })
 
     it.each([
-      ['a string weight', { weight: '500' }],
-      ['a fractional weight', { weight: 500.5 }],
-      ['weight 0', { weight: 0 }],
-      ['a capitalised style', { style: 'Italic' }],
-      ['an unknown style', { style: 'bold' }],
-    ])('refuses %s before fetching anything', async (_name, input) => {
+      ['a string weight', { weight: '500' }, /weight must be a whole number from 1 to 1000/],
+      ['a fractional weight', { weight: 500.5 }, /weight must be a whole number from 1 to 1000/],
+      ['weight 0', { weight: 0 }, /weight must be a whole number from 1 to 1000/],
+      ['weight 1001', { weight: 1001 }, /weight must be a whole number from 1 to 1000/],
+      ['a capitalised style', { style: 'Italic' }, /style must be "normal" or "italic"/],
+      ['an unknown style', { style: 'bold' }, /style must be "normal" or "italic"/],
+    ])('refuses %s before fetching anything', async (_name, input, reason) => {
       const result = await upload(input)
       expect(result.is_error).toBe(true)
+      expect(String(result.content)).toMatch(reason)
       expect(fetched).toEqual([])
       expect(added).toEqual([])
+    })
+
+    it.each([1, 1000])('accepts the boundary weight %i', async (weight) => {
+      const result = await upload({ weight })
+      expect(result.is_error).toBeUndefined()
+      expect(overrides).toEqual([{ weight, style: undefined }])
     })
 
     it('stores the face an override names and says it was overridden', async () => {
@@ -467,11 +483,23 @@ describe('the resident agent', () => {
     const { addFontDetailed: real, FontInputError } =
       await vi.importActual<typeof import('../server/fonts.ts')>('../server/fonts.ts')
     const file = ttf({ family: 'Oxanium' })
-    for (const override of [{ weight: 0 }, { weight: 1001 }, { weight: 1.5 }, { weight: NaN }, { style: 'bold' }]) {
-      await expect(
-        real({ personal: true }, { id: 'owner', name: 'Owner' }, file, 'x.ttf', override as FontOverride),
-        JSON.stringify(override),
-      ).rejects.toBeInstanceOf(FontInputError)
+    const user = { id: 'owner', name: 'Owner' }
+    const weightReason = /weight must be a whole number from 1 to 1000/
+    const refusals: [object, RegExp][] = [
+      [{ weight: 0 }, weightReason],
+      [{ weight: 1001 }, weightReason],
+      [{ weight: 1.5 }, weightReason],
+      [{ weight: NaN }, weightReason],
+      [{ style: 'bold' }, /style must be "normal" or "italic"/],
+    ]
+    for (const [override, reason] of refusals) {
+      const attempt = real({ personal: true }, user, file, 'x.ttf', override as FontOverride)
+      const refusal = await attempt.then(
+        () => null,
+        (e: unknown) => e,
+      )
+      expect(refusal, JSON.stringify(override)).toBeInstanceOf(FontInputError)
+      expect((refusal as Error).message).toMatch(reason)
     }
   })
 })
