@@ -34,6 +34,33 @@ const readsSelectors = (attr: string) =>
 
 export const isolatedName = (name: string, componentId: string) => `${name}__in-${componentId}`
 
+/** `sl__in-<id>` back to `sl`, for this component's id only: a nested component's names stay its own. */
+function naturalName(name: string, componentId: string): string {
+  const suffix = isolatedName('', componentId)
+  return name.length > suffix.length && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+}
+
+/**
+ * The renamed vocabulary lives in the stored definition and its instances only; a main in its frame
+ * wears natural names, which its frame's stylesheet styles. These undo the rename, so markup or CSS
+ * copied from get_component reads as the main's own.
+ */
+export function withNaturalClasses(root: Element, componentId: string): void {
+  const stack: Element[] = [root]
+  for (let el = stack.pop(); el; el = stack.pop()) {
+    const classes = classesOf(el)
+    const natural = classes.map((name) => naturalName(name, componentId))
+    if (natural.some((name, index) => name !== classes[index])) setAttr(el, 'class', natural.join(' '))
+    stack.push(...el.childNodes.filter(isElement))
+  }
+}
+
+export function naturalCss(css: string, componentId: string): string {
+  return css.replace(CSS_CLASSES, (match, name: string | undefined) =>
+    name === undefined ? match : `.${naturalName(name, componentId)}`,
+  )
+}
+
 /**
  * A frame's own rules must not reach into a placed component: its `.sl` rule would match the
  * component's `sl` element too. So the classes the component's stylesheet styles are renamed,

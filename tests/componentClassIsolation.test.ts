@@ -14,7 +14,13 @@ vi.mock('../server/db/persist.ts', () => ({
 import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
 import { blankComponent } from '../server/components.ts'
-import { changeInstances } from '../server/componentActions.ts'
+import {
+  changeInstances,
+  deleteComponent,
+  restoreComponent,
+  restoreComponentVersion,
+  updateComponent,
+} from '../server/componentActions.ts'
 import { isolateClasses } from '../server/componentClasses.ts'
 import { COMPONENT_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
@@ -135,6 +141,90 @@ describe('a placed component and the classes of its frame', () => {
     expect(detached).not.toContain(` ${INSTANCE_ATTR}=`)
     expect(labelClass(detached)).toBe(renamed)
     expect(detached).toMatch(new RegExp(`\\.${renamed}[\\s{,]`))
+  })
+
+  /*
+   * The main in its frame wears natural names (`sl`), which its frame's sheet styles; the stored
+   * definition and get_component carry the renamed ones. A main written back from the stored text
+   * used to splice `sl__in-<id>` beside a `.sl` rule, so the rule was dropped on the next
+   * derivation and every instance lost its styling.
+   */
+  describe('a main written from the stored definition', () => {
+    const current = (id: string) => store.getComponents(canvasId).find((candidate) => candidate.id === id)!
+    const mainHtml = (id: string) => store.getFrame(current(id).mainFrameId!)!.html
+    const labelRule = (def: { id: string; css: string }) =>
+      def.css.split('\n').find((line) => line.includes(`.sl__in-${def.id},`) && line.includes('color: #333'))!
+
+    function expectStyledAndNatural(before: ReturnType<typeof makeSelect>) {
+      const after = current(before.id)
+      expect(labelClass(after.template).split(' ')[0]).toBe(`sl__in-${before.id}`)
+      expect(after.css.split('\n')).toContain(labelRule(before))
+      expect(labelClass(mainHtml(before.id)).split(' ')[0]).toBe('sl')
+      expect(mainHtml(before.id).includes(`__in-${before.id}`)).toBe(false)
+    }
+
+    it('keeps the styling through a props-only update', () => {
+      const def = makeSelect()
+      expect(labelRule(def)).toContain('{ color: #333; font-size: 12px }')
+      updateComponent(canvasId, def.id, { props: [] }, actor)
+      expectStyledAndNatural(def)
+      expect(current(def.id).css).toBe(def.css)
+      expect(current(def.id).template).toBe(def.template)
+      expect(current(def.id).rev).toBe(def.rev)
+    })
+
+    it('keeps the styling through find and replace with find copied from the stored template', () => {
+      const def = makeSelect()
+      const find = `class="sl__in-${def.id}"`
+      updateComponent(canvasId, def.id, { find, replace: `class="sl__in-${def.id} wide"` }, actor)
+      expectStyledAndNatural(def)
+      expect(labelClass(current(def.id).template)).toBe(`sl__in-${def.id} wide`)
+      expect(labelClass(mainHtml(def.id))).toBe('sl wide')
+      expect(current(def.id).css).toBe(def.css)
+    })
+
+    it('keeps the styling when html and css are taken from get_component', () => {
+      const def = makeSelect()
+      updateComponent(canvasId, def.id, { html: def.template, css: def.rawCss }, actor)
+      expectStyledAndNatural(def)
+    })
+
+    it('keeps the styling when a version is restored', () => {
+      const def = makeSelect()
+      updateComponent(canvasId, def.id, { find: '>Size<', replace: '>Width<' }, actor)
+      expect(current(def.id).rev).toBe(def.rev + 1)
+      restoreComponentVersion(canvasId, def.id, def.rev, actor)
+      expectStyledAndNatural(def)
+      expect(current(def.id).template).toBe(def.template)
+    })
+
+    it('keeps the styling when a deleted component whose main is gone is restored', () => {
+      const def = makeSelect()
+      deleteComponent(canvasId, def.id, actor)
+      actions.deleteFrame(def.mainFrameId!, actor)
+      expect(restoreComponent(canvasId, def.id, actor).main).toBe('written')
+      expectStyledAndNatural(def)
+      expect(current(def.id).css).toBe(def.css)
+    })
+
+    it('derives the same definition from a main written with renamed names, with no new revision', () => {
+      const def = makeSelect()
+      const frame = store.getFrame(def.mainFrameId!)!
+      const markup = (html: string) =>
+        html.replace('class="sl"', `class="sl__in-${def.id}"`).replace('class="ctl"', `class="ctl__in-${def.id}"`)
+      const sheet = (html: string) =>
+        html.replace('.sl {', `.sl__in-${def.id} {`).replace('.ctl {', `.ctl__in-${def.id} {`)
+      for (const rewrite of [markup, sheet, (html: string) => sheet(markup(html))]) {
+        const html = rewrite(frame.html)
+        expect(html).not.toBe(frame.html)
+        actions.updateFrame(frame.id, { html }, actor)
+        const again = current(def.id)
+        expect(again.template).toBe(def.template)
+        expect(again.css).toBe(def.css)
+        expect(again.rawCss).toBe(def.rawCss)
+        expect(again.rev).toBe(def.rev)
+      }
+    })
   })
 
   it('does not rename a class the stylesheet never names, a root class, or one a script uses', () => {

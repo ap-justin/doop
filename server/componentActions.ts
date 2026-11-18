@@ -31,6 +31,7 @@ import { decodeQuotes, familyKey, fontFaceRule, usesFamily, type CustomFont } fr
 import { fontsForCanvas } from './fonts.ts'
 import * as actions from './actions.ts'
 import { blankComponent, bumpRevision, contextFor, referencesComponent, withinRevision } from './components.ts'
+import { naturalCss, withNaturalClasses } from './componentClasses.ts'
 import { unmatchedSelectors } from './componentCss.ts'
 import {
   alignParts,
@@ -618,7 +619,7 @@ function writeNewMain(
     const pageId = componentsPageId(canvasId, actor)
     const frame = actions.createFrame(canvasId, { name: def.name, pageId, width, height, html: '' }, actor)
     if (!frame) fail('canvas not found')
-    actions.updateFrame(frame.id, { html: mainFrameDoc(def, root, rawCss) }, actor)
+    actions.updateFrame(frame.id, { html: mainFrameDoc(def, root, naturalCss(rawCss, def.id)) }, actor)
     return store.getFrame(frame.id) ?? frame
   })
 }
@@ -707,9 +708,11 @@ function orphanedOverrides(canvas: Canvas, def: ComponentDef, template: string, 
 }
 
 /** A rewrite of the main: old element keys carried over wherever tag and place line up,
- *  bindings and all, so overrides on instances survive an agent resending the markup. */
+ *  bindings and all, so overrides on instances survive an agent resending the markup. Class
+ *  names are the natural ones the main's frame styles, whichever the markup came with. */
 function alignedRoot(html: string, def: ComponentDef): Element {
   const root = singleRoot(html)
+  withNaturalClasses(root, def.id)
   alignParts(root, parseTemplateRoot(def.template))
   setAttr(root, COMPONENT_ATTR, def.id)
   return root
@@ -748,6 +751,8 @@ export const updateComponent = atomic(function updateComponent(
       `component “${def.name}” is at revision ${def.rev}, not ${input.expectedRev} — someone changed it; read it again`,
     )
   const html = nextHtml(def, input)
+  /* the main's frame styles natural names: css copied from get_component is renamed */
+  const css = input.css === undefined ? undefined : naturalCss(input.css, def.id)
   const nextRoot = html !== undefined ? alignedRoot(html, def) : undefined
   const usage = usageOf(canvas, def.id)
   const overrides = nextRoot
@@ -766,7 +771,7 @@ export const updateComponent = atomic(function updateComponent(
   const propsChanged = nextProps !== undefined && JSON.stringify(nextProps) !== JSON.stringify(def.props)
   /* this function is one unit (server/journal.ts): a refusal anywhere in it, the work budget
      included, undoes the name, props and revision saved below along with the main's write */
-  const writesMain = nextRoot !== undefined || input.css !== undefined || input.props !== undefined
+  const writesMain = nextRoot !== undefined || css !== undefined || input.props !== undefined
   const root = writesMain ? (nextRoot ?? alignedRoot(def.template, def)) : undefined
   const meta: ComponentDef = {
     ...(propsChanged ? bumpRevision(def, actor.name) : def),
@@ -782,7 +787,7 @@ export const updateComponent = atomic(function updateComponent(
   store.saveComponent(canvasId, meta)
 
   if (root) {
-    const write = () => writeMain(canvasId, meta, root, input.css, actor, input.head ? def.head : undefined)
+    const write = () => writeMain(canvasId, meta, root, css, actor, input.head ? def.head : undefined)
     /* the props above opened a revision: the main's write is the rest of it, not another */
     if (propsChanged) withinRevision(canvasId, def.id, write)
     else write()
@@ -794,7 +799,7 @@ export const updateComponent = atomic(function updateComponent(
   }
   /* the update has landed: a note that cannot be worked out within budget is left out,
      never turned into a refusal of what is already done */
-  if (input.css) optional(() => reportCssNotKept(requireComponent(canvasId, def.id), input.css!))
+  if (css) optional(() => reportCssNotKept(requireComponent(canvasId, def.id), css))
   actions.logComponent(canvasId, actor, `updated component “${meta.name}”`)
   return {
     component: requireComponent(canvasId, def.id),
@@ -1587,6 +1592,7 @@ function importDependencies(
   })
   const root = parseTemplateRoot(origin.template)
   if (!root) fail(`component “${origin.name}” has no markup`)
+  withNaturalClasses(root, def.id)
   store.saveComponent(targetCanvasId, { ...def, head: origin.head })
   progress.pending.push(`“${def.name}” imported`)
   setAttr(root, COMPONENT_ATTR, def.id)
