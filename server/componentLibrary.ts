@@ -8,6 +8,7 @@ import {
   type LibraryComponent,
 } from '../shared/components.ts'
 import type { Canvas } from '../shared/types.ts'
+import { swapFaceRules, type FaceReplacement } from '../shared/fonts.ts'
 import { libraryLandingPageId } from '../shared/pages.ts'
 import * as persist from './db/persist.ts'
 import { afterCommit, recordUndo } from './journal.ts'
@@ -49,6 +50,28 @@ export async function hydrateLibraries(): Promise<void> {
 /** What a canvas has published, whether or not anyone may use it right now. */
 export function publishedOn(canvasId: string): LibraryComponent[] {
   return published.get(canvasId) ?? []
+}
+
+/** Rewrite the replaced faces' @font-face rules inside published snapshots, in place of
+ *  a new publication: the revision stays, so no consumer sees an update to pull. Returns
+ *  the snapshots that changed. */
+export function swapPublishedFaces(replaced: readonly FaceReplacement[]): LibraryComponent[] {
+  const changed: LibraryComponent[] = []
+  for (const [canvasId, list] of [...published]) {
+    let touched = false
+    const next = list.map((entry) => {
+      const css = swapFaceRules(entry.css, replaced)
+      const rawCss = swapFaceRules(entry.rawCss, replaced)
+      if (css === entry.css && rawCss === entry.rawCss) return entry
+      touched = true
+      const swapped = { ...entry, css, rawCss }
+      changed.push(swapped)
+      afterCommit(() => persist.saveLibraryComponent(swapped))
+      return swapped
+    })
+    if (touched) setPublished(canvasId, next)
+  }
+  return changed
 }
 
 export function isLibrary(canvasId: string): boolean {

@@ -5,8 +5,8 @@
  * families it uses live in its own HTML, in one managed
  * `<style data-doop-fonts>` block, so every renderer that reads frame HTML
  * (the canvas, screenshots, PDF/PSD/Figma export, the iOS app) gets the font
- * without knowing about libraries. `withFontFaces` adds that block; the
- * browser runs it on its saves, the server on every frame write.
+ * without knowing about libraries. `withFontFaces` writes that block from the
+ * library; the browser runs it on its saves, the server on every frame write.
  */
 
 export const FONT_BLOCK_ATTR = 'data-doop-fonts'
@@ -78,42 +78,100 @@ export function usesFamily(html: string, family: string): boolean {
   return quoted.test(html) || bare.test(html)
 }
 
+/** A face that was replaced in the library: the URL its rule loaded from, and
+ *  the face now standing in for it. */
+export interface FaceReplacement {
+  from: string
+  to: CustomFont
+}
+
+const FACE_RULE_RE = /@font-face\s*\{[^}]*\}/gi
+
+/** What a written `@font-face` rule says about its face; null for one with no url or family. */
+function readFaceRule(rule: string): { key: string; url: string } | null {
+  const url = /url\(\s*(["']?)(.*?)\1\s*\)/i.exec(rule)?.[2]
+  const family = /font-family\s*:\s*(["']?)([^;"'}]*)\1/i.exec(rule)?.[2]
+  if (!url || !family) return null
+  const weight = /font-weight\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? '400'
+  const style = /font-style\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? 'normal'
+  return { key: faceKey(family, weight, style), url }
+}
+
+function faceKey(family: string, weight: string, style: string): string {
+  return [family.trim().toLowerCase(), weight.trim().replace(/\s+/g, ' '), style.trim().toLowerCase()].join('|')
+}
+
+/** The stylesheet with each rule that loads a replaced face's URL rewritten to the face that took its place. */
+export function swapFaceRules(css: string, replaced: readonly FaceReplacement[]): string {
+  if (!replaced.length || !css.includes('@font-face')) return css
+  return css.replace(FACE_RULE_RE, (rule) => {
+    const hit = replaced.find(({ from }) => rule.includes(from))
+    return hit ? fontFaceRule(hit.to) : rule
+  })
+}
+
 /**
- * The HTML with @font-face rules for every library font whose family it
- * uses and that it does not already load (its URL appears nowhere in the
- * document). Only ever adds: a face whose font has since left the library
- * keeps rendering, since its asset is immutable. Returns the input string
- * itself when nothing is missing, so callers can compare by identity.
+ * The HTML with Doop's `<style data-doop-fonts>` block rebuilt from the
+ * library: a rule for every library font whose family the design uses and
+ * that it does not already load (its URL appears nowhere in the document).
+ * A rule already in the block is dropped when its face was replaced: its URL
+ * is in `replaced`, or a library face covers the same family, weight and
+ * style from another file. A rule whose font merely left the library stays,
+ * since its asset is immutable and keeps rendering. Rules outside the block
+ * are never touched. Returns the input string itself when nothing changes,
+ * so callers can compare by identity.
  */
-export function withFontFaces(html: string, library: readonly CustomFont[]): string {
+export function withFontFaces(
+  html: string,
+  library: readonly CustomFont[],
+  replaced: readonly FaceReplacement[] = [],
+): string {
   if (!library.length) return html
   const decoded = decodeQuotes(html)
   const block = BLOCK_RE.exec(html)
   /* our own rules name every family; scan the design without them */
   const design = block ? decoded.replace(BLOCK_RE, '') : decoded
+  const libraryUrls = new Set(library.map((font) => font.url))
+  const covered = new Set(library.map((font) => faceKey(font.family, font.weight, font.style)))
+  const stale = (rule: string): boolean => {
+    const face = readFaceRule(rule)
+    if (!face || libraryUrls.has(face.url)) return false
+    return covered.has(face.key) || replaced.some(({ from }) => from === face.url)
+  }
+  let base = html
+  let kept = block
+  if (block) {
+    const inner = (block[1] ?? '').replace(FACE_RULE_RE, (rule) => (stale(rule) ? '' : rule))
+    if (inner !== block[1]) {
+      const open = block[0].slice(0, block[0].length - (block[1] ?? '').length - '</style>'.length)
+      const tidy = inner.replace(/\n{2,}/g, '\n')
+      base = `${html.slice(0, block.index)}${tidy.trim() ? `${open}${tidy}</style>` : ''}${html.slice(block.index + block[0].length)}`
+      kept = BLOCK_RE.exec(base)
+    }
+  }
   const used = new Map<string, boolean>()
   const missing = library.filter((font) => {
-    if (html.includes(font.url)) return false
+    if (base.includes(font.url)) return false
     const key = font.family.toLowerCase()
     if (!used.has(key)) used.set(key, usesFamily(design, font.family))
     return used.get(key)
   })
-  if (!missing.length) return html
+  if (!missing.length) return base
   const rules = missing.map(fontFaceRule).join('\n')
-  if (block) {
-    const end = block.index + block[0].length - '</style>'.length
-    return `${html.slice(0, end)}${block[1]?.endsWith('\n') ? '' : '\n'}${rules}\n${html.slice(end)}`
+  if (kept) {
+    const end = kept.index + kept[0].length - '</style>'.length
+    return `${base.slice(0, end)}${kept[1]?.endsWith('\n') ? '' : '\n'}${rules}\n${base.slice(end)}`
   }
   const tag = `<style ${FONT_BLOCK_ATTR}>\n${rules}\n</style>`
-  const headOpen = /<head\b[^>]*>/i.exec(html)
+  const headOpen = /<head\b[^>]*>/i.exec(base)
   if (headOpen) {
     const at = headOpen.index + headOpen[0].length
-    return `${html.slice(0, at)}${tag}${html.slice(at)}`
+    return `${base.slice(0, at)}${tag}${base.slice(at)}`
   }
   /* no <head>: the parser hoists a leading <style> into the one it makes */
-  const htmlOpen = /<html\b[^>]*>/i.exec(html) ?? /<!doctype[^>]*>/i.exec(html)
+  const htmlOpen = /<html\b[^>]*>/i.exec(base) ?? /<!doctype[^>]*>/i.exec(base)
   const at = htmlOpen ? htmlOpen.index + htmlOpen[0].length : 0
-  return `${html.slice(0, at)}${tag}${html.slice(at)}`
+  return `${base.slice(0, at)}${tag}${base.slice(at)}`
 }
 
 /** How two spellings of a family compare: CSS matches names case-insensitively. */

@@ -92,6 +92,62 @@ describe('personal font library', () => {
   })
 })
 
+describe('a replaced face in frames', () => {
+  const USES = `<p style="font-family: 'Swap Sans', sans-serif">Hi</p>`
+  const OWN_RULE = `@font-face{font-family:"Own";src:url("https://example.test/own.woff2")}`
+  const count = (html: string, text: string) => html.split(text).length - 1
+
+  async function frameOn(canvasId: string, html: string): Promise<string> {
+    const res = await owner.post(`/api/canvases/${canvasId}/frames`, { name: 'F', html })
+    expect(res.status).toBe(200)
+    return (await res.json()).id
+  }
+
+  it('is swapped in untouched frames, kept for a deleted face, and left alone elsewhere', async () => {
+    const workspaceId = (await (await owner.post('/api/workspaces', { name: 'Swap Co' })).json()).id
+    const regular: CustomFont = await (
+      await upload(owner, woff2({ family: 'Swap Sans' }), 'a.woff2', workspaceId)
+    ).json()
+    const bold: CustomFont = await (
+      await upload(owner, woff2({ family: 'Swap Sans', weight: 700 }), 'b.woff2', workspaceId)
+    ).json()
+    const inside = (await (await owner.post('/api/canvases', { name: 'Inside', workspaceId })).json()).id
+    const outside = (await (await owner.post('/api/canvases', { name: 'Outside' })).json()).id
+
+    const bodyHtml = `<!doctype html><html><head><style>${OWN_RULE}</style></head><body>${USES}</body></html>`
+    const frameId = await frameOn(inside, bodyHtml)
+    const before = await savedHtml(owner, inside, frameId)
+    expect(before).toContain(regular.url)
+    expect(before).toContain(bold.url)
+
+    /* a frame on a canvas outside the library that happens to name the old file */
+    const foreign = `<html><head><style>@font-face{font-family:"Swap Sans";src:url("${regular.url}")}</style></head><body>${USES}</body></html>`
+    const foreignId = await frameOn(outside, foreign)
+    const foreignBefore = await savedHtml(owner, outside, foreignId)
+
+    /* a deleted face keeps its rule */
+    expect((await owner.delete(`/api/fonts/${bold.id}`)).status).toBe(200)
+
+    const next: CustomFont = await (await upload(owner, ttf({ family: 'Swap Sans' }), 'a2.ttf', workspaceId)).json()
+    expect(next.url).not.toBe(regular.url)
+
+    const after = await savedHtml(owner, inside, frameId)
+    expect(after).toContain(next.url)
+    expect(after).not.toContain(regular.url)
+    expect(after).toContain(bold.url)
+    expect(after).toContain(OWN_RULE)
+    expect(await savedHtml(owner, outside, foreignId)).toBe(foreignBefore)
+
+    /* edited afterwards: one rule per face */
+    const patched = await owner.patch(`/api/frames/${frameId}`, { html: after.replace('Hi', 'Hello') })
+    expect(patched.status).toBe(200)
+    const edited = await savedHtml(owner, inside, frameId)
+    expect(count(edited, `url("${next.url}")`)).toBe(1)
+    expect(count(edited, `url("${bold.url}")`)).toBe(1)
+    expect(count(edited, '@font-face')).toBe(3)
+  })
+})
+
 describe('workspace font library', () => {
   let brand: CustomFont
 
