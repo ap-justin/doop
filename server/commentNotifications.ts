@@ -3,6 +3,7 @@ import { store } from './store.ts'
 import { workspaceMemberIds } from './workspaces.ts'
 import { canAccessCanvas } from './access.ts'
 import { mailerConfigured, sendMail } from './mailer.ts'
+import { leanMode } from './lean.ts'
 import { mailableForComments, type Mailable } from './notificationPrefs.ts'
 import { commentLink, settingsLink } from './links.ts'
 import type { CanvasEvent } from './events.ts'
@@ -25,7 +26,8 @@ import type { ActorKind, Canvas, ElementComment } from '../shared/types.ts'
  * it, which is acceptable for a courtesy email and keeps this state-free.
  *
  * Requires SMTP (server/mailer.ts). Without it nothing is queued: an email
- * nobody receives is not worth logging on every comment.
+ * nobody receives is not worth logging on every comment. Lean mode
+ * (server/lean.ts) never queues either, whatever a person's switch says.
  */
 
 export const COALESCE_MS = 2 * 60_000
@@ -61,7 +63,7 @@ export function recipientsFor(canvas: Canvas, comment: ElementComment, actorKind
 
 export function onCanvasEvent(canvasId: string, event: CanvasEvent): void {
   if (event.type !== 'comment.created' && event.type !== 'comment.replied') return
-  if (!mailerConfigured) return
+  if (!mailerConfigured || leanMode()) return
   const canvas = store.getCanvas(canvasId)
   if (!canvas) return
   const item: PendingComment = {

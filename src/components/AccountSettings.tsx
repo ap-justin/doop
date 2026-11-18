@@ -5,6 +5,7 @@ import type { NotificationSettings } from '../../shared/notifications'
 import { AVATAR_ACCEPT, MAX_AVATAR_BYTES, avatarUrl } from '../../shared/avatar'
 import { colorFor } from '../../shared/types'
 import { posthog } from '../lib/posthog'
+import { useLean } from '../lib/lean'
 import { useT, type PlainMessageKey, type Translate } from '../lib/i18n'
 import { Avatar } from './ui/avatar'
 import { Button } from './ui/button'
@@ -35,6 +36,7 @@ function errorNotice(message: string | undefined, fallback: PlainMessageKey): No
  *  own account surface. */
 export function AccountSettings() {
   const t = useT()
+  const lean = useLean()
   const { data: session, refetch: refetchSession } = authClient.useSession()
   const user = session?.user
   const photo = avatarUrl(user?.image)
@@ -262,28 +264,30 @@ export function AccountSettings() {
         </CardRow>
       </SettingsCard>
 
-      <SettingsCard>
-        <CardHeader>
-          <CardTitle>{t('account.notificationsTitle')}</CardTitle>
-          <CardDescription>{t('account.notificationsDescription')}</CardDescription>
-        </CardHeader>
-        <CardRow label={t('account.commentEmailsRow')}>
-          <label className="relative flex cursor-pointer items-center gap-2.5 text-body text-ink">
-            <Checkbox
-              checked={notify?.commentEmails ?? true}
-              disabled={!notify || !notify.emailConfigured || savingNotify}
-              onChange={(e) => void setCommentEmails(e.target.checked)}
-              aria-label={t('account.commentEmailsAria')}
-            />
-            <span>{t('account.commentEmailsLabel')}</span>
-          </label>
-          {notify && !notify.emailConfigured ? (
-            <Note>{t('account.emailNotConfigured')}</Note>
-          ) : notifyError ? (
-            <Note tone="error">{noticeText(t, notifyError)}</Note>
-          ) : null}
-        </CardRow>
-      </SettingsCard>
+      {!lean && (
+        <SettingsCard>
+          <CardHeader>
+            <CardTitle>{t('account.notificationsTitle')}</CardTitle>
+            <CardDescription>{t('account.notificationsDescription')}</CardDescription>
+          </CardHeader>
+          <CardRow label={t('account.commentEmailsRow')}>
+            <label className="relative flex cursor-pointer items-center gap-2.5 text-body text-ink">
+              <Checkbox
+                checked={notify?.commentEmails ?? true}
+                disabled={!notify || !notify.emailConfigured || savingNotify}
+                onChange={(e) => void setCommentEmails(e.target.checked)}
+                aria-label={t('account.commentEmailsAria')}
+              />
+              <span>{t('account.commentEmailsLabel')}</span>
+            </label>
+            {notify && !notify.emailConfigured ? (
+              <Note>{t('account.emailNotConfigured')}</Note>
+            ) : notifyError ? (
+              <Note tone="error">{noticeText(t, notifyError)}</Note>
+            ) : null}
+          </CardRow>
+        </SettingsCard>
+      )}
 
       <SettingsCard>
         <CardHeader>
