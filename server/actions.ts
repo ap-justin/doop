@@ -3144,9 +3144,8 @@ const FONT_ASSET_EXTS = Object.values(FONT_FORMATS).map((format) => format.ext)
  *  and each rule of its component and carried stylesheets that loads an upload the library
  *  no longer lists pointed at the library's file for that face. */
 function healFaceRules(html: string, library: readonly CustomFont[], fontBlock: (html: string) => string): string {
-  const component = (css: string) => withLibraryFaceRules(css, library)
-  const carried = (css: string) => withLibraryFaceRules(css, library, { carried: true })
-  return rewriteCarriedCss(rewriteComponentCss(fontBlock(html), component), carried)
+  const heal = (css: string) => withLibraryFaceRules(css, library)
+  return rewriteCarriedCss(rewriteComponentCss(fontBlock(html), heal), heal)
 }
 
 const timesLoaded = (text: string, assetId: string) => text.split(`/a/${assetId}.`).length - 1

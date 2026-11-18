@@ -176,18 +176,49 @@ describe('copies a replacing upload used to skip', () => {
     const regular = await upload(woff2({ family: 'Carry Sans' }), 'c.woff2', workspaceId)
     const canvasId = await newCanvas('Carry', workspaceId)
     const carried = (url: string) =>
-      `<style data-doop-carried="c1">@font-face{font-family:"Carry Sans__c1";src:url("${url}") format("woff2");font-weight:400;unicode-range:U+0000-00FF}</style>`
+      `<style data-doop-carried="c1">@font-face{font-family:"Carry Sans-c1";src:url("${url}") format("woff2");font-weight:400;unicode-range:U+0000-00FF}</style>`
     const frameId = await newFrame(
       canvasId,
-      doc(carried(regular.url), `<p style="font-family:'Carry Sans__c1'">Hi</p>`),
+      doc(carried(regular.url), `<p style="font-family:'Carry Sans-c1'">Hi</p>`),
     )
     expect((await frameOn(canvasId, frameId)).html).toContain(carried(regular.url))
 
     const next = await upload(ttf({ family: 'Carry Sans' }), 'c2.ttf', workspaceId)
     const html = (await frameOn(canvasId, frameId)).html
     expect(html).not.toContain(regular.url)
-    expect(html).toContain(`font-family:"Carry Sans__c1";src:url("${next.url}")`)
+    expect(html).toContain(`font-family:"Carry Sans-c1";src:url("${next.url}")`)
     expect(html).toContain('unicode-range:U+0000-00FF')
+  })
+
+  it('swaps a pasted layer’s renamed face in a main and its component alike, so the main’s next write files no revision', async () => {
+    const workspaceId = await newWorkspace('Carry Kit Co')
+    const regular = await upload(woff2({ family: 'Kit Carry' }), 'k.woff2', workspaceId)
+    const canvasId = await newCanvas('Carry Kit', workspaceId)
+    /* a layer pasted into a frame already defining the family: its rule wears the paste's scope */
+    const carried =
+      `<style data-doop-carried="ab12cd">@font-face{font-family:"Kit Carry-ab12cd";src:url("${regular.url}") format("woff2");font-weight:400;font-style:normal}\n` +
+      `.chip{font-family:"Kit Carry-ab12cd",sans-serif}</style>`
+    const frameId = await newFrame(canvasId, doc(carried, `<span class="chip" data-doop-id="chipone">Chip</span>`))
+    const made = await owner.post(`/api/canvases/${canvasId}/components`, { name: 'Chip', frameId, element: 'chipone' })
+    expect(made.status, await made.clone().text()).toBe(200)
+    const chip = async (): Promise<{ rev: number; css: string }> =>
+      (await (await owner.get(`/api/canvases/${canvasId}/components`)).json())[0]
+    const before = await chip()
+    expect(before.css).toContain(regular.url)
+
+    const next = await upload(ttf({ family: 'Kit Carry' }), 'k2.ttf', workspaceId)
+    const swapped = await chip()
+    expect(swapped.rev).toBe(before.rev)
+    expect(swapped.css).toContain(next.url)
+    expect(swapped.css).not.toContain(regular.url)
+    const stored = (await frameOn(canvasId, frameId)).html
+    expect(stored).toContain(`font-family:"Kit Carry-ab12cd";src:url("${next.url}")`)
+
+    const patched = await owner.patch(`/api/frames/${frameId}`, { html: stored.replace('</body>', '<p>note</p></body>') })
+    expect(patched.status).toBe(200)
+    const edited = await chip()
+    expect(edited.rev).toBe(before.rev)
+    expect(edited.css).toBe(swapped.css)
   })
 
   it('reaches the instance frames of a canvas that only holds a library copy', async () => {

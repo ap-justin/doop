@@ -211,13 +211,13 @@ describe('a written rule pointed at the face that replaced its file', () => {
   const next = face('400', 'kept2')
   /* a carried layer's scoped family, with descriptors Doop never writes */
   const written =
-    `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("${old.url}") format("woff2");` +
+    `@font-face{font-family:"Swap Sans-c1";src:local("Swap Sans"),url("${old.url}") format("woff2");` +
     `font-weight:400;font-style:normal;unicode-range:U+0000-00FF}`
 
   it('swapFaceRules keeps the family and every other descriptor', () => {
     const swapped = swapFaceRules(written, [{ from: old.url, to: next }])
     expect(swapped).toBe(
-      `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("https://doop.test/a/kept2.woff2") format("woff2");` +
+      `@font-face{font-family:"Swap Sans-c1";src:local("Swap Sans"),url("https://doop.test/a/kept2.woff2") format("woff2");` +
         `font-weight:400;font-style:normal;unicode-range:U+0000-00FF}`,
     )
   })
@@ -225,7 +225,7 @@ describe('a written rule pointed at the face that replaced its file', () => {
   it('swapFaceRules gives the rule the successor’s weight and style, keeping family, range and local()', () => {
     const bolder = face('700', 'kept3', 'italic')
     expect(swapFaceRules(written, [{ from: old.url, to: bolder }])).toBe(
-      `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("https://doop.test/a/kept3.woff2") format("woff2");` +
+      `@font-face{font-family:"Swap Sans-c1";src:local("Swap Sans"),url("https://doop.test/a/kept3.woff2") format("woff2");` +
         `font-weight:700;font-style:italic;unicode-range:U+0000-00FF}`,
     )
   })
@@ -244,6 +244,22 @@ describe('a written rule pointed at the face that replaced its file', () => {
     expect(withLibraryFaceRules(`${elsewhere}\n${ours}`, [next])).toBe(
       `${elsewhere}\n@font-face{font-family:"Swap Sans";src:url("https://doop.test/a/kept2.woff2");font-weight:400;font-style:normal}`,
     )
+  })
+
+  /* the names a paste gives a family the destination already defines (`fresh` in src/lib/styleCarry.ts) */
+  it.each(['c1-2', 'abc123', 'carried', 'abc-2'])(
+    'withLibraryFaceRules points a family renamed "Swap Sans-%s" at the library’s file for its face',
+    (suffix) => {
+      const renamed = (url: string) =>
+        `@font-face{font-family:"Swap Sans-${suffix}";src:local("Swap Sans"),url("${url}") format("woff2");` +
+        `font-weight:400;font-style:normal;unicode-range:U+0000-00FF}`
+      expect(withLibraryFaceRules(renamed(old.url), [next])).toBe(renamed(next.url))
+    },
+  )
+
+  it('withLibraryFaceRules leaves a hyphenated family that is no paste’s rename', () => {
+    const display = `@font-face{font-family:"Swap Sans-Display";src:url("${old.url}") format("woff2");font-weight:400;font-style:normal}`
+    expect(withLibraryFaceRules(display, [next])).toBe(display)
   })
 
   it('withLibraryFaceRules leaves a rule loading a file that is not an upload byte for byte', () => {

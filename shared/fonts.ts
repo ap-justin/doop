@@ -139,14 +139,11 @@ function uploadPrefix(url: string): string | undefined {
 /** The stylesheet with each rule that loads an upload of this server the library no
  *  longer lists, where the library has that family, weight and style from another
  *  file, pointed at that file, so a component read from a main whose own stylesheet
- *  still loads a replaced file reads the same as one already swapped. A rule loading
- *  anything else (a hosted font, a file served elsewhere) is left as written. `carried`:
- *  the CSS of a carried block, whose family may wear the suffix a paste renamed it with. */
-export function withLibraryFaceRules(
-  css: string,
-  library: readonly CustomFont[],
-  { carried = false }: { carried?: boolean } = {},
-): string {
+ *  still loads a replaced file reads the same as one already swapped. A family wearing
+ *  the suffix a paste renamed it with (a carried rule, also once a component's CSS holds
+ *  it) stands for the library family it was renamed from. A rule loading anything else
+ *  (a hosted font, a file served elsewhere) is left as written. */
+export function withLibraryFaceRules(css: string, library: readonly CustomFont[]): string {
   if (!library.length || !css.includes('@font-face')) return css
   const prefixes = new Set(library.flatMap((font) => uploadPrefix(font.url) ?? []))
   const listed = new Set(library.map((font) => font.url))
@@ -155,15 +152,15 @@ export function withLibraryFaceRules(
     if (!face || listed.has(face.url)) return rule
     const prefix = uploadPrefix(face.url)
     if (!prefix || !prefixes.has(prefix)) return rule
-    const successor =
-      library.find((font) => fontKey(font) === face.key) ?? (carried ? carriedSuccessor(face, library) : undefined)
+    const successor = library.find((font) => fontKey(font) === face.key) ?? carriedSuccessor(face, library)
     return successor ? retargetFaceRule(rule, face.url, successor) : rule
   })
 }
 
 /** What `withCarriedCss` (src/lib/styleCarry.ts) appends to a family the destination
- *  already defines: `-<scope>`, then `-<n>` when that is taken too. */
-const CARRY_RENAME_RE = /^-[a-z0-9]+(?:-\d+)?$/
+ *  already defines: `-<scope>` (a `newScope()` id of at most six characters, or `carried`),
+ *  then `-<n>` when that is taken too. A longer suffix ("Brand-Display") is a family of its own. */
+const CARRY_RENAME_RE = /^-(?:[0-9a-z]{1,6}|carried)(?:-\d+)?$/
 
 /** The library face a carried rule renamed `<family>-<scope>` stands for: same family, weight and style. */
 function carriedSuccessor(face: { key: string; family: string }, library: readonly CustomFont[]) {
