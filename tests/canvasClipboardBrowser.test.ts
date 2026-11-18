@@ -258,6 +258,47 @@ describe.skipIf(!findBrowserPath() || !CLIPBOARD_IS_RELIABLE)('canvas clipboard 
       .toEqual(['#card-copy', '#other-copy'])
   })
 
+  it('keeps the pasted set when the frame answers a pick made before the paste', async () => {
+    /* React's scheduler is paused: the frame's answer to the pick is handled,
+       but the render it asks for waits until the paste has landed */
+    await page.evaluateOnNewDocument(() => {
+      const Real = window.MessageChannel
+      const waiting: (() => void)[] = []
+      Object.assign(window, {
+        schedulerPaused: false,
+        resumeScheduler: () => waiting.splice(0).forEach((run) => run()),
+      })
+      window.MessageChannel = class extends Real {
+        constructor() {
+          super()
+          const post = this.port2.postMessage.bind(this.port2)
+          this.port2.postMessage = (message: unknown) => {
+            if ((window as unknown as { schedulerPaused: boolean }).schedulerPaused) waiting.push(() => post(message))
+            else post(message)
+          }
+        }
+      }
+    })
+    await page.goto(fixtureUrl('canvasClipboard.html'))
+    await page.waitForFunction(() => !!window.canvasClipboardHarness && !!document.querySelector('.stage'))
+    await page.evaluate((frame) => window.canvasClipboardHarness.seed([frame]), FRAME)
+    const doc = (await (await page.$('iframe[data-doop-frame]'))!.contentFrame())!
+    await doc.waitForSelector('#card')
+    await page.evaluate(() => navigator.clipboard.writeText('external text'))
+    await page.evaluate(() => {
+      Object.assign(window, { schedulerPaused: true })
+      window.canvasClipboardHarness.pick('#card', '#other')
+    })
+    await chord('c')
+    await chord('v')
+    await expect.poll(() => count('section, p')).toBe(4)
+    await page.evaluate(() => (window as unknown as { resumeScheduler: () => void }).resumeScheduler())
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    )
+    expect(await page.evaluate(() => window.canvasClipboardHarness.picked())).toEqual(['#card-copy', '#other-copy'])
+  })
+
   it('copies through the element menu and pastes with the keyboard', async () => {
     await copyImage()
     const doc = (await (await page.$('iframe[data-doop-frame]'))!.contentFrame())!

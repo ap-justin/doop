@@ -1196,9 +1196,15 @@ export const FrameView = memo(function FrameView({
      resolved into a probe by asking the runtime for the element behind the
      selector */
   const previousProbe = useRef<string | null>(null)
+  /* the selector a select answer made the probe, which that answer has already
+     reconciled with the store; the effect below leaves it alone, since a paste
+     or another pick may have moved the selection on before the render */
+  const answeredProbe = useRef<string | null>(null)
   useEffect(() => {
     const previous = previousProbe.current
     previousProbe.current = probeSel
+    const answered = answeredProbe.current === probeSel
+    answeredProbe.current = null
     const cur = useStore.getState().selectedElement
     if (probeSel === FRAME_COMMENT_SELECTOR) {
       /* a comment on the whole frame is no element pick: `body` in the
@@ -1206,6 +1212,7 @@ export const FrameView = memo(function FrameView({
          frame's entire document */
       if (cur?.frameId === frame.id) useStore.getState().setSelectedElement(null)
     } else if (probeSel) {
+      if (answered) return
       const el = { frameId: frame.id, selector: probeSel }
       /* the Comment tool outlines the element without sliding its properties panel in */
       if (useStore.getState().tool === 'comment') useStore.getState().setSelectedElement(el)
@@ -1336,6 +1343,7 @@ export const FrameView = memo(function FrameView({
         const hit = (ev.data.hit ?? null) as ProbeHit | null
         closePopovers()
         if (hit) {
+          answeredProbe.current = hit.selector
           setProbe(hit)
           /* an element link names the element by id; from here on the
              selection speaks the positional path the Layers panel knows */
