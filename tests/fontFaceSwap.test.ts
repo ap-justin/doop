@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fontFaceRule, swapFaceRules, withFontFaces, withLibraryFaceRules, type CustomFont } from '../shared/fonts'
+import { rewriteComponentCss } from '../server/componentEngine.ts'
 
 /**
  * `withFontFaces` rebuilds Doop's `<style data-doop-fonts>` block from the library:
@@ -152,6 +153,18 @@ describe('swapFaceRules', () => {
     expect(swapFaceRules(css, [{ from: a.url, to: next }])).toBe(
       `.x{color:red}\n${fontFaceRule(next)}\n${fontFaceRule(b)}`,
     )
+  })
+
+  it('in a frame, changes the replaced URL in its component stylesheets and nothing else', () => {
+    const a = face('400', 'a')
+    const next = face('400', 'a2')
+    /* an instance's stylesheet as rendered from an older revision: `.old` stays */
+    const instanceCss = `<style data-doop-component-css="c1">\n${fontFaceRule(a)}\n.old{color:red}\n</style>`
+    const own = `<style>${fontFaceRule(a)}</style>`
+    const script = `<script data-doop-component-head src="https://cdn.test/kit.js"></script>`
+    const html = doc(`${instanceCss}\n${own}\n${script}`)
+    const swapped = rewriteComponentCss(html, (css) => swapFaceRules(css, [{ from: a.url, to: next }]))
+    expect(swapped).toBe(html.replace(instanceCss, instanceCss.replace(a.url, next.url)))
   })
 })
 

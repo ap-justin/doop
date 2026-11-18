@@ -266,10 +266,10 @@
   (`server/fontReplaced.ts`, a listener's failure is logged and never fails the upload) and
   `actions` rewrites the block in the frames that load the old file on the canvases using that
   library (loaded canvases at once; idle ones after the response, read only when a stored frame
-  names the file), plus the component and published-library copies that carry the face (swapped
-  first, so a frame's instance styles are refreshed from them), as annotation writes (no version,
-  no undo step). A component or published rule is pointed at the new file in place, keeping its
-  family and descriptors. A main's stylesheet is read with each rule loading an upload the
+  names the file), plus the component and published-library copies that carry the face, as
+  annotation writes (no version, no undo step); the instance stylesheets inside those frames get
+  the same in-place URL swap, never a rebuild from the definitions. A component or published
+  rule is pointed at the new file in place, keeping its family and descriptors. A main's stylesheet is read with each rule loading an upload the
   library no longer lists pointed at the library's file for that face (`withLibraryFaceRules` in
   `prepareMains`; hosted or self-served files are left alone), so its next write files no
   revision. `actions.createFrame` / `updateFrame` / every append chunk run it on every write

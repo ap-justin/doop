@@ -1313,16 +1313,28 @@ function hollowIds(html: string, ctx: EngineContext): Set<string> {
   return new Set([...usedComponentIds(html)].filter((id) => isHollow(ctx.find(id))))
 }
 
+/** A component's stylesheet in a frame's head: its open tag, the component id, its CSS and the
+ *  newline after it. */
+function componentCssBlocks(): RegExp {
+  return new RegExp(`(<style[^>]*\\b${CSS_ATTR}="([^"]*)"[^>]*>)([\\s\\S]*?)</style>(\\n?)`, 'gi')
+}
+
 /** Everything a component put in the head: its stylesheet, and the links and scripts it brought.
  *  The stylesheets of the components in `keep` stay. */
 export function stripComponentHead(html: string, keep: ReadonlySet<string> = new Set()): string {
   return html
-    .replace(
-      new RegExp(`<style[^>]*\\b${CSS_ATTR}="([^"]*)"[^>]*>[\\s\\S]*?</style>\\n?`, 'gi'),
-      (block, id: string) => (keep.has(id) ? block : ''),
-    )
+    .replace(componentCssBlocks(), (block, _open: string, id: string) => (keep.has(id) ? block : ''))
     .replace(new RegExp(`<script[^>]*\\s${HEAD_ATTR}(?:="[^"]*")?[\\s>][^>]*>[\\s\\S]*?</script>\\n?`, 'gi'), '')
     .replace(new RegExp(`<link[^>]*\\s${HEAD_ATTR}(?:="[^"]*")?[\\s>/][^>]*>\\n?`, 'gi'), '')
+}
+
+/** The component stylesheets already in a document's head, each passed through `rewrite` in
+ *  place; which components have one, and everything else in the document, stay as they are. */
+export function rewriteComponentCss(html: string, rewrite: (css: string) => string): string {
+  return html.replace(
+    componentCssBlocks(),
+    (_block, open: string, _id: string, css: string, newline: string) => `${open}${rewrite(css)}</style>${newline}`,
+  )
 }
 
 /** A head tag with the mark that says a component brought it, so `frameHeadTags` and the next

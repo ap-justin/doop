@@ -19,8 +19,8 @@ import {
   prepareFrameHtml,
   referencesComponent,
   rederiveFromMains,
-  withCurrentComponentCss,
 } from './components.ts'
+import { rewriteComponentCss } from './componentEngine.ts'
 import { COMPONENT_ATTR, isDeleted, isHollow, type ComponentDef, type ComponentIssue } from '../shared/components.ts'
 import { MAX_DECISION_CHARS } from '../shared/designDecisions.ts'
 import { MAX_PAGES, PageLimitError, store } from './store.ts'
@@ -2997,17 +2997,19 @@ function usesLibrary(canvas: Canvas, { scope, userId }: FacesReplaced): boolean 
 }
 
 /** Put the faces that took a replaced face's place into the frames that carried it: their
- *  font block, and the component stylesheets their instances bring, read from the
- *  definitions (swapped first, `swapReplacedFacesInComponents`). Annotation writes: the
- *  design did not change, so sign-off stands and no version or undo step is filed. A frame
- *  with an open append stream gets the swap with its done chunk, which reads the library
- *  as it is then. */
+ *  font block, and the component stylesheets already in their head, where only the replaced
+ *  files' URLs change, so instances still behind their component keep the styles they were
+ *  rendered with. Annotation writes: the design did not change, so sign-off stands and no
+ *  version or undo step is filed. A frame with an open append stream gets the swap with its
+ *  done chunk, which reads the library as it is then. */
 const swapReplacedFaces = atomic(function swapReplacedFaces(canvasId: string, replaced: readonly FaceReplacement[]) {
   const canvas = store.getCanvas(canvasId)
   if (!canvas) return
   for (const frame of [...canvas.frames]) {
     if (streams.has(frame.id) || !replaced.some(({ from }) => frame.html.includes(from))) continue
-    const html = withCurrentComponentCss(canvasId, withCanvasFaces(canvasId, frame.html, replaced))
+    const html = rewriteComponentCss(withCanvasFaces(canvasId, frame.html, replaced), (css) =>
+      swapFaceRules(css, replaced),
+    )
     if (html === frame.html) continue
     const actor = resolveActor({ name: frame.updatedBy, kind: 'user' })
     const updated = store.updateFrame(frame.id, { html }, frame.updatedBy, { annotation: true })
@@ -3091,7 +3093,6 @@ onFacesReplaced((event) => {
     if (!frames && !carries) continue
     swapPart(`canvas ${canvas.id}`, () =>
       runOperation('fonts.swap', canvas.id, () => {
-        /* definitions first: a frame's instance styles are read from them */
         if (carries) swapReplacedFacesInComponents(canvas.id, event.replaced)
         if (frames) swapReplacedFaces(canvas.id, event.replaced)
       }),
