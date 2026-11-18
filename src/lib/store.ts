@@ -363,6 +363,8 @@ export const useStore = create<State>((set, get) => ({
 
   setCanvas: (canvas) =>
     set((s) => ({
+      /* a canvas being opened starts in the tool its viewer's role defaults to */
+      ...(canvas && canvas.id !== s.canvas?.id ? { tool: defaultTool(canvas.role ?? 'edit') } : {}),
       /* the stage paints frames in array order: back to front */
       canvas: canvas && { ...canvas, frames: sortByStack(canvas.frames) },
       /* leaving a canvas (CanvasPage unmounts or its id changes) ends ⌘.
@@ -676,7 +678,12 @@ export const useStore = create<State>((set, get) => ({
       const demoted = !roleAllows(role, 'edit')
       return {
         canvas: { ...s.canvas, role },
-        tool: toolAllowed(s.tool, role) ? s.tool : 'select',
+        tool: !toolAllowed(s.tool, role)
+          ? defaultTool(role)
+          : /* a role that arrives after the canvas opened (a commenter's, once known) starts in its default */
+            s.tool === 'select' && !roleAllows(roleOf(s), 'comment')
+            ? defaultTool(role)
+            : s.tool,
         /* an open Design panel or Inspector would keep offering edits */
         ...(demoted ? { inspectorOpen: false, elementPanelOpen: false } : {}),
       }
@@ -835,6 +842,11 @@ export function canEditOpenCanvas(s: Pick<State, 'canvas'>): boolean {
 /** May the caller comment on the open canvas? */
 export function canCommentOpenCanvas(s: Pick<State, 'canvas'>): boolean {
   return roleAllows(roleOf(s), 'comment')
+}
+
+/** The tool a canvas opens with: Comment for anyone who may comment, else Select. */
+export function defaultTool(role: CanvasRole): Tool {
+  return toolAllowed('comment', role) ? 'comment' : 'select'
 }
 
 /** Select, Hand and the Comment tool for commenters; every tool for editors. */

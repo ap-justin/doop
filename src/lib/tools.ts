@@ -72,6 +72,11 @@ export function resolvePointerAction({ tool, target, button, pointerType, spaceH
   return tool === 'comment' ? 'comment' : 'frame-drag'
 }
 
+/** The tool Escape leaves you in: Comment stays, every other tool goes back to Select. */
+export function toolAfterEscape(tool: Tool): Tool {
+  return tool === 'comment' ? 'comment' : 'select'
+}
+
 /** The tool a bare key press picks, or null when the key is not a tool key. */
 export function toolForKey(key: string): Tool | null {
   const found = TOOLS.find((t) => t.key.toLowerCase() === key.toLowerCase())

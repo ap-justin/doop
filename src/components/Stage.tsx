@@ -44,7 +44,7 @@ import {
   VectorIcon,
   ZoomInIcon,
 } from './ui/icons'
-import { TOOLS, isDrawingTool, resolvePointerAction, toolForKey, type Tool } from '../lib/tools'
+import { TOOLS, isDrawingTool, resolvePointerAction, toolAfterEscape, toolForKey, type Tool } from '../lib/tools'
 import { useCanvasDrawing } from './CanvasDrawing'
 import { FrameLabelLayer } from './FrameLabelLayer'
 import { pixelGridLines } from './PixelGrid'
@@ -838,7 +838,8 @@ export function Stage({
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return
       if (e.key === 'Escape') {
         if (isTypingTarget(e.target) && !e.target.closest('[data-comment-ui], [data-drawing-input]')) return
-        if (useStore.getState().tool !== 'select') useStore.getState().setTool('select')
+        const { tool } = useStore.getState()
+        if (tool !== toolAfterEscape(tool)) useStore.getState().setTool(toolAfterEscape(tool))
         return
       }
       if (isTypingTarget(e.target)) return
