@@ -67,6 +67,26 @@ async function stamp(canvasId: string, frameId: string) {
   return { html, updatedAt }
 }
 
+async function signOff(canvasId: string, frameId: string): Promise<void> {
+  const res = await owner.put(`/api/frames/${frameId}/approval`, {
+    status: 'ready_for_dev',
+    expectedUpdatedAt: (await frameOn(canvasId, frameId)).updatedAt,
+  })
+  expect(res.status).toBe(200)
+}
+
+async function versionsOf(frameId: string): Promise<unknown> {
+  return (await owner.get(`/api/frames/${frameId}/versions`)).json()
+}
+
+/** canvases with frame HTML in memory, as /healthz/store reports it */
+async function loadedCanvases(): Promise<number> {
+  return ((await (await fetch(`${server.base}/healthz/store`)).json()) as { loaded: number }).loaded
+}
+
+/** the rules inside Doop's own font block */
+const fontBlock = (html: string) => /<style\b[^>]*data-doop-fonts[^>]*>([\s\S]*?)<\/style>/i.exec(html)?.[1] ?? ''
+
 async function reboot(): Promise<void> {
   server.stop({ keepData: true })
   await server.stopped
@@ -104,7 +124,8 @@ describe('a frame whose rules name files that left the library', () => {
     const workspaceId = await newWorkspace('Keep Co')
     const dropped = await upload(woff2({ family: 'Dropped Sans' }), 'd.woff2', workspaceId)
     const kept = await upload(woff2({ family: 'Kept Sans' }), 'k.woff2', workspaceId)
-    const own = `<style>@font-face{font-family:"Own Sans";src:url("${dropped.url}")}</style>`
+    const ownFile = await upload(woff2({ family: 'Own Sans' }), 'o.woff2', workspaceId)
+    const own = `<style>@font-face{font-family:"Own Sans";src:url("${ownFile.url}")}</style>`
     const hosted = `@font-face{font-family:"Kept Sans";src:url("https://cdn.other.test/k.woff2");font-weight:300}`
     const canvasId = await newCanvas('Keep', workspaceId)
     const frameId = await newFrame(
@@ -114,18 +135,18 @@ describe('a frame whose rules name files that left the library', () => {
         `<p style="font-family:'Dropped Sans'">A</p><p style="font-family:'Kept Sans'">B</p>`,
       ),
     )
-    expect((await frameOn(canvasId, frameId)).html).toContain(dropped.url)
+    const written = (await frameOn(canvasId, frameId)).html
+    expect(fontBlock(written)).toContain(fontFaceRule(dropped))
     await remove(dropped)
-    const patched = await owner.patch(`/api/frames/${frameId}`, {
-      html: (await frameOn(canvasId, frameId)).html.replace('>A<', '>Aa<'),
-    })
+    await remove(ownFile)
+    const patched = await owner.patch(`/api/frames/${frameId}`, { html: written.replace('>A<', '>Aa<') })
     expect(patched.status).toBe(200)
     const html = (await frameOn(canvasId, frameId)).html
-    /* the dropped family's rule (in the block) stays rendering; the other host's and the designer's too */
+    /* the dropped family's rule stays in Doop's block, where only the block's own rules can be told from the designer's */
+    expect(fontBlock(html)).toContain(fontFaceRule(dropped))
+    expect(fontBlock(html)).toContain(hosted)
+    expect(fontBlock(html)).toContain(kept.url)
     expect(html).toContain(own)
-    expect(html).toContain(hosted)
-    expect(html).toContain(kept.url)
-    expect(html).toContain(dropped.url)
   })
 })
 
@@ -250,5 +271,149 @@ describe('copies a replacing upload used to skip', () => {
     const html = (await frameOn(consumer, frameId)).html
     expect(block(html)).toContain(next.url)
     expect(html).not.toContain(regular.url)
+  })
+})
+
+/** a canvas in its own library whose component's stylesheet loads the file that then left it */
+async function staleFrameWithComponent(family: string) {
+  const workspaceId = await newWorkspace(`${family} Co`)
+  const gone = await upload(woff2({ family }), 'gone.woff2', workspaceId)
+  const canvasId = await newCanvas('Stale kit', workspaceId)
+  const frameId = await newFrame(canvasId, doc('', `<p style="font-family:'${family}'">Hi</p>`))
+  const made = await owner.post(`/api/canvases/${canvasId}/components`, {
+    name: 'Tag',
+    html: '<span class="tag">Tag</span>',
+    css: `${fontFaceRule(gone)}\n.tag { font-family: "${family}", sans-serif }`,
+  })
+  expect(made.status, await made.clone().text()).toBe(200)
+  await remove(gone)
+  const current = await upload(ttf({ family }), 'current.ttf', workspaceId)
+  return { workspaceId, canvasId, frameId, gone, current }
+}
+
+const componentsOf = async (canvasId: string): Promise<{ rev: number; css: string }[]> =>
+  (await owner.get(`/api/canvases/${canvasId}/components`)).json()
+
+describe('the boot repair pass across canvases', () => {
+  it('heals two stale files on two canvases in one run, reads no canvas it would not change, and files no component revision', async () => {
+    const one = await staleFrameWithComponent('Multi One')
+    const two = await staleFrame('Multi Two')
+    expect(one.gone.id).not.toBe(two.gone.id)
+
+    /* a canvas in a library with nothing stale */
+    const cleanWorkspace = await newWorkspace('Clean Co')
+    await upload(woff2({ family: 'Clean Sans' }), 'c.woff2', cleanWorkspace)
+    const clean = await newCanvas('Clean', cleanWorkspace)
+    const cleanFrame = await newFrame(clean, doc('', `<p style="font-family:'Clean Sans'">Hi</p>`))
+
+    /* stale uploads that healing must leave exactly as written: a family the library dropped
+       entirely and another host's font in Doop's block, and a designer's own stylesheet */
+    const keepWorkspace = await newWorkspace('Keep Boot Co')
+    const dropped = await upload(woff2({ family: 'Dropped Boot' }), 'd.woff2', keepWorkspace)
+    const ownFile = await upload(woff2({ family: 'Own Boot' }), 'o.woff2', keepWorkspace)
+    await upload(woff2({ family: 'Kept Boot' }), 'k.woff2', keepWorkspace)
+    const hosted = `@font-face{font-family:"Kept Boot";src:url("https://cdn.other.test/k.woff2");font-weight:300}`
+    const own = `<style>@font-face{font-family:"Own Boot";src:url("${ownFile.url}")}</style>`
+    const keep = await newCanvas('Keep', keepWorkspace)
+    const keepFrame = await newFrame(
+      keep,
+      doc(
+        `${own}<style data-doop-fonts>\n${hosted}</style>`,
+        `<p style="font-family:'Dropped Boot'">A</p><p style="font-family:'Kept Boot'">B</p>`,
+      ),
+    )
+    expect(fontBlock((await frameOn(keep, keepFrame)).html)).toContain(fontFaceRule(dropped))
+    await remove(dropped)
+    await remove(ownFile)
+    const keepStamp = await stamp(keep, keepFrame)
+    const cleanStamp = await stamp(clean, cleanFrame)
+    const kitBefore = await componentsOf(one.canvasId)
+    expect(kitBefore[0]?.css).toContain(one.gone.url)
+
+    await reboot()
+    const healed = async (stale: { canvasId: string; frameId: string; current: CustomFont }) =>
+      (await frameOn(stale.canvasId, stale.frameId)).html.includes(stale.current.url)
+    await expect.poll(async () => (await healed(one)) && (await healed(two)), { timeout: 15_000 }).toBe(true)
+    await expect
+      .poll(async () => (await componentsOf(one.canvasId))[0]?.css.includes(one.current.url), { timeout: 15_000 })
+      .toBe(true)
+    expect((await frameOn(one.canvasId, one.frameId)).html).not.toContain(one.gone.url)
+    expect((await frameOn(two.canvasId, two.frameId)).html).not.toContain(two.gone.url)
+
+    const kitAfter = await componentsOf(one.canvasId)
+    expect(kitAfter[0]?.css).not.toContain(one.gone.url)
+    expect(kitAfter[0]?.rev).toBe(kitBefore[0]?.rev)
+
+    /* only the two canvases that were read to heal them (and by the polls above) are in memory */
+    expect(await loadedCanvases()).toBe(2)
+    expect(await stamp(keep, keepFrame)).toEqual(keepStamp)
+    expect(await stamp(clean, cleanFrame)).toEqual(cleanStamp)
+  }, 120_000)
+
+  it('writes nothing and loads no canvas the second time', async () => {
+    const first = await staleFrame('Again Sans')
+    await reboot()
+    await expect
+      .poll(async () => (await frameOn(first.canvasId, first.frameId)).html.includes(first.current.url), {
+        timeout: 15_000,
+      })
+      .toBe(true)
+    const healedStamp = await stamp(first.canvasId, first.frameId)
+
+    /* the pass is done when it has healed this canvas too, which it reaches only by running over the rest */
+    const last = await staleFrame('Again Last')
+    await reboot()
+    await expect
+      .poll(async () => (await frameOn(last.canvasId, last.frameId)).html.includes(last.current.url), {
+        timeout: 15_000,
+      })
+      .toBe(true)
+    expect(await loadedCanvases()).toBe(1)
+    expect(await stamp(first.canvasId, first.frameId)).toEqual(healedStamp)
+  }, 120_000)
+})
+
+describe('a replacing upload', () => {
+  it('files no version and keeps sign-off on the frames it rewrites, a library copy’s instance frame included', async () => {
+    const workspaceId = await newWorkspace('Swap Keep Co')
+    const regular = await upload(woff2({ family: 'Swap Keep' }), 's.woff2', workspaceId)
+    const own = await newCanvas('Own', workspaceId)
+    const ownFrame = await newFrame(own, doc('', `<p style="font-family:'Swap Keep'">Hi</p>`))
+    expect((await frameOn(own, ownFrame)).html).toContain(regular.url)
+
+    const libraryId = await newCanvas('Library', workspaceId)
+    const made = await owner.post(`/api/canvases/${libraryId}/components`, {
+      name: 'Tag',
+      html: '<span class="tag">Tag</span>',
+      css: `${fontFaceRule(regular)}\n.tag { font-family: "Swap Keep", sans-serif }`,
+    })
+    expect(made.status, await made.clone().text()).toBe(200)
+    const tag = (await made.json()).component as { id: string }
+    expect((await owner.post(`/api/canvases/${libraryId}/library/publish`, {})).status).toBe(200)
+    const consumer = await newCanvas('Consumer', workspaceId)
+    const imported = await owner.post(`/api/canvases/${consumer}/components/import`, {
+      sourceCanvasId: libraryId,
+      component: tag.id,
+    })
+    expect(imported.status).toBe(200)
+    const instanceFrame = await newFrame(consumer, doc('', `<doop-use component="${tag.id}"></doop-use>`))
+    expect((await owner.put(`/api/canvases/${consumer}/workspace`, { workspaceId: null })).status).toBe(200)
+
+    await signOff(own, ownFrame)
+    await signOff(consumer, instanceFrame)
+    const versions = { own: await versionsOf(ownFrame), instance: await versionsOf(instanceFrame) }
+
+    const next = await upload(ttf({ family: 'Swap Keep' }), 's2.ttf', workspaceId)
+    const ownAfter = await frameOn(own, ownFrame)
+    const instanceAfter = await frameOn(consumer, instanceFrame)
+    /* the swap reached both, so what follows is about a real rewrite */
+    expect(ownAfter.html).toContain(next.url)
+    expect(ownAfter.html).not.toContain(regular.url)
+    expect(instanceAfter.html).toContain(next.url)
+    expect(instanceAfter.html).not.toContain(regular.url)
+    expect(ownAfter.approval?.status).toBe('ready_for_dev')
+    expect(instanceAfter.approval?.status).toBe('ready_for_dev')
+    expect(await versionsOf(ownFrame)).toEqual(versions.own)
+    expect(await versionsOf(instanceFrame)).toEqual(versions.instance)
   })
 })
