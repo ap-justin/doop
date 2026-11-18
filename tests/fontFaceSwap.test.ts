@@ -164,7 +164,8 @@ describe('swapFaceRules', () => {
     const script = `<script data-doop-component-head src="https://cdn.test/kit.js"></script>`
     const html = doc(`${instanceCss}\n${own}\n${script}`)
     const swapped = rewriteComponentCss(html, (css) => swapFaceRules(css, [{ from: a.url, to: next }]))
-    expect(swapped).toBe(html.replace(instanceCss, instanceCss.replace(a.url, next.url)))
+    const swappedCss = `<style data-doop-component-css="c1">\n${fontFaceRule(next)}\n.old{color:red}\n</style>`
+    expect(swapped).toBe(doc(`${swappedCss}\n${own}\n${script}`))
   })
 })
 
@@ -178,12 +179,34 @@ describe('a written rule pointed at the face that replaced its file', () => {
 
   it('swapFaceRules keeps the family and every other descriptor', () => {
     const swapped = swapFaceRules(written, [{ from: old.url, to: next }])
-    expect(swapped).toBe(written.replace(old.url, next.url))
+    expect(swapped).toBe(
+      `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("https://doop.test/a/kept2.woff2") format("woff2");` +
+        `font-weight:400;font-style:normal;unicode-range:U+0000-00FF}`,
+    )
+  })
+
+  it('swapFaceRules gives the rule the successor’s weight and style, keeping family, range and local()', () => {
+    const bolder = face('700', 'kept3', 'italic')
+    expect(swapFaceRules(written, [{ from: old.url, to: bolder }])).toBe(
+      `@font-face{font-family:"Swap Sans__c1";src:local("Swap Sans"),url("https://doop.test/a/kept3.woff2") format("woff2");` +
+        `font-weight:700;font-style:italic;unicode-range:U+0000-00FF}`,
+    )
   })
 
   it('withLibraryFaceRules keeps them too', () => {
     const own = `@font-face{font-family:"Swap Sans";src:url("${old.url}");font-weight:400;unicode-range:U+0100}`
-    expect(withLibraryFaceRules(own, [next])).toBe(own.replace(old.url, next.url))
+    expect(withLibraryFaceRules(own, [next])).toBe(
+      `@font-face{font-family:"Swap Sans";src:url("https://doop.test/a/kept2.woff2");font-weight:400;unicode-range:U+0100}`,
+    )
+  })
+
+  it('withLibraryFaceRules leaves an /a/ upload served from another host as written', () => {
+    const elsewhere = `@font-face{font-family:"Swap Sans";src:url("https://cdn.other.test/a/kept.woff2");font-weight:400;font-style:normal}`
+    const ours = `@font-face{font-family:"Swap Sans";src:url("${old.url}");font-weight:400;font-style:normal}`
+    /* the second rule shows the same face is swapped when it is one of this server's uploads */
+    expect(withLibraryFaceRules(`${elsewhere}\n${ours}`, [next])).toBe(
+      `${elsewhere}\n@font-face{font-family:"Swap Sans";src:url("https://doop.test/a/kept2.woff2");font-weight:400;font-style:normal}`,
+    )
   })
 
   it('withLibraryFaceRules leaves a rule loading a file that is not an upload byte for byte', () => {
