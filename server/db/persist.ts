@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { nanoid } from 'nanoid'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from './index.ts'
 import * as t from './schema.ts'
 import { extractAssetIds } from '../assets.ts'
@@ -677,6 +677,22 @@ export function loadFrameHtml(canvasId: string): Promise<{ id: string; html: str
 export async function loadOneFrameHtml(frameId: string): Promise<string | undefined> {
   const [row] = await db.select({ html: t.frames.html }).from(t.frames).where(eq(t.frames.id, frameId))
   return row?.html
+}
+
+/** Which of these canvases have a stored frame whose html contains one of `texts`,
+ *  found without reading any html into memory. */
+export async function canvasesWithFrameText(canvasIds: readonly string[], texts: readonly string[]): Promise<string[]> {
+  if (!canvasIds.length || !texts.length) return []
+  const rows = await db
+    .selectDistinct({ canvasId: t.frames.canvasId })
+    .from(t.frames)
+    .where(
+      and(
+        inArray(t.frames.canvasId, [...canvasIds]),
+        or(...texts.map((text) => sql`position(${text} in ${t.frames.html}) > 0`)),
+      ),
+    )
+  return rows.map((row) => row.canvasId)
 }
 
 const frameMetaColumns = {

@@ -9,7 +9,15 @@ import { readFontFile, type FontOverride, type FontValueSource } from './fontFil
 import { isWorkspaceMember } from './workspaces.ts'
 import { unlimitedFonts } from './entitlements.ts'
 import { FREE_FONT_FAMILIES } from '../shared/billing.ts'
-import { MAX_FONT_BYTES, type CustomFont, type FontFormat, type FontScope, type FontStyle } from '../shared/fonts.ts'
+import { announceFacesReplaced } from './fontReplaced.ts'
+import {
+  MAX_FONT_BYTES,
+  type CustomFont,
+  type FaceReplacement,
+  type FontFormat,
+  type FontScope,
+  type FontStyle,
+} from '../shared/fonts.ts'
 
 /**
  * Font libraries (shared/fonts.ts). Small and read on every frame write, so
@@ -85,7 +93,9 @@ export function fontsForCanvas(canvas: { workspaceId?: string | null; ownerId?: 
 /** Add a font file to a library. A file for a face the library already has
  *  (same family, weight and style) replaces it, so re-uploading a fixed
  *  version needs no delete first; so does the same file stored earlier under
- *  another weight or style, so a re-upload correcting a misread leaves one face. */
+ *  another weight or style, so a re-upload correcting a misread leaves one face.
+ *  Frames and components that carried a replaced face take the new one
+ *  (`announceFacesReplaced`). */
 export async function addFont(
   scope: FontScope,
   user: { id: string; name: string },
@@ -127,7 +137,7 @@ export async function addFontDetailed(
      face racing would otherwise each miss the other's row and both stay. The
      file is stored inside the queue, after the checks, so a refused upload
      leaves nothing behind. */
-  return inLibraryOrder(scope, user.id, async () => {
+  const added = await inLibraryOrder(scope, user.id, async () => {
     /* checked again in the queue: the workspace may have been deleted, or the
        uploader removed from it, while earlier uploads ran */
     if (!canUseScope(scope, user.id)) throw new FontInputError('this workspace no longer exists or you left it')
@@ -170,8 +180,19 @@ export async function addFontDetailed(
     })
     rows.set(row.id, row)
     for (const old of replaced) rows.delete(old.id)
-    return { font: toFont(row), weightSource: info.weightSource, styleSource: info.styleSource }
+    const font = toFont(row)
+    const swaps = replaced.map((old): FaceReplacement => ({ from: toFont(old).url, to: font }))
+    return {
+      font,
+      weightSource: info.weightSource,
+      styleSource: info.styleSource,
+      swaps: swaps.filter((swap) => swap.from !== font.url),
+    }
   })
+  /* after the library's queue, once the upload is stored for good */
+  if (added.swaps.length) announceFacesReplaced({ scope, userId: user.id, replaced: added.swaps })
+  const { swaps: _swaps, ...result } = added
+  return result
 }
 
 /** The rows whose stored file is exactly `buf`. Rows hold no hash, so a row

@@ -1,5 +1,5 @@
 import { withTokenBlock } from '../shared/designTokens.ts'
-import { withFontFaces } from '../shared/fonts.ts'
+import { withFontFaces, type FaceReplacement } from '../shared/fonts.ts'
 import { withWebFontLinks } from '../shared/webFonts.ts'
 import { fontsForCanvas } from './fonts.ts'
 import { store } from './store.ts'
@@ -8,14 +8,14 @@ import { store } from './store.ts'
  *  design tokens it names (shared/designTokens.ts), the @font-face rules for the
  *  library fonts it uses (shared/fonts.ts) and the stylesheet link for the hosted
  *  fonts it names (shared/webFonts.ts), so naming a token or a family is all it takes. */
-export function withCanvasFaces(canvasId: string, html: string): string {
+export function withCanvasFaces(canvasId: string, html: string, replaced: readonly FaceReplacement[] = []): string {
   const canvas = store.getCanvas(canvasId)
   if (!canvas) return html
   const library = fontsForCanvas(canvas)
   /* tokens first: a family named only through a font token is then in the
      document for the font scan to find */
   const withTokens = withTokenBlock(html, canvas.tokens ?? [], canvas.tokenThemes ?? [])
-  return withWebFontLinks(withFontFaces(withTokens, library), library)
+  return withWebFontLinks(withFontFaces(withTokens, library, { rebuild: true, replaced }), library)
 }
 
 /** A complete `<head>` or `<body>` tag: before one has arrived, the place a block
