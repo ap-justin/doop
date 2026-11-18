@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TOOLS, resolvePointerAction, toolForKey, type PointerContext } from '../src/lib/tools'
+import { TOOLS, resolvePointerAction, toolAfterEscape, toolForKey, type PointerContext } from '../src/lib/tools'
 
 /**
  * The bottom toolbar's tools decide what a pointer-down means. Select is the
@@ -94,4 +94,17 @@ describe('toolForKey', () => {
     expect(['f', 'R', 'o', 'P', 't'].map(toolForKey)).toEqual(['frame', 'rectangle', 'circle', 'path', 'text'])
     expect(new Set(TOOLS.map((t) => t.key)).size).toBe(TOOLS.length)
   })
+})
+
+describe('toolAfterEscape', () => {
+  it('stays in Comment', () => {
+    expect(toolAfterEscape('comment')).toBe('comment')
+  })
+
+  it.each(['hand', 'frame', 'rectangle', 'circle', 'path', 'text', 'zoom', 'select'] as const)(
+    'sends %s back to Select',
+    (tool) => {
+      expect(toolAfterEscape(tool)).toBe('select')
+    },
+  )
 })

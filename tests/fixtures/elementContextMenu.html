@@ -26,6 +26,8 @@
         seed: (frames, zoom = 1) => {
           clearHistory()
           useStore.getState().setCanvas({ id: 'c', name: 'Menus', frames, createdAt: 0, updatedAt: 0 })
+          /* an editor's canvas opens on Comment; these suites exercise Select */
+          useStore.getState().setTool('select')
           useStore.getState().select(null)
           useStore.getState().setViewport({ x: 0, y: 0, zoom })
           document.documentElement.style.setProperty('--zoom', String(zoom))

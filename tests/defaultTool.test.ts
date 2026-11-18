@@ -1,0 +1,88 @@
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Canvas } from '../shared/types'
+
+vi.mock('../src/lib/posthog', () => ({ posthog: { capture: vi.fn() } }))
+
+const { useStore, defaultTool, pinsShown } = await import('../src/lib/store')
+
+const canvas = (id: string, role: Canvas['role']): Canvas => ({ id, name: id, frames: [], role }) as unknown as Canvas
+
+beforeEach(() => {
+  useStore.getState().setCanvas(null)
+  useStore.getState().setTool('select')
+  useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: true } })
+})
+
+describe('default tool', () => {
+  it('is Comment for anyone who may comment, Select for a viewer', () => {
+    expect(defaultTool('edit')).toBe('comment')
+    expect(defaultTool('comment')).toBe('comment')
+    expect(defaultTool('view')).toBe('select')
+  })
+
+  it('a commenter opens a canvas in Comment, a viewer stays on Select', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    expect(useStore.getState().tool).toBe('comment')
+    useStore.getState().setCanvas(null)
+    useStore.getState().setCanvas(canvas('v', 'view'))
+    expect(useStore.getState().tool).toBe('select')
+  })
+
+  it('a role that arrives after the canvas switches Select to Comment', () => {
+    useStore.getState().setCanvas(canvas('a', 'view'))
+    useStore.getState().setRole('comment')
+    expect(useStore.getState().tool).toBe('comment')
+  })
+
+  it('a deliberate Edit (V) survives a repeated role update', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('select')
+    useStore.getState().setRole('edit')
+    expect(useStore.getState().tool).toBe('select')
+  })
+
+  it('leaving and reopening a canvas opens in Comment again', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('select')
+    useStore.getState().setCanvas(null)
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    expect(useStore.getState().tool).toBe('comment')
+  })
+
+  it('an editor holding a drawing tool who is demoted to commenter lands on Comment', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('rectangle')
+    useStore.getState().setRole('comment')
+    expect(useStore.getState().tool).toBe('comment')
+  })
+
+  it('an editor holding a drawing tool who is demoted to viewer lands on Select', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('rectangle')
+    useStore.getState().setRole('view')
+    expect(useStore.getState().tool).toBe('select')
+  })
+
+  it('a commenter keeps Hand through a role update', () => {
+    useStore.getState().setCanvas(canvas('a', 'comment'))
+    useStore.getState().setTool('hand')
+    useStore.getState().setRole('comment')
+    expect(useStore.getState().tool).toBe('hand')
+  })
+
+  it('opening in Comment does not unhide pins the person hid', () => {
+    useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: false } })
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    expect(useStore.getState().tool).toBe('comment')
+    expect(pinsShown(useStore.getState())).toBe(false)
+  })
+
+  it('picking Comment on purpose still shows hidden pins', () => {
+    useStore.setState({ viewOptions: { pixelGrid: true, cursors: true, comments: false } })
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('select')
+    useStore.getState().setTool('comment')
+    expect(pinsShown(useStore.getState())).toBe(true)
+  })
+})

@@ -89,7 +89,7 @@ Back or a jump by depth, so a flow that repeats a screen walks back and forward 
 
 The tool rail's mode switch (Edit / Prototype / Comment, under a divider below the tools) and the
 element panel's Prototype tab are the same mode (`store.prototypeMode`). Comment mode is the
-Comment tool, so C picks it and Esc returns to Select in the previous Edit or Prototype mode. Phones
+Comment tool, so C picks it and it stays through Esc; picking Edit or Prototype leaves it. Phones
 have room for Comment only in the strip; Prototype mode toggles from the Canvas actions sheet.
 
 - **Interactions** (Prototype tab): the picked element's interactions, each with trigger, action,

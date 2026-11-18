@@ -1,6 +1,6 @@
 import { CAPTURE_PREFIX, pasteWebCapture } from '../lib/webCapture'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { canEditOpenCanvas, pickedSelectors, roleOf, useStore } from '../lib/store'
+import { canEditOpenCanvas, defaultTool, pickedSelectors, roleOf, useStore } from '../lib/store'
 import { followPageInUrl } from '../lib/pageUrl'
 import { MOD_KEY, PRESENT_SHORTCUT_HINT, isControlTarget, isTypingTarget } from '../lib/keys'
 import { enterSelection, exitSelection, selectSibling } from '../lib/selectionKeys'
@@ -372,11 +372,12 @@ export function CanvasPage({
     connect(canvasId, guest)
     return () => {
       disconnect()
+      const leavingTool = defaultTool(roleOf(useStore.getState()))
       useStore.getState().setCanvas(null)
       useStore.getState().setPresences([])
       useStore.getState().setCanvasNotFound(false)
       select(null)
-      useStore.getState().setTool('select')
+      useStore.getState().setTool(leavingTool)
       clearHistory()
     }
   }, [canvasId, guest, select])

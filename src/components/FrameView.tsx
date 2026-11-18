@@ -1,7 +1,7 @@
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ElementComment, Frame } from '../../shared/types'
-import { canEditOpenCanvas, pickedSelectors, useStore } from '../lib/store'
+import { canEditOpenCanvas, pickedSelectors, pinsShown as pinsVisible, useStore } from '../lib/store'
 import { isCanvasElement } from '../lib/drawing'
 import { isLayerLocked, standaloneSelector } from '../lib/layerEdits'
 import { documentRect } from '../lib/frameBleed'
@@ -912,8 +912,8 @@ export const FrameView = memo(function FrameView({
   const frameComments = useStore((s) => s.comments).filter((c) => c.frameId === frame.id)
   /* only thread roots get a pin; replies live inside the root's popover */
   const comments = frameComments.filter((c) => !c.parentId && !c.resolvedAt)
-  /* ⇧C hides the pins (an open thread stays); the Comment tool shows them */
-  const pinsShown = useStore((s) => s.viewOptions.comments || s.tool === 'comment')
+  /* ⇧C hides the pins (an open thread stays); picking the Comment tool shows them */
+  const pinsShown = useStore(pinsVisible)
   /* a pin being dragged stays mounted: its release listeners live on it */
   const draggedPin = useStore((s) => s.commentDrag?.id)
   const [probe, setProbe] = useState<ProbeHit | null>(null)

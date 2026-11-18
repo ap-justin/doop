@@ -21,6 +21,8 @@
         seed: (canvas) => {
           clearHistory()
           useStore.getState().setCanvas(canvas)
+          /* an editor's canvas opens on Comment; these suites exercise Select */
+          useStore.getState().setTool('select')
         },
         viewport: (viewport) => useStore.getState().setViewport(viewport),
         comments: (comments) => useStore.getState().setComments(comments),

@@ -33,6 +33,8 @@
             createdAt: 0,
             updatedAt: 0,
           })
+          /* an editor's canvas opens on Comment; these suites exercise Select */
+          useStore.getState().setTool('select')
         },
         /* the canvas's design tokens, as the room would send them */
         tokens: (tokens, modes) => useStore.getState().setTokensLocal(tokens, modes ?? []),

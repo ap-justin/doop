@@ -114,9 +114,9 @@ function handle(msg: ServerMessage) {
         /* drops a tool the role does not allow, e.g. on a rejoin after the
          owner turned the link to view-only */
         s.setRole(msg.canvas.role ?? 'edit')
-        /* someone who cannot edit came to look: they start on the Hand tool,
+        /* someone who can neither edit nor comment came to look: they start on the Hand tool,
          the way Figma opens a file for a viewer. A reconnect keeps their pick. */
-        if (firstJoin && !roleAllows(msg.canvas.role ?? 'edit', 'edit')) s.setTool('hand')
+        if (firstJoin && !roleAllows(msg.canvas.role ?? 'edit', 'comment')) s.setTool('hand')
       }
       s.setPresences(msg.presences)
       s.setActivity(msg.activity)

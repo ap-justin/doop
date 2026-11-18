@@ -18,6 +18,8 @@
         seed: (frames, role = 'edit') => {
           clearHistory()
           useStore.getState().setCanvas({ id: 'c', name: 'Clipboard', frames, role, createdAt: 0, updatedAt: 0 })
+          /* an editor's canvas opens on Comment; these suites exercise Select */
+          useStore.getState().setTool('select')
           useStore.getState().select(null)
           useStore.getState().setLayersOpen(false)
           useStore.setState({ uiHidden: true })
