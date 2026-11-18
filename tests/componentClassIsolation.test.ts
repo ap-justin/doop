@@ -311,6 +311,14 @@ describe('isolateClasses', () => {
     expect(out.template).toContain('<div class="row" data-doop-instance="inner">')
   })
 
+  it('keeps a class a nested component’s root wears, so this component’s rule still places it', () => {
+    const template = (mark: string) =>
+      `<div class="root"><span class="btn">a</span><div class="btn" data-doop-instance="inner"></div><doop-use component="Tag" class="pill"></doop-use><i class="pill"></i><b class="${mark}"></b></div>`
+    const out = isolate(template('mark'), '.btn { color: red } .pill { gap: 4px } .mark { color: blue }')
+    expect(out.template).toBe(template('mark__in-abc'))
+    expect(out.css).toBe('.btn { color: red } .pill { gap: 4px } .mark__in-abc { color: blue }')
+  })
+
   it('changes nothing when fed its own output', () => {
     const once = isolate(
       '<div class="root"><button class="chip selected" onclick="go()">x</button><span class="sl"></span></div>',

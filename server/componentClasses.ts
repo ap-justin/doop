@@ -65,17 +65,18 @@ export function naturalCss(css: string, componentId: string): string {
  * A frame's own rules must not reach into a placed component: its `.sl` rule would match the
  * component's `sl` element too. So the classes the component's stylesheet styles are renamed,
  * in its template and in its stylesheets alike, with the component's id as the suffix.
- * Left alone: the root's classes (the frame places and sizes that element), classes the
- * stylesheet never names (utility classes), classes a script, style, inline handler or prototype
- * interaction in the template reads, and anything inside a nested instance, which is its own
- * component's. Renaming twice changes nothing, so a main regenerated from a renamed template
- * derives the same one again.
+ * Left alone: the root's classes (the frame places and sizes that element), classes a nested
+ * component's root wears (this component's rules place it), classes the stylesheet never names
+ * (utility classes), classes a script, style, inline handler or prototype interaction in the
+ * template reads, and anything inside a nested instance, which is its own component's. Renaming
+ * twice changes nothing, so a main regenerated from a renamed template derives the same one again.
  */
 export function isolateClasses(parts: ClassedParts, componentId: string): ClassedParts {
   const root = parseTemplateRoot(parts.template)
   if (!root) return parts
   const suffix = isolatedName('', componentId)
   const rootClasses = new Set(classesOf(root))
+  const nestedRootClasses = new Set<string>()
   const inner: Element[] = []
   let sources = ''
   const stack: Element[] = [root]
@@ -86,7 +87,10 @@ export function isolateClasses(parts: ClassedParts, componentId: string): Classe
       continue
     }
     if (el !== root) {
-      if (el.tagName === USE_TAG || attrOf(el, INSTANCE_ATTR) !== undefined) continue
+      if (el.tagName === USE_TAG || attrOf(el, INSTANCE_ATTR) !== undefined) {
+        for (const name of classesOf(el)) nestedRootClasses.add(name)
+        continue
+      }
       inner.push(el)
     }
     stack.push(...el.childNodes.filter(isElement))
@@ -98,7 +102,12 @@ export function isolateClasses(parts: ClassedParts, componentId: string): Classe
       .flatMap(classesOf)
       .filter(
         (name) =>
-          CLASS_NAME.test(name) && !name.endsWith(suffix) && !rootClasses.has(name) && styled.has(name) && !read(name),
+          CLASS_NAME.test(name) &&
+          !name.endsWith(suffix) &&
+          !rootClasses.has(name) &&
+          !nestedRootClasses.has(name) &&
+          styled.has(name) &&
+          !read(name),
       ),
   )
   if (!names.size) return parts
