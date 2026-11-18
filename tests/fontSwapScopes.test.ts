@@ -180,10 +180,13 @@ describe('a swap is an annotation', () => {
 
       /* the same read is live: a person's edit files exactly one version (the swapped
          document it replaced, so the swap filed none of its own) and drops the sign-off */
-      const versionsOf = async () => (await (await owner.get(`/api/frames/${frameId}/versions`)).json()) as { id: string }[]
+      const versionsOf = async () =>
+        (await (await owner.get(`/api/frames/${frameId}/versions`)).json()) as { id: string }[]
       const edited = await owner.patch(`/api/frames/${frameId}`, { html: '<main>A different screen</main>' })
       expect(edited.status).toBe(200)
-      await expect.poll(async () => (await versionsOf()).length, { timeout: 10_000 }).toBeGreaterThan(versionsBefore.length)
+      await expect
+        .poll(async () => (await versionsOf()).length, { timeout: 10_000 })
+        .toBeGreaterThan(versionsBefore.length)
       const filed = await versionsOf()
       expect(filed).toHaveLength(versionsBefore.length + 1)
       const replaced = await (await owner.get(`/api/frames/${frameId}/versions/${filed[0]!.id}`)).json()

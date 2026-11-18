@@ -114,7 +114,10 @@ const fontKey = (font: CustomFont) => faceKey(font.family, font.weight, font.sty
 function retargetFaceRule(rule: string, from: string, to: CustomFont): string {
   const source = new RegExp(`url\\(\\s*(["']?)${escapeRegExp(from)}\\1\\s*\\)(\\s*format\\([^)]*\\))?`, 'gi')
   return rule
-    .replace(source, (_, _quote, format?: string) => `url(${cssString(to.url)})${format ? ` format("${to.format}")` : ''}`)
+    .replace(
+      source,
+      (_, _quote, format?: string) => `url(${cssString(to.url)})${format ? ` format("${to.format}")` : ''}`,
+    )
     .replace(/(font-weight\s*:\s*)[^;}]*/i, (_, name: string) => `${name}${to.weight}`)
     .replace(/(font-style\s*:\s*)[^;}]*/i, (_, name: string) => `${name}${to.style}`)
 }

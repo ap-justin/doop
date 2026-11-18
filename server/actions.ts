@@ -13,13 +13,7 @@ import {
   recordUndo,
   transaction,
 } from './journal.ts'
-import {
-  dedupeIssues,
-  prepareChunk,
-  prepareFrameHtml,
-  referencesComponent,
-  rederiveFromMains,
-} from './components.ts'
+import { dedupeIssues, prepareChunk, prepareFrameHtml, referencesComponent, rederiveFromMains } from './components.ts'
 import { rewriteComponentCss } from './componentEngine.ts'
 import { COMPONENT_ATTR, isDeleted, isHollow, type ComponentDef, type ComponentIssue } from '../shared/components.ts'
 import { MAX_DECISION_CHARS } from '../shared/designDecisions.ts'

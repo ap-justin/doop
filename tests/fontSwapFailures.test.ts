@@ -6,8 +6,13 @@ import { fontFaceRule } from '../shared/fonts'
    hits may fail the upload or stop the canvases after it. In process: the store is real,
    persistence is stubbed, and the announcement is the one the library module makes. */
 
-const stored = vi.hoisted(() => ({ rows: new Map<string, { id: string; html: string }[]>(), failLoad: new Set<string>() }))
-const holding = vi.hoisted(() => ({ find: vi.fn<(ids: readonly string[], texts: readonly string[]) => Promise<string[]>>() }))
+const stored = vi.hoisted(() => ({
+  rows: new Map<string, { id: string; html: string }[]>(),
+  failLoad: new Set<string>(),
+}))
+const holding = vi.hoisted(() => ({
+  find: vi.fn<(ids: readonly string[], texts: readonly string[]) => Promise<string[]>>(),
+}))
 
 vi.mock('../server/db/persist.ts', () => ({
   saveToken: () => {},
@@ -61,7 +66,13 @@ let counter = 0
 /** a face of the family under its own file, so each test's canvases are its own */
 function oldFace(): CustomFont {
   const n = ++counter
-  return { ...NEXT, id: `old-${n}`, url: `https://doop.test/a/old-${n}.woff2`, fileName: `old-${n}.woff2`, createdAt: 1 }
+  return {
+    ...NEXT,
+    id: `old-${n}`,
+    url: `https://doop.test/a/old-${n}.woff2`,
+    fileName: `old-${n}.woff2`,
+    createdAt: 1,
+  }
 }
 
 /** a workspace canvas whose one frame's font block names `face`; written as an annotation so the

@@ -31,12 +31,14 @@ const frame = (id: string, canvasId: string, html: string) => ({
 beforeAll(async () => {
   const { migrate } = await import('drizzle-orm/pglite/migrator')
   await migrate(db as unknown as ReturnType<typeof pgliteDrizzle>, { migrationsFolder: 'server/db/migrations' })
-  await db.insert(t.frames).values([
-    frame('f-listed', 'listed', '<p>loads /a/one.woff2</p>'),
-    frame('f-other-two', 'other-two', '<p>loads /a/two.woff2</p>'),
-    frame('f-other-one', 'other-one', '<p>loads /a/one.woff2</p>'),
-    frame('f-plain', 'plain', '<p>no fonts</p>'),
-  ])
+  await db
+    .insert(t.frames)
+    .values([
+      frame('f-listed', 'listed', '<p>loads /a/one.woff2</p>'),
+      frame('f-other-two', 'other-two', '<p>loads /a/two.woff2</p>'),
+      frame('f-other-one', 'other-one', '<p>loads /a/one.woff2</p>'),
+      frame('f-plain', 'plain', '<p>no fonts</p>'),
+    ])
 })
 
 describe('canvasesWithFrameText', () => {
