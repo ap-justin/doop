@@ -97,13 +97,14 @@ describe('toolForKey', () => {
 })
 
 describe('toolAfterEscape', () => {
-  it('stays in Comment, sends every other tool back to Select', () => {
+  it('stays in Comment', () => {
     expect(toolAfterEscape('comment')).toBe('comment')
-    expect(toolAfterEscape('hand')).toBe('select')
-    expect(toolAfterEscape('select')).toBe('select')
   })
 
-  it('V goes to Select (Edit)', () => {
-    expect(toolForKey('v')).toBe('select')
-  })
+  it.each(['hand', 'frame', 'rectangle', 'circle', 'path', 'text', 'zoom', 'select'] as const)(
+    'sends %s back to Select',
+    (tool) => {
+      expect(toolAfterEscape(tool)).toBe('select')
+    },
+  )
 })

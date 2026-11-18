@@ -16,10 +16,13 @@
       /* the canvas page as an editor has it open, with all its chrome; the
          test hands it the canvas the room would have sent */
       window.canvasPageHarness = {
-        seed: (frames, canvas) =>
+        seed: (frames, canvas) => {
           useStore
             .getState()
-            .setCanvas({ id: 'c', name: 'Canvas', frames, role: 'edit', createdAt: 0, updatedAt: 0, ...canvas }),
+            .setCanvas({ id: 'c', name: 'Canvas', frames, role: 'edit', createdAt: 0, updatedAt: 0, ...canvas })
+          /* an editor's canvas opens on Comment; these suites exercise Select */
+          useStore.getState().setTool('select')
+        },
         setPages: (pages) => useStore.getState().setPages(pages, 'c'),
       }
       createRoot(document.getElementById('root')).render(

@@ -364,7 +364,7 @@ export const useStore = create<State>((set, get) => ({
   setCanvas: (canvas) =>
     set((s) => ({
       /* a canvas being opened starts in the tool its viewer's role defaults to */
-      ...(canvas && canvas.id !== s.canvas?.id ? { tool: defaultTool(canvas.role ?? 'edit') } : {}),
+      ...(canvas && canvas.id !== s.canvas?.id ? { tool: defaultTool(roleOf({ canvas })) } : {}),
       /* the stage paints frames in array order: back to front */
       canvas: canvas && { ...canvas, frames: sortByStack(canvas.frames) },
       /* leaving a canvas (CanvasPage unmounts or its id changes) ends ⌘.
@@ -680,7 +680,7 @@ export const useStore = create<State>((set, get) => ({
         canvas: { ...s.canvas, role },
         tool: !toolAllowed(s.tool, role)
           ? defaultTool(role)
-          : /* a role that arrives after the canvas opened (a commenter's, once known) starts in its default */
+          : /* a promotion from view (Select was all it had) starts in the new role's default */
             s.tool === 'select' && !roleAllows(roleOf(s), 'comment')
             ? defaultTool(role)
             : s.tool,

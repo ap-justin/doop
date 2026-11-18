@@ -816,9 +816,10 @@ export function Stage({
     }
   }, [])
 
-  /* Bare shortcut keys pick a tool, Esc returns to Select — bare keys
-     only (no modifiers), and never while typing in a field. Esc is the one
-     exception for canvas composers: it drops their draft and returns to Select.
+  /* Bare shortcut keys pick a tool, Esc returns to Select (the Comment tool
+     stays) — bare keys only (no modifiers), and never while typing in a field.
+     Esc is the one exception for canvas composers: it drops their draft, and
+     leaves the tool as it would anywhere else.
      Other fields keep Escape for their own editing behavior. Z is the Zoom
      tool only while it is held: letting go returns to the tool
      before it. The key-up is read by `code` too, since ⌥ held for a zoom-out
@@ -1304,7 +1305,7 @@ const MODES: { id: Mode; label: PlainMessageKey; icon: React.ReactNode }[] = [
 ]
 
 /** The rail's foot: Edit, Prototype or Comment mode. Comment mode is the
- *  Comment tool (C picks it, Esc drops it back to Select); the other two are
+ *  Comment tool (C picks it, and it stays through Esc); the other two are
  *  `prototypeMode` with any other tool. Radios, not pressed buttons, so the
  *  tool highlight (which follows `aria-pressed`) never lands on them; the
  *  chosen mode wears a ring instead of the sliding fill. Like any radio

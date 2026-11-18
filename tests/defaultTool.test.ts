@@ -48,4 +48,25 @@ describe('default tool', () => {
     useStore.getState().setCanvas(canvas('a', 'edit'))
     expect(useStore.getState().tool).toBe('comment')
   })
+
+  it('an editor holding a drawing tool who is demoted to commenter lands on Comment', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('rectangle')
+    useStore.getState().setRole('comment')
+    expect(useStore.getState().tool).toBe('comment')
+  })
+
+  it('an editor holding a drawing tool who is demoted to viewer lands on Select', () => {
+    useStore.getState().setCanvas(canvas('a', 'edit'))
+    useStore.getState().setTool('rectangle')
+    useStore.getState().setRole('view')
+    expect(useStore.getState().tool).toBe('select')
+  })
+
+  it('a commenter keeps Hand through a role update', () => {
+    useStore.getState().setCanvas(canvas('a', 'comment'))
+    useStore.getState().setTool('hand')
+    useStore.getState().setRole('comment')
+    expect(useStore.getState().tool).toBe('hand')
+  })
 })

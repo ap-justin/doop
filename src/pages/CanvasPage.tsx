@@ -372,11 +372,12 @@ export function CanvasPage({
     connect(canvasId, guest)
     return () => {
       disconnect()
+      const leavingTool = defaultTool(roleOf(useStore.getState()))
       useStore.getState().setCanvas(null)
       useStore.getState().setPresences([])
       useStore.getState().setCanvasNotFound(false)
       select(null)
-      useStore.getState().setTool(defaultTool(roleOf(useStore.getState())))
+      useStore.getState().setTool(leavingTool)
       clearHistory()
     }
   }, [canvasId, guest, select])

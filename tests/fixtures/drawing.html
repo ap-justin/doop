@@ -20,7 +20,10 @@
       /* the canvas page dispatches the registry's chords (⇧C among them) */
       installActionKeys()
       window.drawingHarness = {
-        seed: (canvas) => useStore.getState().setCanvas(canvas),
+        seed: (canvas) => {
+          useStore.getState().setCanvas(canvas)
+          useStore.getState().setTool('select')
+        },
         comments: (comments) => useStore.getState().setComments(comments),
         viewport: (viewport) => useStore.getState().setViewport(viewport),
         camera: () => useStore.getState().viewport,
