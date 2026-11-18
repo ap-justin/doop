@@ -19,10 +19,6 @@ import { isolateClasses } from '../server/componentClasses.ts'
 import { COMPONENT_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
-/*
- * A frame's own `.sl` rule used to match the `sl` element inside a placed Select, since the
- * instance carries the component's markup under the component's class names.
- */
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
 
 const doc = (body: string, css = '') =>
@@ -37,6 +33,10 @@ const classesIn = (html: string, tag: RegExp) => [...html.matchAll(tag)].map((ma
 /** The class of the component's label element, in an instance or in its template. */
 const labelClass = (html: string) => /<span class="([^"]*)"/.exec(html)![1]!
 
+/*
+ * Without isolation a frame's own `.sl` rule matches the `sl` element inside a placed Select, since
+ * the instance carries the component's markup under the component's class names.
+ */
 describe('a placed component and the classes of its frame', () => {
   let canvasId: string
   beforeEach(() => {

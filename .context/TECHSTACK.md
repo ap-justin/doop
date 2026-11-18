@@ -939,8 +939,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   component. When a main is read into its definition, the classes its stylesheet styles on elements
   below the root are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike. The
   root's classes (the frame places and sizes it), classes the stylesheet never names (utilities),
-  classes a script, style, inline `on*` handler or prototype attribute inside the template reads, and nested instances (their own component's)
-  stay. The rename is idempotent, so a main regenerated from a renamed template derives the same one.
+  classes a script, style, inline `on*` handler or prototype attribute inside the template reads, and
+  nested instances (their own component's) stay. The rename is idempotent, so a main regenerated from a renamed template derives the same one.
   It is the one derivation point: library snapshots, imports, `sync_component`,
   `update_library_everywhere` and detached copies (`withDetachedCss` keeps the renamed classes; its
   `__<id>` keyframe rewrite does not match the `__in-` suffix) all copy the renamed fields.
