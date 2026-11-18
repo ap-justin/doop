@@ -57,7 +57,7 @@ export function CanvasComments({
     (c): c is CanvasComment => isCanvasComment(c) && c.pageId === pageId && !c.parentId && !c.resolvedAt,
   )
   const [openThread, setOpenThread] = useState<string | null>(null)
-  /* ⇧C hides the pins (an open thread stays); the Comment tool shows them */
+  /* ⇧C hides the pins (an open thread stays); picking the Comment tool shows them */
   const pinsShown = useStore(pinsVisible)
   const rootRef = useRef<HTMLDivElement>(null)
   /* a pin being dragged, from this layer or out of a frame: its ghost rides

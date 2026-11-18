@@ -912,7 +912,7 @@ export const FrameView = memo(function FrameView({
   const frameComments = useStore((s) => s.comments).filter((c) => c.frameId === frame.id)
   /* only thread roots get a pin; replies live inside the root's popover */
   const comments = frameComments.filter((c) => !c.parentId && !c.resolvedAt)
-  /* ⇧C hides the pins (an open thread stays); the Comment tool shows them */
+  /* ⇧C hides the pins (an open thread stays); picking the Comment tool shows them */
   const pinsShown = useStore(pinsVisible)
   /* a pin being dragged stays mounted: its release listeners live on it */
   const draggedPin = useStore((s) => s.commentDrag?.id)
