@@ -1166,7 +1166,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   page's Agents pane (`workspacePanesFor`) and the home hero composer, the rail's Community /
   Automations / Integrations, the share dialog's community listing and the GitHub and integration
   import cards. Tests: `lean.test.ts`, `leanHttp.test.ts`, `leanFlag.test.tsx`, `leanHides.test.tsx`,
-  `leanPolish.test.tsx`, `leanPolishServer.test.ts`, `leanBilling.test.ts`, `leanImportPicker.test.tsx`, `leanTaskFeedback.test.ts`.
+  `leanPolish.test.tsx`, `leanPolishServer.test.ts`, `leanBilling.test.ts`, `leanImportPicker.test.tsx`, `leanTaskFeedback.test.ts`,
+  `accountSettingsLean.test.tsx`, the lean cases in `commentNotifications.test.ts`.
 - Stall watchdog (`server/stallWatchdog.ts`, watcher thread `server/stallWatcher.mjs`): every
   operation (`server/workBudget.ts` opens one per HTTP request, MCP or resident tool call and queued
   frame) is written into a `SharedArrayBuffer` when it begins and cleared when it ends, and the main
