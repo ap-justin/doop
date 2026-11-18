@@ -1145,8 +1145,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
   `residentMention` makes an @mention a plain comment (not queued, metered or refused);
   `commentNotifications.onCanvasEvent` queues no comment digest email, whatever a person's switch
-  says, and Settings → Your account hides the Notifications card (`useLean()`); sign-in,
-  verification, password reset and invite emails are unchanged;
+  says, and Settings → Your account hides the Notifications card (`useLean()`); verification,
+  password reset, invite and canvas-share emails are unchanged;
   `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
   lines. `get_guide` (`doopGuide()` for the main guide, `guideFor` for the comments topic) and
   the `reply_to_comment` description read the same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
