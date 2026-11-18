@@ -3018,9 +3018,9 @@ const swapReplacedFaces = atomic(function swapReplacedFaces(canvasId: string, re
 })
 
 /** A component's CSS with replaced faces swapped, read the way its main's next write reads
- *  it (components.ts `prepareMains`), so that write files no revision: a definition whose
- *  main is on this canvas takes the canvas library's rule for every face that library now
- *  has from another file; a library copy, with no main here, takes the replacement. */
+ *  it (components.ts `prepareMains`), so that write files no revision: in a definition whose
+ *  main is on this canvas, a rule loading an upload the canvas library no longer lists points
+ *  at the library's file for that face; a library copy, with no main here, takes the replacement. */
 function swappedFaceCss(canvas: Canvas, def: ComponentDef, replaced: readonly FaceReplacement[]) {
   if (def.source?.library) return { css: swapFaceRules(def.css, replaced), rawCss: swapFaceRules(def.rawCss, replaced) }
   const library = fontsForCanvas(canvas)
