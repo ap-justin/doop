@@ -22,7 +22,7 @@ import {
   updateComponent,
 } from '../server/componentActions.ts'
 import { isolateClasses } from '../server/componentClasses.ts'
-import { COMPONENT_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
+import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
@@ -85,7 +85,7 @@ describe('a placed component and the classes of its frame', () => {
     const def = makeSelect()
     const html = store.getFrame(place(def.id).id)!.html
     expect(html).toContain(`${INSTANCE_ATTR}="${def.id}"`)
-    expect(labelClass(html)).not.toBe('sl')
+    expect(labelClass(html)).toBe(`sl__in-${def.id}`)
     /* the frame's own element still wears the frame's class, and its rule is untouched */
     expect(html).toContain('<p class="sl">')
     expect(html).toContain('.sl { position: absolute; left: 0 }')
@@ -100,7 +100,10 @@ describe('a placed component and the classes of its frame', () => {
     expect(def.rawCss).toContain(`.${renamed}`)
     /* the instance's outer element keeps its class, so the frame can still place and size it */
     expect(def.template).toMatch(/^<div class="select"/)
-    expect(def.css).toContain('.select')
+    const selectRule = def.css.split('\n').find((line) => line.includes('.select') && line.includes('display: flex'))
+    expect(selectRule).toContain('{ display: flex; flex-direction: column }')
+    expect(def.css).not.toContain('.select__in-')
+    expect(def.rawCss).not.toContain('.select__in-')
   })
 
   it('is the same on every write, and a main saved again is not a new revision', () => {
@@ -108,8 +111,34 @@ describe('a placed component and the classes of its frame', () => {
     const frame = store.getFrame(def.mainFrameId!)!
     actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
     const again = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
-    expect(again.template).toBe(def.template)
-    expect(again.rev).toBe(def.rev)
+    const stored = (candidate: typeof def) => ({
+      template: candidate.template,
+      css: candidate.css,
+      rawCss: candidate.rawCss,
+      head: candidate.head,
+      props: candidate.props,
+      slots: candidate.slots,
+      rev: candidate.rev,
+    })
+    expect(stored(again)).toEqual(stored(def))
+  })
+
+  it('wears the renamed class on an instance beside its own main, and its rule reaches that frame', () => {
+    const def = makeSelect()
+    const frame = store.getFrame(def.mainFrameId!)!
+    const withUse = frame.html.replace('</body>', `<doop-use component="${def.id}" label="Again"></doop-use></body>`)
+    actions.updateFrame(frame.id, { html: withUse }, actor)
+    const html = store.getFrame(frame.id)!.html
+    /* the main keeps the name its own sheet styles; the instance wears the renamed one */
+    expect(classesIn(html, /<span class="([^"]*)"/g)).toEqual(['sl', `sl__in-${def.id}`])
+    const sheet = new RegExp(`<style ${CSS_ATTR}="${def.id}">\n([\\s\\S]*?)\n</style>`).exec(html)![1]!
+    expect(sheet).toBe(def.css)
+    const rule = sheet.split('\n').find((line) => line.includes(`.sl__in-${def.id}`) && line.includes('color: #333'))
+    expect(rule).toContain('{ color: #333; font-size: 12px }')
+    /* an instance beside the main is not a change to the component */
+    const after = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
+    expect(after.template).toBe(def.template)
+    expect(after.rev).toBe(def.rev)
   })
 
   it('migrates a definition saved before the rename on the next write of its main', () => {
@@ -124,8 +153,36 @@ describe('a placed component and the classes of its frame', () => {
     const frame = store.getFrame(def.mainFrameId!)!
     actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
     const migrated = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
-    expect(labelClass(migrated.template)).toMatch(/^sl__in-/)
+    expect(labelClass(migrated.template)).toBe(`sl__in-${def.id}`)
     expect(migrated.rev).toBe(def.rev + 1)
+  })
+
+  it('leaves an old-style definition and its placed instance alone until its main is written, then renames all three parts', () => {
+    const def = makeSelect()
+    const page = place(def.id)
+    const placed = store.getFrame(page.id)!.html
+    const plain = (text: string) => text.replaceAll(/__in-\w+/g, '')
+    store.saveComponent(canvasId, {
+      ...def,
+      template: plain(def.template),
+      css: plain(def.css),
+      rawCss: plain(def.rawCss),
+    })
+    const old = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
+    expect(old.template).toBe(plain(def.template))
+    expect(old.css).toBe(plain(def.css))
+    expect(old.rawCss).toBe(plain(def.rawCss))
+    expect(old.css).not.toContain('__in-')
+    expect(store.getFrame(page.id)!.html).toBe(placed)
+
+    const frame = store.getFrame(def.mainFrameId!)!
+    actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
+    const migrated = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
+    expect(migrated.template).toBe(def.template)
+    expect(migrated.css).toBe(def.css)
+    expect(migrated.rawCss).toBe(def.rawCss)
+    expect(migrated.css).toContain(`.sl__in-${def.id}`)
+    expect(migrated.rawCss).toContain(`.sl__in-${def.id}`)
   })
 
   it('leaves a detached instance looking as it did', () => {
@@ -236,10 +293,13 @@ describe('a placed component and the classes of its frame', () => {
       },
       'abc',
     )
-    expect(out.template).toContain('<span class="card tw-text-sm">')
-    expect(out.template).toContain('class="open hit__in-abc"')
-    expect(out.css).toContain('.hit__in-abc')
-    expect(out.css).toContain('.open {')
+    const renamed = '.card .hit__in-abc { color: red } .open { color: blue }'
+    expect(out.template).toBe(
+      `<div class="card"><span class="card tw-text-sm">a</span><i class="open hit__in-abc"></i><script>el.classList.add('open')</script></div>`,
+    )
+    expect(out.css).toBe(renamed)
+    expect(out.rawCss).toBe(renamed)
+    expect(out.css).not.toContain('.card__in-')
     expect(isolateClasses(out, 'abc')).toEqual(out)
   })
 })
@@ -282,13 +342,14 @@ describe('isolateClasses', () => {
   })
 
   it('keeps a class a prototype interaction targets', () => {
-    const out = isolate(
-      `<div class="page"><a data-doop-on="click" data-doop-action="scroll-to:.faq">FAQ</a><a data-doop-interactions='[{"on":"click","action":"scroll-to:.top"}]'>Top</a><section class="faq"></section><header class="top"></header></div>`,
-      '.faq { margin: 0 } .top { margin: 0 }',
-    )
-    expect(out.template).toContain('<section class="faq">')
-    expect(out.template).toContain('<header class="top">')
-    expect(out).toEqual({ template: out.template, css: '.faq { margin: 0 } .top { margin: 0 }', rawCss: out.rawCss })
+    const template = (plain: string) =>
+      `<div class="page"><a data-doop-on="click" data-doop-action="scroll-to:.faq">FAQ</a><a data-doop-interactions='[{"on":"click","action":"scroll-to:.top"}]'>Top</a><section class="faq"></section><header class="top"></header><i class="${plain}"></i></div>`
+    const css = '.faq { margin: 0 } .top { margin: 0 } .plain { margin: 0 }'
+    const out = isolate(template('plain'), css)
+    /* the two the interactions target stay; one nothing reads is renamed, so the pass ran */
+    expect(out.template).toBe(template('plain__in-abc'))
+    expect(out.css).toBe('.faq { margin: 0 } .top { margin: 0 } .plain__in-abc { margin: 0 }')
+    expect(out.rawCss).toBe(out.css)
   })
 
   it('keeps a class a <style> inside the template names', () => {
@@ -317,6 +378,68 @@ describe('isolateClasses', () => {
     const out = isolate(template('mark'), '.btn { color: red } .pill { gap: 4px } .mark { color: blue }')
     expect(out.template).toBe(template('mark__in-abc'))
     expect(out.css).toBe('.btn { color: red } .pill { gap: 4px } .mark__in-abc { color: blue }')
+  })
+
+  it.each([
+    { form: ':is()', css: ':is(.a,.sl) { color: red }', expected: ':is(.a__in-abc,.sl__in-abc) { color: red }' },
+    { form: ':where()', css: ':where(.sl) { color: red }', expected: ':where(.sl__in-abc) { color: red }' },
+    { form: ':not()', css: 'div:not(.sl) { margin: 0 }', expected: 'div:not(.sl__in-abc) { margin: 0 }' },
+    {
+      form: ':has()',
+      css: '.a:has(.sl) { margin: 0 }',
+      expected: '.a__in-abc:has(.sl__in-abc) { margin: 0 }',
+    },
+    {
+      form: '@media',
+      css: '@media (min-width: 37.5em) { .sl { color: red } }',
+      expected: '@media (min-width: 37.5em) { .sl__in-abc { color: red } }',
+    },
+    {
+      form: '@container',
+      css: '@container card (min-width: 20em) { .sl { color: red } }',
+      expected: '@container card (min-width: 20em) { .sl__in-abc { color: red } }',
+    },
+    {
+      form: '@supports',
+      css: '@supports (display: grid) { .sl { display: grid } }',
+      expected: '@supports (display: grid) { .sl__in-abc { display: grid } }',
+    },
+    {
+      form: 'nested CSS',
+      css: '.a { .sl { color: red } &.sl { color: blue } }',
+      expected: '.a__in-abc { .sl__in-abc { color: red } &.sl__in-abc { color: blue } }',
+    },
+    {
+      form: '@keyframes with fractional stops',
+      css: '@keyframes pulse { 0% { opacity: 0 } 50.5% { opacity: .5 } 100% { opacity: 1 } } .sl { animation: pulse 1.5s }',
+      expected:
+        '@keyframes pulse { 0% { opacity: 0 } 50.5% { opacity: .5 } 100% { opacity: 1 } } .sl__in-abc { animation: pulse 1.5s }',
+    },
+    {
+      form: 'pseudo-elements and states',
+      css: '.sl::before { content: "" } .sl:hover { color: red }',
+      expected: '.sl__in-abc::before { content: "" } .sl__in-abc:hover { color: red }',
+    },
+    {
+      form: 'leading-dot lengths',
+      css: '.sl { margin: .5em 1.5em }',
+      expected: '.sl__in-abc { margin: .5em 1.5em }',
+    },
+    {
+      form: 'quoted and spaced url()',
+      css: '.pdf { background: url("a.pdf") } .sl { background: url( a.pdf ) }',
+      expected: '.pdf__in-abc { background: url("a.pdf") } .sl__in-abc { background: url( a.pdf ) }',
+    },
+    {
+      form: 'comments and strings',
+      css: '/* .sl { color: red } */ .sl { content: ".sl" } .a::after { content: \'.sl\' }',
+      expected: '/* .sl { color: red } */ .sl__in-abc { content: ".sl" } .a__in-abc::after { content: \'.sl\' }',
+    },
+  ])('renames only the class selectors in $form', ({ css, expected }) => {
+    const out = isolate('<div class="root"><span class="sl a pdf">x</span></div>', css)
+    expect(out.css).toBe(expected)
+    expect(out.rawCss).toBe(expected)
+    expect(isolateClasses(out, 'abc')).toEqual(out)
   })
 
   it('changes nothing when fed its own output', () => {
@@ -349,43 +472,169 @@ describe('isolateClasses', () => {
 })
 
 describe('a library component placed on another canvas', () => {
+  interface Def {
+    id: string
+    name: string
+    template: string
+    css: string
+    rawCss: string
+    source?: { canvasId: string; library?: boolean }
+    mainFrameId: string | null
+  }
+  interface CanvasBody {
+    frames: { id: string; html: string }[]
+    components: Def[]
+  }
   let server: Server
   let owner: Client
+  let libraryId: string
+  let consumerId: string
+  let otherId: string
+  let selectId: string
+  let consumerFrameId: string
+  let otherFrameId: string
 
   const json = async <T>(res: Response) => (await res.json()) as T
+  const canvasOf = async (id: string) => json<CanvasBody>(await owner.get(`/api/canvases/${id}`))
+  const defOf = async (canvas: string) => (await canvasOf(canvas)).components.find((def) => def.name === 'Select')!
+  const frameHtml = async (canvas: string, frameId: string) =>
+    (await canvasOf(canvas)).frames.find((frame) => frame.id === frameId)!.html
+  const makeCanvas = async (name: string, workspaceId?: string) =>
+    (await json<{ id: string }>(await owner.post('/api/canvases', { name, workspaceId }))).id
+  const publish = async () =>
+    expect((await owner.post(`/api/canvases/${libraryId}/library/publish`, {})).status).toBe(200)
+  const edit = async (html: string, css: string) => {
+    const res = await owner.patch(`/api/canvases/${libraryId}/components/${selectId}`, { html, css })
+    expect(res.status, await res.clone().text()).toBe(200)
+  }
+  /** Every component id a text carries a suffix for: one entry when the rename is consistent and single. */
+  const suffixes = (text: string) => [...new Set([...text.matchAll(/__in-(\w+)/g)].map((match) => match[1]!))]
+  const place = async (canvas: string, name: string) =>
+    (
+      await json<{ id: string }>(
+        await owner.post(`/api/canvases/${canvas}/frames`, {
+          name,
+          html: doc('<doop-use component="Select" label="Pick"></doop-use>', '.sl { position: absolute }'),
+        }),
+      )
+    ).id
 
   beforeAll(async () => {
     server = await startServer()
     owner = await new Client(server).signUp('owner@isolation.test', 'Owner')
-  }, 60_000)
-
-  afterAll(() => server?.stop())
-
-  it('arrives with its classes renamed, so the consumer’s `.sl` rule does not reach it', async () => {
     const workspaceId = (await json<{ id: string }>(await owner.post('/api/workspaces', { name: 'Team' }))).id
-    const make = async (name: string) =>
-      (await json<{ id: string }>(await owner.post('/api/canvases', { name, workspaceId }))).id
-    const libraryId = await make('Kit')
-    const consumerId = await make('App')
+    libraryId = await makeCanvas('Kit', workspaceId)
+    consumerId = await makeCanvas('App', workspaceId)
+    otherId = await makeCanvas('Other app', workspaceId)
     const made = await owner.post(`/api/canvases/${libraryId}/components`, {
       name: 'Select',
       html: '<div class="select"><span class="sl" data-doop-prop="label">Size</span></div>',
       css: '.select { display: flex } .sl { color: #333 }',
     })
     expect(made.status, await made.clone().text()).toBe(200)
-    expect((await owner.post(`/api/canvases/${libraryId}/library/publish`, {})).status).toBe(200)
-    const frame = await json<{ id: string }>(
-      await owner.post(`/api/canvases/${consumerId}/frames`, {
-        name: 'Screen',
-        html: doc('<doop-use component="Select" label="Pick"></doop-use>', '.sl { position: absolute }'),
-      }),
+    selectId = (await json<{ component: Def }>(made)).component.id
+    await publish()
+    consumerFrameId = await place(consumerId, 'Screen')
+    otherFrameId = await place(otherId, 'Other screen')
+  }, 60_000)
+
+  afterAll(() => server?.stop())
+
+  it('arrives with its classes renamed, so the consumer’s `.sl` rule does not reach it', async () => {
+    const html = await frameHtml(consumerId, consumerFrameId)
+    expect(classesIn(html, /<span class="([^"]*)"/g)).toEqual([`sl__in-${selectId}`])
+    /* the consumer's own rule is the one it wrote */
+    expect(/<style>([^<]*)<\/style>/.exec(html)![1]).toBe('.sl { position: absolute }')
+
+    const library = await defOf(libraryId)
+    const consumer = await defOf(consumerId)
+    expect(library.id).toBe(selectId)
+    expect(consumer.id).toBe(selectId)
+    expect(consumer.source).toMatchObject({ canvasId: libraryId, library: true })
+    expect(classesIn(consumer.template, /<span class="([^"]*)"/g)).toEqual([`sl__in-${selectId}`])
+    for (const part of ['template', 'css', 'rawCss'] as const) {
+      expect(suffixes(consumer[part]), part).toEqual([selectId])
+      expect(consumer[part], part).toBe(library[part])
+    }
+    expect(consumer.css).toContain(`.sl__in-${selectId}`)
+  })
+
+  it('carries a new styled inner class through sync_component with one suffix', async () => {
+    await edit(
+      '<div class="select"><span class="sl" data-doop-prop="label">Size</span><i class="badge">!</i></div>',
+      '.select { display: flex } .sl { color: #333 } .badge { color: red }',
     )
-    const canvas = await json<{
-      frames: { id: string; html: string }[]
-      components: { name: string; css: string }[]
-    }>(await owner.get(`/api/canvases/${consumerId}`))
-    const html = canvas.frames.find((candidate) => candidate.id === frame.id)!.html
-    expect(classesIn(html, /<span class="([^"]*)"/g)[0]).toMatch(/^sl__/)
-    expect(canvas.components.find((def) => def.name === 'Select')!.css).toMatch(/\.sl__/)
+    await publish()
+    const res = await owner.post(`/api/canvases/${consumerId}/components/${selectId}/sync`, {})
+    expect(res.status, await res.clone().text()).toBe(200)
+
+    const library = await defOf(libraryId)
+    const consumer = await defOf(consumerId)
+    expect(classesIn(consumer.template, /<i class="([^"]*)"/g)).toEqual([`badge__in-${selectId}`])
+    const badgeRule = consumer.css.split('\n').find((line) => line.includes(`.badge__in-${selectId}`))
+    expect(badgeRule).toContain('{ color: red }')
+    for (const part of ['template', 'css', 'rawCss'] as const) {
+      expect(suffixes(consumer[part]), part).toEqual([selectId])
+      expect(consumer[part], part).toBe(library[part])
+    }
+    const html = await frameHtml(consumerId, consumerFrameId)
+    expect(classesIn(html, /<i class="([^"]*)"/g)).toEqual([`badge__in-${selectId}`])
+    expect(/<style>([^<]*)<\/style>/.exec(html)![1]).toBe('.sl { position: absolute }')
+  })
+
+  it('carries one more styled inner class through update_library_everywhere, to a canvas two publications behind', async () => {
+    await edit(
+      '<div class="select"><span class="sl" data-doop-prop="label">Size</span><i class="badge">!</i><b class="chip">x</b></div>',
+      '.select { display: flex } .sl { color: #333 } .badge { color: red } .chip { color: green }',
+    )
+    await publish()
+    const res = await owner.post(`/api/canvases/${libraryId}/library/update-consumers`, {})
+    expect(res.status, await res.clone().text()).toBe(200)
+
+    const library = await defOf(libraryId)
+    for (const [canvas, frameId] of [
+      [consumerId, consumerFrameId],
+      [otherId, otherFrameId],
+    ] as const) {
+      const def = await defOf(canvas)
+      expect(classesIn(def.template, /<b class="([^"]*)"/g), canvas).toEqual([`chip__in-${selectId}`])
+      expect(def.css.split('\n').find((line) => line.includes(`.chip__in-${selectId}`)), canvas).toContain(
+        '{ color: green }',
+      )
+      for (const part of ['template', 'css', 'rawCss'] as const) {
+        expect(suffixes(def[part]), `${canvas} ${part}`).toEqual([selectId])
+        expect(def[part], `${canvas} ${part}`).toBe(library[part])
+      }
+      const html = await frameHtml(canvas, frameId)
+      expect(classesIn(html, /<b class="([^"]*)"/g), canvas).toEqual([`chip__in-${selectId}`])
+      expect(classesIn(html, /<span class="([^"]*)"/g), canvas).toEqual([`sl__in-${selectId}`])
+    }
+  })
+
+  it('imports from a canvas outside any workspace with natural names in the main and one suffix in the definition', async () => {
+    const sourceId = await makeCanvas('Loose kit')
+    const targetId = await makeCanvas('Loose app')
+    const made = await owner.post(`/api/canvases/${sourceId}/components`, {
+      name: 'Select',
+      html: '<div class="select"><span class="sl" data-doop-prop="label">Size</span></div>',
+      css: '.select { display: flex } .sl { color: #333 }',
+    })
+    expect(made.status, await made.clone().text()).toBe(200)
+    const imported = await owner.post(`/api/canvases/${targetId}/components/import`, {
+      sourceCanvasId: sourceId,
+      component: 'Select',
+    })
+    expect(imported.status, await imported.clone().text()).toBe(200)
+
+    const source = await defOf(sourceId)
+    const target = await defOf(targetId)
+    expect(target.id).toBe(source.id)
+    for (const part of ['template', 'css', 'rawCss'] as const) {
+      expect(suffixes(target[part]), part).toEqual([source.id])
+      expect(target[part], part).toBe(source[part])
+    }
+    const main = (await canvasOf(targetId)).frames.find((frame) => frame.id === target.mainFrameId)!
+    expect(classesIn(main.html, /<span class="([^"]*)"/g)).toEqual(['sl'])
+    expect(main.html.includes('__in-')).toBe(false)
   })
 })
