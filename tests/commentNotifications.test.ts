@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Canvas, Frame } from '../shared/types.ts'
+import { stubEnv, unstubAllEnvs } from './envStub.ts'
 
 /* The notifier sits on the canvas event bus behind the real action layer, so
    these tests post real comments and only stub what leaves the process:
@@ -32,6 +33,7 @@ vi.mock('../server/workspaces.ts', () => ({
 const actions = await import('../server/actions.ts')
 const events = await import('../server/events.ts')
 const notify = await import('../server/commentNotifications.ts')
+const { emailCanvasInvite } = await import('../server/inviteLinks.ts')
 const { store } = await import('../server/store.ts')
 
 const CANVAS: Canvas = {
@@ -249,5 +251,31 @@ describe('recipientsFor', () => {
     const lonely: Canvas = { ...CANVAS, memberIds: [], workspaceId: undefined }
     const root = await comment('Note to self', 'alice')
     expect(notify.recipientsFor(lonely, root, 'user')).toEqual([])
+  })
+})
+
+describe('lean mode', () => {
+  afterEach(() => unstubAllEnvs())
+
+  it('queues and sends no comment email to anyone, for a new comment or a reply', async () => {
+    stubEnv('DOOP_LEAN', '1')
+    const root = await comment('Too small', 'alice')
+    actions.replyToComment(root.id, 'Agreed', 'dave', 'dave')
+    expect(notify.pendingBatches()).toBe(0)
+    await deliver()
+    expect(mocks.sendMail).not.toHaveBeenCalled()
+  })
+
+  it('still sends an invite email', async () => {
+    stubEnv('DOOP_LEAN', 'true')
+    await emailCanvasInvite({ name: 'Alice' }, 'new@example.com', 'Landing', 'https://doop.test/invite/t')
+    expect(sentTo()).toEqual(['new@example.com'])
+  })
+
+  it('sends the same comment email once lean is off', async () => {
+    stubEnv('DOOP_LEAN', '0')
+    await comment('Too small', 'alice')
+    await deliver()
+    expect(sentTo()).toEqual(['bob@example.com', 'carol@example.com'])
   })
 })

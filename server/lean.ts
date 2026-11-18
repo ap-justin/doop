@@ -7,7 +7,9 @@ import { mentionedRole, type AgentRole, type Roster } from '../shared/agents.ts'
  * agents, without the in-app Doop Agent and model accounts, new billing, Slack
  * and Linear, automations, GitHub and Meta import, Community, the desktop
  * connect relay, iOS live activities, Gemini cloud workers and the PostHog
- * relay. Image generation draws on the server's own keys only, and Stripe
+ * relay. Comment digest emails are never queued or sent, and Settings hides
+ * their switch; verification, password reset, invite and canvas-share emails
+ * are unchanged. Image generation draws on the server's own keys only, and Stripe
  * subscriptions already on file are still cancelled and seat-synced. Off, the
  * server is unchanged.
  *

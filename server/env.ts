@@ -211,7 +211,7 @@ const schema = {
   /* JSON; parsed and shape-checked where it is used so a parse error never
      echoes the worker secrets it contains */
   DOOP_GEMINI_CLOUD_WORKERS: str({ default: undefined }),
-  /* `1` turns lean mode on (server/lean.ts); any other value is off, never a boot failure */
+  /* `1` or `true` (any case) turns lean mode on (server/lean.ts); any other value is off, never a boot failure */
   DOOP_LEAN: str({ default: undefined }),
   CHATGPT_CONNECT_DISABLED: bool({ default: false }),
   CHATGPT_OAUTH_ISSUER: origin({ default: 'https://auth.openai.com' }),
