@@ -250,7 +250,7 @@
   family (name id 16, else 1), weight (a variable font's `wght` range) and style from the bytes,
   with no font library dependency (zlib for WOFF, brotli for WOFF2), every decompression bounded
   before it starts (1 MB per metadata table, 48 MB for a WOFF2 stream). A weight class that is not
-  a multiple of 100 falls back to a weight word in the subfamily name (Regular and Book name none); Italic
+  a multiple of 100 falls back to a weight word in the subfamily name (Regular, Normal and Book name none); Italic
   or Oblique as a word of the subfamily or file name marks italic when the flags say normal.
   `upload_font` takes `weight` / `style` overrides on every input, and its result reports
   `weight_from` / `style_from` (file, name or override). Bytes are an ordinary `/a/` asset, so
