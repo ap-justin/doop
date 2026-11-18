@@ -277,8 +277,9 @@ data-doop-carried>` blocks a moved or pasted layer brings (`rewriteCarriedCss`; 
   and the instance frames of a canvas that designs with another library but holds a copy of the
   component. Faces replaced before the swap existed are healed by `actions.repairStaleFaces`, run
   after the asset-ref reconcile at every boot: `persist.fontAssetsByCanvas` names, from
-  `asset_refs`, the canvases whose frames load a font file their library lacks, and only those are
-  read; their font blocks, carried and component stylesheets, the canvas's own components and
+  `asset_refs`, the canvases whose frames load a font file their library lacks, and
+  `persist.styleBlocksLoading` cuts out the stylesheets that do, so a canvas is read only where
+  healing would change something; their font blocks, carried and component stylesheets, the canvas's own components and
   published copies (`repairPublishedFaces`) are rewritten as annotation writes, a failure is logged
   per canvas, and a second run changes nothing. A component or published
   rule is pointed at the new file in place, keeping its family and descriptors. A main's

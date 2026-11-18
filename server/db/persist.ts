@@ -714,6 +714,37 @@ export async function fontAssetsByCanvas(exts: readonly string[]): Promise<Map<s
   return byCanvas
 }
 
+/** Every `<style>` block, by canvas, that loads one of `assetIds` in a stored frame of
+ *  `canvasIds`: the stylesheets only, cut out by Postgres, so a caller can tell whether a
+ *  rewrite would change them before reading any canvas's frame html. */
+export async function styleBlocksLoading(
+  canvasIds: readonly string[],
+  assetIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const byCanvas = new Map<string, string[]>()
+  if (!canvasIds.length || !assetIds.length) return byCanvas
+  /* the body is "anything but a closing tag", not a lazy `.*?`: in Postgres' regex the
+     first quantifier sets the whole match's greed, so `[^>]*` would make it greedy */
+  const list = (ids: readonly string[]) =>
+    sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )
+  const result = await db.execute(sql`
+    select distinct f.canvas_id as "canvasId", m[1] as block
+    from asset_refs r
+    join frames f on f.id = r.frame_id
+    cross join lateral regexp_matches(f.html, '<style[^>]*>(?:[^<]|<(?!/style>))*</style>', 'gi') as m
+    where r.asset_id in (${list(assetIds)}) and f.canvas_id in (${list(canvasIds)})
+      and position('/a/' || r.asset_id || '.' in m[1]) > 0`)
+  for (const { canvasId, block } of (result as unknown as { rows: { canvasId: string; block: string }[] }).rows) {
+    const blocks = byCanvas.get(canvasId) ?? []
+    blocks.push(block)
+    byCanvas.set(canvasId, blocks)
+  }
+  return byCanvas
+}
+
 const frameMetaColumns = {
   id: t.frames.id,
   canvasId: t.frames.canvasId,

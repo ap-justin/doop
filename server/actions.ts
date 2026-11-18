@@ -43,11 +43,13 @@ import { onFacesReplaced, type FacesReplaced } from './fontReplaced.ts'
 import {
   rewriteCarriedCss,
   swapFaceRules,
+  withFontFaces,
   withLibraryFaceRules,
   type CustomFont,
   type FaceReplacement,
 } from '../shared/fonts.ts'
 import { extractAssetIds } from './assets.ts'
+import { FORMATS as FONT_FORMATS } from './fontFile.ts'
 import { fontsForCanvas } from './fonts.ts'
 import { withCanvasFaces, withCanvasFacesMidStream } from './canvasFaces.ts'
 import {
@@ -3023,10 +3025,15 @@ const swapReplacedFaces = atomic(function swapReplacedFaces(
   )
 })
 
-/** Annotation-write each frame of a canvas whose html `wants` and `rewrite` changes. */
-function rewriteFrameFaces(canvasId: string, wants: (html: string) => boolean, rewrite: (html: string) => string) {
+/** Annotation-write each frame of a canvas whose html `wants` and `rewrite` changes; how many were written. */
+function rewriteFrameFaces(
+  canvasId: string,
+  wants: (html: string) => boolean,
+  rewrite: (html: string) => string,
+): number {
   const canvas = store.getCanvas(canvasId)
-  if (!canvas) return
+  if (!canvas) return 0
+  let written = 0
   for (const frame of [...canvas.frames]) {
     if (streams.has(frame.id) || !wants(frame.html)) continue
     const html = rewrite(frame.html)
@@ -3034,9 +3041,11 @@ function rewriteFrameFaces(canvasId: string, wants: (html: string) => boolean, r
     const actor = resolveActor({ name: frame.updatedBy, kind: 'user' })
     const updated = store.updateFrame(frame.id, { html }, frame.updatedBy, { annotation: true })
     if (!updated) continue
+    written++
     afterCommit(() => thumbs.purge(frame.id))
     broadcast(canvasId, { type: 'frame:updated', frame: updated, actor })
   }
+  return written
 }
 
 /** A component's CSS with replaced faces swapped, read the way its main's next write reads
@@ -3128,61 +3137,117 @@ onFacesReplaced((event) => {
   if (unloaded.length) afterCommit(() => detached(() => void swapReplacedFacesWhenLoaded(unloaded, event)))
 })
 
-/** Faces whose files are font types: what an upload of a font stores. */
-const FONT_ASSET_EXTS = ['woff2', 'woff', 'ttf', 'otf']
+/** The file types a font upload stores. */
+const FONT_ASSET_EXTS = Object.values(FONT_FORMATS).map((format) => format.ext)
+
+/** A document's font rules healed against `library`: its font block rebuilt by `fontBlock`,
+ *  and each rule of its component and carried stylesheets that loads an upload the library
+ *  no longer lists pointed at the library's file for that face. */
+function healFaceRules(html: string, library: readonly CustomFont[], fontBlock: (html: string) => string): string {
+  const component = (css: string) => withLibraryFaceRules(css, library)
+  const carried = (css: string) => withLibraryFaceRules(css, library, { carried: true })
+  return rewriteCarriedCss(rewriteComponentCss(fontBlock(html), component), carried)
+}
+
+const timesLoaded = (text: string, assetId: string) => text.split(`/a/${assetId}.`).length - 1
+
+/** Whether healing would take a stale file out of any of these stored style blocks. A rule
+ *  for a family the library no longer has, a face it has no file for, or one in a stylesheet
+ *  Doop did not write stays as it is, so a canvas holding only those is never read. */
+function healsStyleBlocks(blocks: readonly string[], stale: ReadonlySet<string>, library: readonly CustomFont[]) {
+  return blocks.some((block) => {
+    const healed = healFaceRules(block, library, (html) => withFontFaces(html, library, { rebuild: true }))
+    return healed !== block && [...stale].some((id) => timesLoaded(healed, id) < timesLoaded(block, id))
+  })
+}
+
+/** Each component of a canvas, library copies included, with its face rules pointed at the
+ *  library's files, as `prepareMains` reads a main's; how many definitions were saved. A copy
+ *  is healed here too: its instances' stylesheets are, and the next write syncing them from
+ *  the definition would otherwise put the stale file back. */
+const repairFacesInComponents = atomic(function repairFacesInComponents(
+  canvasId: string,
+  library: readonly CustomFont[],
+): number {
+  let saved = 0
+  for (const def of [...store.getComponents(canvasId)]) {
+    const css = withLibraryFaceRules(def.css, library)
+    const rawCss = withLibraryFaceRules(def.rawCss, library)
+    if (css === def.css && rawCss === def.rawCss) continue
+    store.saveComponent(canvasId, { ...def, css, rawCss })
+    saved++
+  }
+  return saved
+})
 
 /** Heal what a replacement never named: frames, components and published copies whose font
- *  rules still load uploads their canvas's library no longer lists, though it has the family
- *  (faces replaced before the swap existed, or by a path that did not announce). Candidates
- *  come from the asset_refs projection, so no frame html is read until a canvas is known to
- *  load a font file its library lacks; each is then rewritten as the swap does (annotation
- *  writes, no version, sign-off kept). Idempotent: a second run finds nothing to rewrite.
- *  A failure is logged per canvas and never thrown. */
-export async function repairStaleFaces(): Promise<{ canvases: number; failed: number }> {
-  let loading: Map<string, Set<string>>
+ *  rules still load uploads their canvas's library no longer lists (faces replaced before the
+ *  swap existed, or by a path that did not announce). Candidates come from the asset_refs
+ *  projection and the stored style blocks that load those files, so a canvas's frame html is
+ *  read only where healing would change it; each is then rewritten as the swap does
+ *  (annotation writes, no version, sign-off kept). A canvas counts only when something was
+ *  written, so a second run counts and loads nothing. A failure is logged per canvas and
+ *  never thrown. */
+export async function repairStaleFaces(): Promise<{ canvases: number; published: number; failed: number }> {
+  let failed = 0
+  const staleByCanvas = new Map<string, Set<string>>()
+  let blocks = new Map<string, string[]>()
   try {
-    loading = await persist.fontAssetsByCanvas(FONT_ASSET_EXTS)
+    for (const [canvasId, ids] of await persist.fontAssetsByCanvas(FONT_ASSET_EXTS)) {
+      const canvas = store.getCanvas(canvasId)
+      const library = canvas ? fontsForCanvas(canvas) : []
+      if (!library.length) continue
+      const listed = new Set(library.flatMap((font) => [...extractAssetIds(font.url)]))
+      const stale = new Set([...ids].filter((id) => !listed.has(id)))
+      if (stale.size) staleByCanvas.set(canvasId, stale)
+    }
+    const staleIds = new Set([...staleByCanvas.values()].flatMap((ids) => [...ids]))
+    blocks = await persist.styleBlocksLoading([...staleByCanvas.keys()], [...staleIds])
   } catch (err) {
-    console.error('[fonts] repairing stale font rules: finding the canvases that load fonts failed:', err)
-    return { canvases: 0, failed: 1 }
+    failed++
+    console.error('[fonts] repairing stale font rules: finding the frames that load fonts failed:', err)
   }
   let canvases = 0
-  let failed = 0
   for (const canvas of store.allCanvases()) {
     const library = fontsForCanvas(canvas)
     if (!library.length) continue
-    const listed = new Set(library.flatMap((font) => [...extractAssetIds(font.url)]))
-    const stale = new Set([...(loading.get(canvas.id) ?? [])].filter((id) => !listed.has(id)))
-    const components = (canvas.components ?? []).some(
-      (def) => !def.source?.library && componentFacesStale(def, library),
-    )
-    if (!stale.size && !components) continue
+    const stale = staleByCanvas.get(canvas.id)
+    const frames = !!stale && healsStyleBlocks(blocks.get(canvas.id) ?? [], stale, library)
+    const components = (canvas.components ?? []).some((def) => componentFacesStale(def, library))
+    if (!frames && !components) continue
     try {
-      await store.withCanvas(canvas.id, async () =>
+      const written = await store.withCanvas(canvas.id, async () =>
         runOperation('fonts.repair', canvas.id, () => {
-          swapReplacedFacesInComponents(canvas.id, [])
-          if (!stale.size) return
-          const repair = (css: string) => withLibraryFaceRules(css, library)
-          rewriteFrameFaces(
-            canvas.id,
-            (html) => [...stale].some((id) => html.includes(`/a/${id}.`)),
-            (html) => rewriteCarriedCss(rewriteComponentCss(withCanvasFaces(canvas.id, html), repair), repair),
+          const current = store.getCanvas(canvas.id)
+          if (!current) return 0
+          /* the library as it is now: a face replaced while the canvas loaded must not be undone */
+          const library = fontsForCanvas(current)
+          const saved = repairFacesInComponents(canvas.id, library)
+          if (!stale || !frames) return saved
+          return (
+            saved +
+            rewriteFrameFaces(
+              canvas.id,
+              (html) => [...stale].some((id) => html.includes(`/a/${id}.`)),
+              (html) => healFaceRules(html, library, (doc) => withCanvasFaces(canvas.id, doc)),
+            )
           )
         }),
       )
-      canvases++
+      if (written) canvases++
     } catch (err) {
       failed++
       console.error(`[fonts] stale font rules not repaired in canvas ${canvas.id}:`, err)
     }
   }
+  let published = 0
   try {
-    runOperation('fonts.repair', undefined, () => repairPublishedFaces())
+    published = runOperation('fonts.repair', undefined, () => repairPublishedFaces()).length
   } catch (err) {
     failed++
     console.error('[fonts] stale font rules not repaired in published library components:', err)
   }
-  return { canvases, failed }
+  return { canvases, published, failed }
 }
 
 function componentFacesStale(def: ComponentDef, library: readonly CustomFont[]): boolean {

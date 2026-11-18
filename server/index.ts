@@ -229,8 +229,11 @@ reconcileAssetRefs()
     /* font rules left behind by faces replaced earlier: found through the refs just rebuilt */
     return actions.repairStaleFaces()
   })
-  .then(({ canvases, failed }) => {
-    if (canvases || failed) console.log(`[fonts] stale font rules: ${canvases} canvas(es) repaired, ${failed} failed`)
+  .then(({ canvases, published, failed }) => {
+    if (canvases || published || failed)
+      console.log(
+        `[fonts] stale font rules: ${canvases} canvas(es) and ${published} published component(s) repaired, ${failed} failed`,
+      )
   })
   .catch((e) => console.error('[assets] reconcile or font repair failed', e))
 /* image descriptions for agents: recover the backlog and listen for new assets. */
