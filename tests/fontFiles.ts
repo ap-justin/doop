@@ -9,6 +9,8 @@ import { brotliCompressSync, deflateSync } from 'node:zlib'
 interface FaceSpec {
   family: string
   subfamily?: string
+  /** typographic subfamily (name id 17), which real fonts use for names legacy id 2 cannot hold, such as Medium */
+  typographicSubfamily?: string
   /** typographic family (name id 16), when it differs from the legacy one */
   typographic?: string
   weight?: number
@@ -26,6 +28,7 @@ function nameTable(spec: FaceSpec): Buffer {
     [1, spec.family],
     [2, spec.subfamily ?? 'Regular'],
     ...(spec.typographic ? ([[16, spec.typographic]] as [number, string][]) : []),
+    ...(spec.typographicSubfamily ? ([[17, spec.typographicSubfamily]] as [number, string][]) : []),
   ]
   const strings = names.map(([, value]) => utf16be(value))
   const header = Buffer.alloc(6 + names.length * 12)

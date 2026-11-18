@@ -1318,12 +1318,23 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'upload_font',
     description:
-      'Add a font file (ttf/otf/woff/woff2, one face per file, max 10 MB) to the font library this canvas designs with, from a public URL of the file itself (not a CSS file). Then name the family in CSS (font-family: "Family", sans-serif) and Doop writes the @font-face. This is how a font that is not in the canvas library or the hosted fonts gets into a design: never inline a font file as a base64 data: URI. Upload each weight and style you use as its own file.',
+      'Add a font file (ttf/otf/woff/woff2, one face per file, max 10 MB) to the font library this canvas designs with, from a public URL of the file itself (not a CSS file). Then name the family in CSS (font-family: "Family", sans-serif) and Doop writes the @font-face. This is how a font that is not in the canvas library or the hosted fonts gets into a design: never inline a font file as a base64 data: URI. Upload each weight and style you use as its own file. The result says which weight and style were stored and whether each came from the file, a name or an override; when the file misreports its face, upload it again with weight and style set.',
     input_schema: {
       type: 'object',
       properties: {
         source_url: { type: 'string', description: 'Public http(s) URL of the font file' },
         file_name: { type: 'string', description: 'The file name the library shows, e.g. "Oxanium-Light.ttf"' },
+        weight: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 1000,
+          description: 'CSS font-weight to store instead of the file’s own (a variable font’s range included)',
+        },
+        style: {
+          type: 'string',
+          enum: ['normal', 'italic'],
+          description: 'font-style to store instead of the file’s own',
+        },
       },
       required: ['source_url'],
     },
@@ -2107,9 +2118,19 @@ async function runResidentTool(
         )
       }
       case 'upload_font': {
-        const raw = block.input as { source_url?: unknown; file_name?: unknown }
+        const raw = block.input as { source_url?: unknown; file_name?: unknown; weight?: unknown; style?: unknown }
         if (typeof raw.source_url !== 'string' || !raw.source_url)
           return fail('source_url must be the public URL of a font file')
+        /* refused before the download, as MCP's schema does: dropping a bad override stores the misread again */
+        const weight = raw.weight ?? undefined
+        const style = raw.style ?? undefined
+        if (
+          weight !== undefined &&
+          !(typeof weight === 'number' && Number.isInteger(weight) && weight >= 1 && weight <= 1000)
+        )
+          return fail('weight must be a whole number from 1 to 1000, e.g. 500')
+        if (style !== undefined && style !== 'normal' && style !== 'italic')
+          return fail('style must be "normal" or "italic"')
         /* the library the font joins is the asker's to change: a run nobody asked for adds none */
         if (!runState.requesterId) return fail('fonts are added for the person who asked; this run has none')
         const buf = await assets.fetchRemote(raw.source_url, MAX_FONT_BYTES)
@@ -2117,8 +2138,11 @@ async function runResidentTool(
           typeof raw.file_name === 'string' && raw.file_name
             ? raw.file_name
             : decodeURIComponent(new URL(raw.source_url).pathname.split('/').pop() ?? '') || 'font'
-        const font = await addCanvasFont(canvasId, { id: runState.requesterId, name: actor.name }, buf, name)
-        return ok(JSON.stringify(uploadedFontResult(font)))
+        const added = await addCanvasFont(canvasId, { id: runState.requesterId, name: actor.name }, buf, name, {
+          weight,
+          style,
+        })
+        return ok(JSON.stringify(uploadedFontResult(added)))
       }
       case 'search_images': {
         if (!imageSearch.photoSearchEnabled())

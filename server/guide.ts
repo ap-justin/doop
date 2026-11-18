@@ -202,7 +202,8 @@ export const LEAN_FRAMES = `- Frames carry markup, never files. A frame is sent 
   kind is refused and nothing is written. Put each heavy thing where it belongs:
   - Fonts: a family the canvas library or the hosted fonts already have is used by name alone.
     Any other font file goes into the library with upload_font, then is named in CSS: never an
-    @font-face with the file inlined.
+    @font-face with the file inlined. Read the weight and style the result reports; when a file
+    misreports its face, upload it again with weight and style set.
   - Pictures: a URL from search_images, search_icons, search_logos, generate_image or
     upload_asset. A vector is an inline <svg> element, or a URL-encoded data:image/svg+xml,…
     (no base64) for a small CSS background.
@@ -436,7 +437,8 @@ ${FRAME_STYLES}
 - Custom fonts: when get_canvas lists \`fonts\`, the team uploaded them — prefer them. Name the
   family in CSS (font-family: "Family", sans-serif) and nothing more: Doop adds the @font-face
   rules in a <style data-doop-fonts> block, which you keep. Never fetch them from Google Fonts.
-  A font that is neither in the library nor on Google Fonts goes in with upload_font first.
+  A font that is neither in the library nor on Google Fonts goes in with upload_font first;
+  check the weight and style it reports and pass weight/style when a file's own are wrong.
 - Pictures on the canvas: a frame listed with \`images\` references raster images people
   uploaded or pasted, each with a \`description\` of what it shows, written by a vision model
   (null while pending). Read them before designing, and call get_frame_screenshot on the
