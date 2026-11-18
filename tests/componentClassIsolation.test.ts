@@ -154,6 +154,102 @@ describe('a placed component and the classes of its frame', () => {
   })
 })
 
+describe('isolateClasses', () => {
+  const isolate = (template: string, css: string) => isolateClasses({ template, css, rawCss: css }, 'abc')
+
+  it('renames a class wherever a selector names it, compounds included', () => {
+    const css = 'span.sl { color: red } .a.b { color: blue } .sl-lg { color: green }'
+    const out = isolate('<div class="root"><span class="sl a b">x</span><i class="sl-lg"></i></div>', css)
+    expect(out.template).toContain('<span class="sl__in-abc a__in-abc b__in-abc">')
+    expect(out.template).toContain('<i class="sl-lg__in-abc">')
+    expect(out.css).toBe(
+      'span.sl__in-abc { color: red } .a__in-abc.b__in-abc { color: blue } .sl-lg__in-abc { color: green }',
+    )
+  })
+
+  it('keeps a state class on its compound, with or without a rule of its own', () => {
+    const template = '<div class="root"><button class="chip selected">x</button></div>'
+    const both = isolate(
+      template,
+      '.chip { padding: 4px } .chip.selected { color: red } .selected { font-weight: 500 }',
+    )
+    expect(both.template).toContain('class="chip__in-abc selected__in-abc"')
+    expect(both.css).toContain('.chip__in-abc.selected__in-abc { color: red }')
+    expect(both.css).toContain('.selected__in-abc { font-weight: 500 }')
+    const compoundOnly = isolate(template, '.chip { padding: 4px } .chip.selected { color: red }')
+    expect(compoundOnly.template).toContain('class="chip__in-abc selected__in-abc"')
+    expect(compoundOnly.css).toContain('.chip__in-abc.selected__in-abc { color: red }')
+  })
+
+  it('keeps a class an inline handler reads', () => {
+    const out = isolate(
+      `<div class="tabs"><button class="tab" onclick="this.closest('.tabs').querySelector('.pane').hidden = false">A</button><div class="pane"></div></div>`,
+      '.tab { color: red } .pane { padding: 8px }',
+    )
+    expect(out.template).toContain('<div class="pane">')
+    expect(out.css).toContain('.pane {')
+    expect(out.template).toContain('class="tab__in-abc"')
+  })
+
+  it('keeps a class a prototype interaction targets', () => {
+    const out = isolate(
+      `<div class="page"><a data-doop-on="click" data-doop-action="scroll-to:.faq">FAQ</a><a data-doop-interactions='[{"on":"click","action":"scroll-to:.top"}]'>Top</a><section class="faq"></section><header class="top"></header></div>`,
+      '.faq { margin: 0 } .top { margin: 0 }',
+    )
+    expect(out.template).toContain('<section class="faq">')
+    expect(out.template).toContain('<header class="top">')
+    expect(out).toEqual({ template: out.template, css: '.faq { margin: 0 } .top { margin: 0 }', rawCss: out.rawCss })
+  })
+
+  it('keeps a class a <style> inside the template names', () => {
+    const out = isolate(
+      '<div class="root"><style>.tip:hover { color: red }</style><i class="tip"></i><b class="mark"></b></div>',
+      '.tip { color: blue } .mark { color: green }',
+    )
+    expect(out.template).toContain('<i class="tip">')
+    expect(out.template).toContain('<b class="mark__in-abc">')
+  })
+
+  it('leaves a nested instance’s classes to its own component', () => {
+    const out = isolate(
+      '<div class="root"><span class="sl">a</span><div class="row" data-doop-instance="inner"><span class="sl">b</span></div><doop-use component="Btn"><span class="sl">c</span></doop-use></div>',
+      '.sl { color: red } .row { gap: 4px }',
+    )
+    expect(out.template).toContain('<span class="sl__in-abc">a</span>')
+    expect(out.template).toContain('<span class="sl">b</span>')
+    expect(out.template).toContain('<span class="sl">c</span>')
+    expect(out.template).toContain('<div class="row" data-doop-instance="inner">')
+  })
+
+  it('changes nothing when fed its own output', () => {
+    const once = isolate(
+      '<div class="root"><button class="chip selected" onclick="go()">x</button><span class="sl"></span></div>',
+      '.chip.selected { color: red } span.sl { color: blue } a[href$=".sl"] { color: green }',
+    )
+    expect(once.template).toContain('class="chip__in-abc selected__in-abc"')
+    expect(isolateClasses(once, 'abc')).toEqual(once)
+  })
+
+  it('does not read an escaped or non-ASCII class as its ASCII prefix', () => {
+    const out = isolate(
+      '<div class="root"><i class="card hover"></i></div>',
+      '.card { color: red } .cardé { color: blue } .hover\\:x { color: green } .hover { color: gray }',
+    )
+    expect(out.css).toBe(
+      '.card__in-abc { color: red } .cardé { color: blue } .hover\\:x { color: green } .hover__in-abc { color: gray }',
+    )
+  })
+
+  it('leaves dots in numbers, strings, comments and url() alone', () => {
+    const css =
+      '.pdf { opacity: .5; transition: color 1.5s } a[href$=".pdf"] { content: ".pdf" } /* .pdf */ .x { background: url(a.pdf) }'
+    const out = isolate('<div class="root"><a class="pdf">x</a></div>', css)
+    expect(out.css).toBe(
+      '.pdf__in-abc { opacity: .5; transition: color 1.5s } a[href$=".pdf"] { content: ".pdf" } /* .pdf */ .x { background: url(a.pdf) }',
+    )
+  })
+})
+
 describe('a library component placed on another canvas', () => {
   let server: Server
   let owner: Client
