@@ -28,7 +28,7 @@ vi.mock('../server/fonts.ts', async (importOriginal) => {
     ...real,
     fontsForCanvas: () => [],
     canUseScope: (scope: { workspaceId?: string }, userId: string) => !scope.workspaceId || userId === 'member',
-    /* the face and where its values came from are the real reader's, so an override's source is not asserted from a literal */
+    /* the real reader decides the face and each value's source, so a case asserts what it makes of the override */
     addFontDetailed: async (scope: unknown, user: { id: string }, buf: Buffer, fileName: string, override: unknown) => {
       added.push({ scope, user, fileName, size: buf.length })
       overrides.push(override)

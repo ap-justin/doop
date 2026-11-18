@@ -57,6 +57,6 @@ export function uploadedFontResult({ font, weightSource, styleSource }: AddedFon
     style: font.style,
     style_from: styleSource,
     css: `font-family: "${font.family}", sans-serif;`,
-    note: `Added to this canvas's font library. Name the family in CSS (${`font-family: "${font.family}"`}) and Doop writes the @font-face into the frame; never inline the file. Upload each weight and style you use as its own file. If weight or style above is not the face this file is, upload it again with weight and style set.`,
+    note: `Added to this canvas's font library. Name the family in CSS (${`font-family: "${font.family}"`}) and Doop writes the @font-face into the frame; never inline the file. Upload each weight and style you use as its own file. If the weight or style is wrong for this file, upload it again with weight and style set.`,
   }
 }
