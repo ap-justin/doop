@@ -1,4 +1,5 @@
-import { addFont, canUseScope, FontInputError } from './fonts.ts'
+import { addFontDetailed, canUseScope, FontInputError } from './fonts.ts'
+import type { FontOverride, FontValueSource } from './fontFile.ts'
 import { store } from './store.ts'
 import type { CustomFont, FontScope } from '../shared/fonts.ts'
 
@@ -33,18 +34,29 @@ export async function addCanvasFont(
   user: { id: string; name: string },
   buf: Buffer,
   fileName: string,
-): Promise<CustomFont> {
-  return addFont(scopeFor(canvasId, user.id), user, buf, fileName)
+  override: FontOverride = {},
+): Promise<AddedFont> {
+  return addFontDetailed(scopeFor(canvasId, user.id), user, buf, fileName, override)
 }
 
-/** What an agent is told once its font is in the library. */
-export function uploadedFontResult(font: CustomFont) {
+export interface AddedFont {
+  font: CustomFont
+  weightSource: FontValueSource
+  styleSource: FontValueSource
+}
+
+/** What an agent is told once its font is in the library, including where the
+ *  stored weight and style came from so a wrong read can be caught and redone
+ *  with `weight` / `style`. */
+export function uploadedFontResult({ font, weightSource, styleSource }: AddedFont) {
   return {
     ok: true,
     family: font.family,
     weight: font.weight,
+    weight_from: weightSource,
     style: font.style,
+    style_from: styleSource,
     css: `font-family: "${font.family}", sans-serif;`,
-    note: `Added to this canvas's font library. Name the family in CSS (${`font-family: "${font.family}"`}) and Doop writes the @font-face into the frame; never inline the file. Upload each weight and style you use as its own file.`,
+    note: `Added to this canvas's font library. Name the family in CSS (${`font-family: "${font.family}"`}) and Doop writes the @font-face into the frame; never inline the file. Upload each weight and style you use as its own file. If weight or style above is not the face this file is, upload it again with weight and style set.`,
   }
 }

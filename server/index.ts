@@ -711,6 +711,7 @@ app.put(['/u/:token', '/u/:token/:name'], async (req, res) => {
         { id: ticket.ownerId, name: ticket.uploadedBy },
         Buffer.concat(chunks),
         req.params.name ?? 'font',
+        ticket.fontOverride,
       )
       success = true
       return res.json(uploadedFontResult(added))

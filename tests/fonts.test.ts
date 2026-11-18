@@ -60,6 +60,96 @@ describe('readFontFile', () => {
     expect(readFontFile(woff2({ family: 'Flex', wght: [100, 900] })).weight).toBe('100 900')
   })
 
+  it('takes a standard weight from the subfamily name when the weight class is odd', () => {
+    const info = readFontFile(ttf({ family: 'Brand Sans', subfamily: 'Medium', weight: 565 }))
+    expect(info).toMatchObject({ weight: '500', weightSource: 'name' })
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Semi Bold Italic', weight: 632, italic: true }))).toMatchObject({
+      weight: '600',
+      style: 'italic',
+    })
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'DemiBold', weight: 599 })).weight).toBe('600')
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Extra Bold', weight: 799 })).weight).toBe('800')
+  })
+
+  it('keeps an odd weight class whose subfamily names nothing standard, and trusts round ones', () => {
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Condensed', weight: 565 }))).toMatchObject({
+      weight: '565',
+      weightSource: 'file',
+    })
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Medium', weight: 600 }))).toMatchObject({
+      weight: '600',
+      weightSource: 'file',
+    })
+  })
+
+  it('reads italic from the subfamily or file name when the flags say normal, so Regular is not replaced', () => {
+    const regular = readFontFile(ttf({ family: 'Brand Sans' }), 'Brand-Regular.ttf')
+    const italic = readFontFile(ttf({ family: 'Brand Sans', subfamily: 'Italic' }), 'Brand-Italic.ttf')
+    expect(regular).toMatchObject({ weight: '400', style: 'normal', styleSource: 'file' })
+    expect(italic).toMatchObject({ weight: '400', style: 'italic', styleSource: 'name' })
+    expect(readFontFile(ttf({ family: 'B' }), 'B-LightOblique.ttf')).toMatchObject({ style: 'italic' })
+    expect(readFontFile(ttf({ family: 'B', subfamily: 'Regular', italic: true })).styleSource).toBe('file')
+  })
+
+  it('prefers the typographic subfamily (name id 17) over the legacy one (id 2)', () => {
+    const medium = ttf({ family: 'B', subfamily: 'Regular', typographicSubfamily: 'Medium', weight: 565 })
+    expect(readFontFile(medium)).toMatchObject({ weight: '500', weightSource: 'name' })
+    const light = ttf({ family: 'B', subfamily: 'Bold', typographicSubfamily: 'Light', weight: 350 })
+    expect(readFontFile(light)).toMatchObject({ weight: '300', weightSource: 'name' })
+  })
+
+  it.each([
+    ['Hairline', '100'],
+    ['Ultra Light', '200'],
+    ['Ultra Bold', '800'],
+    ['Heavy', '900'],
+    ['Book', '400'],
+    ['Semi-Bold', '600'],
+    ['Semi Bold Italic', '600'],
+  ])('reads the weight %s names when the class is not a multiple of 100', (subfamily, weight) => {
+    expect(readFontFile(ttf({ family: 'B', typographicSubfamily: subfamily, weight: 565 }))).toMatchObject({
+      weight,
+      weightSource: 'name',
+    })
+  })
+
+  it.each(['Regular', 'Italic', ''])('keeps the file’s class when the subfamily %j names no weight', (subfamily) => {
+    expect(readFontFile(ttf({ family: 'B', subfamily, weight: 950 }))).toMatchObject({
+      weight: '950',
+      weightSource: 'file',
+    })
+  })
+
+  it.each([
+    ['Italiana-Regular.ttf', 'normal'],
+    ['Foo-Italic.ttf', 'italic'],
+    ['Foo-BoldItalic.ttf', 'italic'],
+    ['B-LightOblique.ttf', 'italic'],
+  ])('reads the style of the file name %s', (fileName, style) => {
+    expect(readFontFile(ttf({ family: 'B' }), fileName).style).toBe(style)
+  })
+
+  it('lets an override win over the file', () => {
+    const file = ttf({ family: 'Brand Sans', subfamily: 'Italic', weight: 700, italic: true })
+    expect(readFontFile(file, 'x.ttf', { weight: 500, style: 'normal' })).toMatchObject({
+      weight: '500',
+      weightSource: 'override',
+      style: 'normal',
+      styleSource: 'override',
+    })
+    expect(readFontFile(ttf({ family: 'B' }), 'x.ttf', { style: 'italic' })).toMatchObject({
+      weight: '400',
+      weightSource: 'file',
+      style: 'italic',
+    })
+  })
+
+  it('keeps a variable font’s range unless told otherwise', () => {
+    const flex = woff2({ family: 'Flex', subfamily: 'Medium', weight: 565, wght: [100, 900] })
+    expect(readFontFile(flex)).toMatchObject({ weight: '100 900', weightSource: 'file' })
+    expect(readFontFile(flex, '', { weight: 450 }).weight).toBe('450')
+  })
+
   it('reads a real WOFF2: transformed glyph tables and multi-byte table lengths', () => {
     const real = readFileSync(new URL('./fixtures/fonts/nunito-sans-bold-italic.woff2', import.meta.url))
     expect(readFontFile(real)).toMatchObject({ format: 'woff2', family: 'Nunito Sans', weight: '700', style: 'italic' })

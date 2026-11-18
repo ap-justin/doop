@@ -4,7 +4,8 @@ import { db } from './db/index.ts'
 import * as t from './db/schema.ts'
 import { env } from './env.ts'
 import { storeAsset } from './assets.ts'
-import { readFontFile } from './fontFile.ts'
+import * as storage from './storage.ts'
+import { readFontFile, type FontOverride, type FontValueSource } from './fontFile.ts'
 import { isWorkspaceMember } from './workspaces.ts'
 import { unlimitedFonts } from './entitlements.ts'
 import { FREE_FONT_FAMILIES } from '../shared/billing.ts'
@@ -83,19 +84,39 @@ export function fontsForCanvas(canvas: { workspaceId?: string | null; ownerId?: 
 
 /** Add a font file to a library. A file for a face the library already has
  *  (same family, weight and style) replaces it, so re-uploading a fixed
- *  version needs no delete first. */
+ *  version needs no delete first; so does the same file stored earlier under
+ *  another weight or style, so a re-upload correcting a misread leaves one face. */
 export async function addFont(
   scope: FontScope,
   user: { id: string; name: string },
   buf: Buffer,
   fileName: string,
+  override: FontOverride = {},
 ): Promise<CustomFont> {
+  return (await addFontDetailed(scope, user, buf, fileName, override)).font
+}
+
+/** `addFont`, also saying where the stored weight and style came from. */
+export async function addFontDetailed(
+  scope: FontScope,
+  user: { id: string; name: string },
+  buf: Buffer,
+  fileName: string,
+  override: FontOverride = {},
+): Promise<{ font: CustomFont; weightSource: FontValueSource; styleSource: FontValueSource }> {
+  if (
+    override.weight !== undefined &&
+    !(Number.isInteger(override.weight) && override.weight >= 1 && override.weight <= 1000)
+  )
+    throw new FontInputError('weight must be a whole number from 1 to 1000')
+  if (override.style !== undefined && override.style !== 'normal' && override.style !== 'italic')
+    throw new FontInputError('style must be "normal" or "italic"')
   if (buf.length === 0) throw new FontInputError('empty file')
   if (buf.length > MAX_FONT_BYTES)
     throw new FontInputError(`file is ${(buf.length / 1024 / 1024).toFixed(1)} MB — the limit is 10 MB`)
   let info
   try {
-    info = readFontFile(buf)
+    info = readFontFile(buf, fileName, override)
   } catch (e) {
     throw new FontInputError(e instanceof Error ? e.message : 'the font file could not be read')
   }
@@ -128,13 +149,15 @@ export async function addFont(
       uploadedBy: user.id,
       createdAt: Date.now(),
     }
-    const replaced = [...rows.values()].filter(
-      (r) =>
-        inScope(r, scope, user.id) &&
-        r.family.toLowerCase() === row.family.toLowerCase() &&
-        r.weight === row.weight &&
-        r.style === row.style,
+    const family = [...rows.values()].filter(
+      (r) => inScope(r, scope, user.id) && r.family.toLowerCase() === row.family.toLowerCase(),
     )
+    const sameFace = family.filter((r) => r.weight === row.weight && r.style === row.style)
+    const sameBytes = await rowsHoldingBytes(
+      family.filter((r) => !sameFace.includes(r)),
+      buf,
+    )
+    const replaced = [...sameFace, ...sameBytes]
     await db.transaction(async (tx) => {
       await tx.insert(t.fonts).values(row)
       if (replaced.length)
@@ -147,8 +170,21 @@ export async function addFont(
     })
     rows.set(row.id, row)
     for (const old of replaced) rows.delete(old.id)
-    return toFont(row)
+    return { font: toFont(row), weightSource: info.weightSource, styleSource: info.styleSource }
   })
+}
+
+/** The rows whose stored file is exactly `buf`. Rows hold no hash, so a row
+ *  of the same size is read back and compared; a file that cannot be read
+ *  counts as different. */
+async function rowsHoldingBytes(candidates: FontRow[], buf: Buffer): Promise<FontRow[]> {
+  const same: FontRow[] = []
+  for (const r of candidates) {
+    if (r.size !== buf.length) continue
+    const stored = await storage.getObject(`${r.assetId}.${r.ext}`).catch(() => null)
+    if (stored?.equals(buf)) same.push(r)
+  }
+  return same
 }
 
 const libraryChains = new Map<string, Promise<unknown>>()

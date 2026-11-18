@@ -2,6 +2,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CustomFont } from '../shared/fonts'
+import { ttf } from './fontFiles.ts'
+import type { FontOverride } from '../server/fontFile.ts'
 
 vi.mock('../server/db/persist.ts', () => ({
   saveFrame: () => {},
@@ -19,28 +21,43 @@ vi.mock('../server/db/persist.ts', () => ({
 
 /* the library itself is tested in fontLibrary.test.ts: here, what reaches it */
 const added: { scope: unknown; user: { id: string }; fileName: string; size: number }[] = []
+const overrides: unknown[] = []
 vi.mock('../server/fonts.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../server/fonts.ts')>()
   return {
     ...real,
     fontsForCanvas: () => [],
     canUseScope: (scope: { workspaceId?: string }, userId: string) => !scope.workspaceId || userId === 'member',
-    addFont: async (scope: unknown, user: { id: string }, buf: Buffer, fileName: string): Promise<CustomFont> => {
+    /* the face and where its values came from are the real reader's, so an override's source is not asserted from a literal */
+    addFontDetailed: async (scope: unknown, user: { id: string }, buf: Buffer, fileName: string, override: unknown) => {
       added.push({ scope, user, fileName, size: buf.length })
-      return {
+      overrides.push(override)
+      const { readFontFile } = await import('../server/fontFile.ts')
+      const info = readFontFile(buf, fileName, override as FontOverride)
+      const font: CustomFont = {
         id: 'f1',
-        family: 'Oxanium',
-        weight: '300',
-        style: 'normal',
+        family: info.family,
+        weight: info.weight,
+        style: info.style,
         format: 'truetype',
         url: 'https://doop.test/a/x.ttf',
         fileName,
         size: buf.length,
         createdAt: 1,
       }
+      return { font, weightSource: info.weightSource, styleSource: info.styleSource }
     },
   }
 })
+
+const fetched: string[] = []
+vi.mock('../server/assets.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../server/assets.ts')>()),
+  fetchRemote: async (url: string) => {
+    fetched.push(url)
+    return ttf({ family: 'Oxanium', weight: 300 })
+  },
+}))
 
 const { inlineDataRefusal, newInlineData } = await import('../server/inlineData.ts')
 const actions = await import('../server/actions.ts')
@@ -108,6 +125,7 @@ describe('over MCP', () => {
       () => {},
     )
     added.length = 0
+    overrides.length = 0
     canvasId = store.createCanvas('lean', 'owner').id
     const server = buildMcpServer('Owner', 'owner')
     client = new Client({ name: 'inline-test', version: '1.0.0' })
@@ -264,18 +282,56 @@ describe('over MCP', () => {
   })
 
   it('adds a font to the canvas owner’s library and says how to use it', async () => {
-    const data = Buffer.from('font bytes').toString('base64')
+    const file = ttf({ family: 'Oxanium', weight: 300 })
+    const data = file.toString('base64')
     const result = await call('upload_font', { canvas_id: canvasId, data, file_name: 'Oxanium-Light.ttf' })
     expect(result.isError).toBe(false)
-    expect(JSON.parse(result.text)).toMatchObject({ family: 'Oxanium', css: 'font-family: "Oxanium", sans-serif;' })
+    expect(JSON.parse(result.text)).toMatchObject({
+      family: 'Oxanium',
+      weight: '300',
+      weight_from: 'file',
+      style_from: 'file',
+      css: 'font-family: "Oxanium", sans-serif;',
+    })
     expect(added).toEqual([
       {
         scope: { personal: true },
         user: expect.objectContaining({ id: 'owner' }),
         fileName: 'Oxanium-Light.ttf',
-        size: 10,
+        size: file.length,
       },
     ])
+  })
+
+  it('passes a weight and style override through and reports where each value came from', async () => {
+    const data = ttf({ family: 'Oxanium', weight: 300 }).toString('base64')
+    const result = await call('upload_font', { canvas_id: canvasId, data, weight: 500, style: 'italic' })
+    expect(JSON.parse(result.text)).toMatchObject({
+      weight: '500',
+      weight_from: 'override',
+      style: 'italic',
+      style_from: 'override',
+    })
+    expect(overrides).toEqual([{ weight: 500, style: 'italic' }])
+  })
+
+  it('keeps an override on the one-time upload ticket', async () => {
+    const result = await call('upload_font', { canvas_id: canvasId, local_file: true, weight: 500 })
+    const token = /\/u\/([\w-]+)\//.exec(JSON.parse(result.text).upload_url)![1]!
+    const ticket = (await import('../server/assets.ts')).beginTicketUpload(token)
+    expect(ticket?.fontOverride).toEqual({ weight: 500, style: undefined })
+  })
+
+  it.each([
+    ['weight 0', { weight: 0 }],
+    ['weight 1001', { weight: 1001 }],
+    ['weight 1.5', { weight: 1.5 }],
+    ['style bold', { style: 'bold' }],
+  ])('refuses %s and adds nothing', async (_name, override) => {
+    const data = ttf({ family: 'Oxanium' }).toString('base64')
+    const result = await call('upload_font', { canvas_id: canvasId, data, ...override })
+    expect(result.isError).toBe(true)
+    expect(added).toEqual([])
   })
 
   it('hands out a font ticket whose URL keeps the file name', async () => {
@@ -356,5 +412,66 @@ describe('the resident agent', () => {
       state,
     )
     expect(second.is_error).toBe(true)
+  })
+
+  describe('upload_font', () => {
+    const upload = (input: Record<string, unknown>) => {
+      const canvasId = store.createCanvas('resident fonts', 'owner').id
+      return execTool(
+        call('upload_font', { source_url: 'https://fonts.test/Oxanium-Light.ttf', ...input }),
+        canvasId,
+        actor(),
+        { ...run(), requesterId: 'owner' },
+      )
+    }
+    beforeEach(() => {
+      added.length = 0
+      overrides.length = 0
+      fetched.length = 0
+    })
+
+    it.each([
+      ['a string weight', { weight: '500' }],
+      ['a fractional weight', { weight: 500.5 }],
+      ['weight 0', { weight: 0 }],
+      ['a capitalised style', { style: 'Italic' }],
+      ['an unknown style', { style: 'bold' }],
+    ])('refuses %s before fetching anything', async (_name, input) => {
+      const result = await upload(input)
+      expect(result.is_error).toBe(true)
+      expect(fetched).toEqual([])
+      expect(added).toEqual([])
+    })
+
+    it('stores the face an override names and says it was overridden', async () => {
+      const result = await upload({ weight: 500, style: 'italic' })
+      expect(result.is_error).toBeUndefined()
+      expect(JSON.parse(String(result.content))).toMatchObject({
+        weight: '500',
+        weight_from: 'override',
+        style: 'italic',
+        style_from: 'override',
+      })
+      expect(overrides).toEqual([{ weight: 500, style: 'italic' }])
+    })
+
+    it('counts a null weight and style as not given', async () => {
+      const result = await upload({ weight: null, style: null })
+      expect(result.is_error).toBeUndefined()
+      expect(JSON.parse(String(result.content))).toMatchObject({ weight: '300', weight_from: 'file' })
+      expect(overrides).toEqual([{ weight: undefined, style: undefined }])
+    })
+  })
+
+  it('rejects out-of-range overrides in the library itself', async () => {
+    const { addFontDetailed: real, FontInputError } =
+      await vi.importActual<typeof import('../server/fonts.ts')>('../server/fonts.ts')
+    const file = ttf({ family: 'Oxanium' })
+    for (const override of [{ weight: 0 }, { weight: 1001 }, { weight: 1.5 }, { weight: NaN }, { style: 'bold' }]) {
+      await expect(
+        real({ personal: true }, { id: 'owner', name: 'Owner' }, file, 'x.ttf', override as FontOverride),
+        JSON.stringify(override),
+      ).rejects.toBeInstanceOf(FontInputError)
+    }
   })
 })

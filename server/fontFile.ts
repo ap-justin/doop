@@ -17,6 +17,17 @@ export interface FontFileInfo {
   family: string
   weight: string
   style: FontStyle
+  /** where each value came from: the file's metadata, a name (subfamily or file name), or the caller */
+  weightSource: FontValueSource
+  styleSource: FontValueSource
+}
+
+export type FontValueSource = 'file' | 'name' | 'override'
+
+/** What a caller may force over a file's own metadata. */
+export interface FontOverride {
+  weight?: number
+  style?: FontStyle
 }
 
 const FORMATS = {
@@ -165,7 +176,51 @@ function nameRecords(name: Buffer): Map<number, string> {
   return new Map([...best].map(([id, { value }]) => [id, value]))
 }
 
-function weightOf(tables: Tables): string {
+/* "Regular", "Normal" and a bare "Italic" name no weight: legacy name ID 2 says
+   Regular for a Black or Semilight face too, so only a weight word overrides the class */
+const NAMED_WEIGHTS: Record<string, number> = {
+  thin: 100,
+  hairline: 100,
+  extralight: 200,
+  ultralight: 200,
+  light: 300,
+  book: 400,
+  medium: 500,
+  semibold: 600,
+  demibold: 600,
+  bold: 700,
+  extrabold: 800,
+  ultrabold: 800,
+  black: 900,
+  heavy: 900,
+}
+
+const SLANT_WORDS = new Set(['italic', 'oblique'])
+
+/** The words of a font or file name, split at separators and camel case ("BoldItalic"), lowercased. */
+function nameWords(name: string): string[] {
+  return name
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)
+}
+
+/** Whether a name has Italic or Oblique as a word of its own, so a family such as "Italicus" does not count. */
+function namesItalic(name: string): boolean {
+  return nameWords(name).some((word) => SLANT_WORDS.has(word))
+}
+
+/** The standard weight a subfamily name such as "Semi Bold Italic" says, if it says one. */
+function namedWeight(subfamily: string | undefined): number | undefined {
+  if (!subfamily) return undefined
+  const bare = nameWords(subfamily)
+    .filter((word) => !SLANT_WORDS.has(word))
+    .join('')
+  return NAMED_WEIGHTS[bare]
+}
+
+function weightOf(tables: Tables, subfamily: string | undefined): { weight: string; source: FontValueSource } {
   const fvar = tables.get('fvar')
   if (fvar && fvar.length >= 16) {
     const axesAt = fvar.readUInt16BE(4)
@@ -177,12 +232,26 @@ function weightOf(tables: Tables): string {
       if (fvar.toString('latin1', at, at + 4) !== 'wght') continue
       const min = Math.round(fvar.readInt32BE(at + 4) / 65536)
       const max = Math.round(fvar.readInt32BE(at + 12) / 65536)
-      if (min >= 1 && max <= 1000 && min < max) return `${min} ${max}`
+      if (min >= 1 && max <= 1000 && min < max) return { weight: `${min} ${max}`, source: 'file' }
     }
   }
   const os2 = tables.get('OS/2')
-  const weight = os2 && os2.length >= 6 ? os2.readUInt16BE(4) : 400
-  return String(weight >= 1 && weight <= 1000 ? weight : 400)
+  const raw = os2 && os2.length >= 6 ? os2.readUInt16BE(4) : 400
+  const weight = raw >= 1 && raw <= 1000 ? raw : 400
+  /* a class that is not a multiple of 100 suggests the metadata is off: a standard name outranks it */
+  const named = weight % 100 === 0 ? undefined : namedWeight(subfamily)
+  return named ? { weight: String(named), source: 'name' } : { weight: String(weight), source: 'file' }
+}
+
+function styleOf(
+  fileItalic: boolean,
+  names: (string | undefined)[],
+  override: FontStyle | undefined,
+): { style: FontStyle; styleSource: FontValueSource } {
+  if (override) return { style: override, styleSource: 'override' }
+  if (fileItalic) return { style: 'italic', styleSource: 'file' }
+  if (names.some((name) => name && namesItalic(name))) return { style: 'italic', styleSource: 'name' }
+  return { style: 'normal', styleSource: 'file' }
 }
 
 function italicOf(tables: Tables): boolean {
@@ -204,7 +273,7 @@ function formatOf(buf: Buffer): FontFormat | undefined {
 }
 
 /** The format and identity of an uploaded font, or a reason it is refused. */
-export function readFontFile(buf: Buffer): FontFileInfo {
+export function readFontFile(buf: Buffer, fileName = '', override: FontOverride = {}): FontFileInfo {
   const format = formatOf(buf)
   if (!format) fail('not a font file — ttf, otf, woff and woff2 are accepted')
   let tables: Tables
@@ -220,7 +289,11 @@ export function readFontFile(buf: Buffer): FontFileInfo {
   /* typographic family (16) groups weights that legacy family (1) splits */
   const family = (names.get(16) ?? names.get(1) ?? '').replace(/\s+/g, ' ').slice(0, 100)
   if (!family) fail('the font does not name its family')
-  return { format, ...FORMATS[format], family, weight: weightOf(tables), style: italicOf(tables) ? 'italic' : 'normal' }
+  const subfamily = names.get(17) ?? names.get(2)
+  const read = weightOf(tables, subfamily)
+  const weight = override.weight === undefined ? read : { weight: String(override.weight), source: 'override' as const }
+  const style = styleOf(italicOf(tables), [subfamily, fileName], override.style)
+  return { format, ...FORMATS[format], family, weight: weight.weight, weightSource: weight.source, ...style }
 }
 
 export { FontFileError }
