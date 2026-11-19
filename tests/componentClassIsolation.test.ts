@@ -522,10 +522,7 @@ describe('a placed component and the classes of its frame', () => {
     actions.updateFrame(
       frame.id,
       {
-        html: doc(
-          `${main('pa', first.id)}${main('pb', second.id)}`,
-          '.pa .btn { width: 1px } .pb .btn { width: 2px }',
-        ),
+        html: doc(`${main('pa', first.id)}${main('pb', second.id)}`, '.pa .btn { width: 1px } .pb .btn { width: 2px }'),
       },
       actor,
     )
@@ -653,7 +650,10 @@ describe('a placed component and the classes of its frame', () => {
         'Managed only',
         `<!doctype html><html><head><style ${CSS_ATTR}="${select.id}">.select { color: red }</style></head><body>${instance}</body></html>`,
       )
-      store.saveComponent(canvasId, { ...select, template: select.template.replace(`select__in-${select.id}`, 'select') })
+      store.saveComponent(canvasId, {
+        ...select,
+        template: select.template.replace(`select__in-${select.id}`, 'select'),
+      })
       const main = store.getFrame(select.mainFrameId!)!
       actions.takeComponentIssues(main.id)
       const save = () => {
