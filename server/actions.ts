@@ -38,10 +38,19 @@ import { isElementId } from '../shared/elementId.ts'
 import { parseRunnerPick, runnerKey, type RunnerPick } from '../shared/agentRunner.ts'
 import { hasElementId, stampElementId } from './elementIds.ts'
 import { decodeEscapedHtml, looksEscapedHtml, repairEscapedHtml } from './escapedHtml.ts'
-import { forgetLibrary, swapPublishedFaces } from './componentLibrary.ts'
+import { forgetLibrary, repairPublishedFaces, swapPublishedFaces } from './componentLibrary.ts'
 import { onFacesReplaced, type FacesReplaced } from './fontReplaced.ts'
-import { swapFaceRules, withLibraryFaceRules, type FaceReplacement } from '../shared/fonts.ts'
-import { fontsForCanvas } from './fonts.ts'
+import {
+  rewriteCarriedCss,
+  swapFaceRules,
+  withFontFaces,
+  withLibraryFaceRules,
+  type CustomFont,
+  type FaceReplacement,
+} from '../shared/fonts.ts'
+import { extractAssetIds } from './assets.ts'
+import { FORMATS as FONT_FORMATS } from './fontFile.ts'
+import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withCanvasFaces, withCanvasFacesMidStream } from './canvasFaces.ts'
 import {
   MAX_TOKENS,
@@ -2996,31 +3005,62 @@ function usesLibrary(canvas: Canvas, { scope, userId }: FacesReplaced): boolean 
  *  rendered with. Annotation writes: the design did not change, so sign-off stands and no
  *  version or undo step is filed. A frame with an open append stream gets the swap with its
  *  done chunk, which reads the library as it is then. */
-const swapReplacedFaces = atomic(function swapReplacedFaces(canvasId: string, replaced: readonly FaceReplacement[]) {
+const swapReplacedFaces = atomic(function swapReplacedFaces(
+  canvasId: string,
+  replaced: readonly FaceReplacement[],
+  ownLibrary: boolean,
+) {
+  /* a canvas that only holds a library copy of a component designs with another library: its
+     frames take the URL swap in their component and carried stylesheets, never a rebuilt block */
+  rewriteFrameFaces(
+    canvasId,
+    (html) => replaced.some(({ from }) => html.includes(from)),
+    (html) => {
+      const swap = (css: string) => swapFaceRules(css, replaced)
+      return rewriteCarriedCss(
+        rewriteComponentCss(ownLibrary ? withCanvasFaces(canvasId, html, replaced) : html, swap),
+        swap,
+      )
+    },
+  )
+})
+
+/** Annotation-write each frame of a canvas whose html `wants` and `rewrite` changes; how many were written. */
+function rewriteFrameFaces(
+  canvasId: string,
+  wants: (html: string) => boolean,
+  rewrite: (html: string) => string,
+): number {
   const canvas = store.getCanvas(canvasId)
-  if (!canvas) return
+  if (!canvas) return 0
+  let written = 0
   for (const frame of [...canvas.frames]) {
-    if (streams.has(frame.id) || !replaced.some(({ from }) => frame.html.includes(from))) continue
-    const html = rewriteComponentCss(withCanvasFaces(canvasId, frame.html, replaced), (css) =>
-      swapFaceRules(css, replaced),
-    )
+    if (streams.has(frame.id) || !wants(frame.html)) continue
+    const html = rewrite(frame.html)
     if (html === frame.html) continue
     const actor = resolveActor({ name: frame.updatedBy, kind: 'user' })
     const updated = store.updateFrame(frame.id, { html }, frame.updatedBy, { annotation: true })
     if (!updated) continue
+    written++
     afterCommit(() => thumbs.purge(frame.id))
     broadcast(canvasId, { type: 'frame:updated', frame: updated, actor })
   }
-})
+  return written
+}
 
 /** A component's CSS with replaced faces swapped, read the way its main's next write reads
  *  it (components.ts `prepareMains`), so that write files no revision: in a definition whose
  *  main is on this canvas, a rule loading an upload the canvas library no longer lists points
- *  at the library's file for that face; a library copy, with no main here, takes the replacement. */
+ *  at the library's file for that face, unless another library holds that file; a library
+ *  copy, with no main here, takes the replacement. */
 function swappedFaceCss(canvas: Canvas, def: ComponentDef, replaced: readonly FaceReplacement[]) {
   if (def.source?.library) return { css: swapFaceRules(def.css, replaced), rawCss: swapFaceRules(def.rawCss, replaced) }
   const library = fontsForCanvas(canvas)
-  return { css: withLibraryFaceRules(def.css, library), rawCss: withLibraryFaceRules(def.rawCss, library) }
+  const foreign = foreignFontAssetIds(canvas)
+  return {
+    css: withLibraryFaceRules(def.css, library, foreign),
+    rawCss: withLibraryFaceRules(def.rawCss, library, foreign),
+  }
 }
 
 const swapReplacedFacesInComponents = atomic(function swapReplacedFacesInComponents(
@@ -3048,7 +3088,8 @@ function swapPart(what: string, work: () => void) {
 
 /** The swap for canvases whose frame HTML is not in memory, after the upload's response:
  *  only the canvases whose stored frames load a replaced file are read, one at a time. */
-async function swapReplacedFacesWhenLoaded(canvasIds: readonly string[], replaced: readonly FaceReplacement[]) {
+async function swapReplacedFacesWhenLoaded(canvasIds: readonly string[], event: FacesReplaced) {
+  const { replaced } = event
   let holding: string[]
   try {
     holding = await persist.canvasesWithFrameText(
@@ -3064,7 +3105,8 @@ async function swapReplacedFacesWhenLoaded(canvasIds: readonly string[], replace
       await store.withCanvas(canvasId, async () =>
         runOperation('fonts.swap', canvasId, () => {
           swapReplacedFacesInComponents(canvasId, replaced)
-          swapReplacedFaces(canvasId, replaced)
+          const canvas = store.getCanvas(canvasId)
+          if (canvas) swapReplacedFaces(canvasId, replaced, usesLibrary(canvas, event))
         }),
       )
     } catch (err) {
@@ -3079,24 +3121,170 @@ onFacesReplaced((event) => {
   const unloaded: string[] = []
   for (const canvas of store.allCanvases()) {
     const own = usesLibrary(canvas, event)
-    if (own && !store.isLoaded(canvas.id)) unloaded.push(canvas.id)
-    const frames = own && store.isLoaded(canvas.id)
     const carries = (canvas.components ?? []).some((def) =>
       event.replaced.some(({ from }) => def.css.includes(from) || def.rawCss.includes(from)),
     )
+    /* a canvas holding a copy of the component has frames showing it, whoever's library it designs with */
+    if (!own && !carries) continue
+    if (!store.isLoaded(canvas.id)) unloaded.push(canvas.id)
+    const frames = store.isLoaded(canvas.id)
     if (!frames && !carries) continue
     swapPart(`canvas ${canvas.id}`, () =>
       runOperation('fonts.swap', canvas.id, () => {
         if (carries) swapReplacedFacesInComponents(canvas.id, event.replaced)
-        if (frames) swapReplacedFaces(canvas.id, event.replaced)
+        if (frames) swapReplacedFaces(canvas.id, event.replaced, own)
       }),
     )
   }
   swapPart('published library components', () =>
     runOperation('fonts.swap', undefined, () => swapPublishedFaces(event.replaced)),
   )
-  if (unloaded.length) afterCommit(() => detached(() => void swapReplacedFacesWhenLoaded(unloaded, event.replaced)))
+  if (unloaded.length) afterCommit(() => detached(() => void swapReplacedFacesWhenLoaded(unloaded, event)))
 })
+
+/** The file types a font upload stores. */
+const FONT_ASSET_EXTS = Object.values(FONT_FORMATS).map((format) => format.ext)
+
+/** A document's font rules healed against `library`: its font block rebuilt by `fontBlock`,
+ *  and each rule of its component and carried stylesheets that loads an upload the library
+ *  no longer lists pointed at the library's file for that face; a rule loading a file in
+ *  `foreign` (one another library holds) is left as written. */
+function healFaceRules(
+  html: string,
+  library: readonly CustomFont[],
+  foreign: ReadonlySet<string>,
+  fontBlock: (html: string) => string,
+): string {
+  const heal = (css: string) => withLibraryFaceRules(css, library, foreign)
+  return rewriteCarriedCss(rewriteComponentCss(fontBlock(html), heal), heal)
+}
+
+const timesLoaded = (text: string, assetId: string) => text.split(`/a/${assetId}.`).length - 1
+
+/** Whether healing would take a stale file out of any of these stored style blocks. A rule
+ *  for a family the library no longer has, a face it has no file for, or one in a stylesheet
+ *  Doop did not write stays as it is, so a canvas holding only those is never read. */
+function healsStyleBlocks(
+  blocks: readonly string[],
+  stale: ReadonlySet<string>,
+  library: readonly CustomFont[],
+  foreign: ReadonlySet<string>,
+) {
+  return blocks.some((block) => {
+    const healed = healFaceRules(block, library, foreign, (html) => withFontFaces(html, library, { rebuild: true }))
+    return healed !== block && [...stale].some((id) => timesLoaded(healed, id) < timesLoaded(block, id))
+  })
+}
+
+/** Each component of a canvas, library copies included, with its face rules pointed at the
+ *  library's files, as `prepareMains` reads a main's; how many definitions were saved. A copy
+ *  is healed here too: its instances' stylesheets are, and the next write syncing them from
+ *  the definition would otherwise put the stale file back. */
+const repairFacesInComponents = atomic(function repairFacesInComponents(
+  canvasId: string,
+  library: readonly CustomFont[],
+  foreign: ReadonlySet<string>,
+): number {
+  let saved = 0
+  for (const def of [...store.getComponents(canvasId)]) {
+    const css = withLibraryFaceRules(def.css, library, foreign)
+    const rawCss = withLibraryFaceRules(def.rawCss, library, foreign)
+    if (css === def.css && rawCss === def.rawCss) continue
+    store.saveComponent(canvasId, { ...def, css, rawCss })
+    saved++
+  }
+  return saved
+})
+
+/** Heal what a replacement never named: frames, components and published copies whose font
+ *  rules still load uploads their canvas's library no longer lists (a face replaced before the
+ *  swap existed, or removed from a library that still has its family). Candidates come from the asset_refs
+ *  projection and the stored style blocks that load those files, so a canvas's frame html is
+ *  read only where healing would change it; each is then rewritten as the swap does
+ *  (annotation writes, no version, sign-off kept). A canvas counts only when something was
+ *  written, so a second run counts and loads nothing. A failure is logged per canvas and
+ *  never thrown. */
+export async function repairStaleFaces(): Promise<{ canvases: number; published: number; failed: number }> {
+  let failed = 0
+  /* one scan of every font row per library for the run, not per canvas */
+  const foreignByLibrary = new Map<string, Set<string>>()
+  const foreignFor = (canvas: Canvas) => {
+    const key = canvas.workspaceId ? `ws:${canvas.workspaceId}` : `user:${canvas.ownerId ?? ''}`
+    let foreign = foreignByLibrary.get(key)
+    if (!foreign) foreignByLibrary.set(key, (foreign = foreignFontAssetIds(canvas)))
+    return foreign
+  }
+  const staleByCanvas = new Map<string, Set<string>>()
+  let blocks = new Map<string, string[]>()
+  try {
+    for (const [canvasId, ids] of await persist.fontAssetsByCanvas(FONT_ASSET_EXTS)) {
+      const canvas = store.getCanvas(canvasId)
+      if (!canvas) continue
+      const library = fontsForCanvas(canvas)
+      if (!library.length) continue
+      const listed = new Set(library.flatMap((font) => [...extractAssetIds(font.url)]))
+      /* a file another library holds came with a layer pasted from it: not this library's to re-point */
+      const foreign = foreignFor(canvas)
+      const stale = new Set([...ids].filter((id) => !listed.has(id) && !foreign.has(id)))
+      if (stale.size) staleByCanvas.set(canvasId, stale)
+    }
+    const staleIds = new Set([...staleByCanvas.values()].flatMap((ids) => [...ids]))
+    blocks = await persist.styleBlocksLoading([...staleByCanvas.keys()], [...staleIds])
+  } catch (err) {
+    failed++
+    console.error('[fonts] repairing stale font rules: finding the frames that load fonts failed:', err)
+  }
+  let canvases = 0
+  for (const canvas of store.allCanvases()) {
+    const library = fontsForCanvas(canvas)
+    if (!library.length) continue
+    const stale = staleByCanvas.get(canvas.id)
+    const foreign = foreignFor(canvas)
+    const frames = !!stale && healsStyleBlocks(blocks.get(canvas.id) ?? [], stale, library, foreign)
+    const components = (canvas.components ?? []).some((def) => componentFacesStale(def, library, foreign))
+    if (!frames && !components) continue
+    try {
+      const written = await store.withCanvas(canvas.id, async () =>
+        runOperation('fonts.repair', canvas.id, () => {
+          const current = store.getCanvas(canvas.id)
+          if (!current) return 0
+          /* the library as it is now: a face replaced while the canvas loaded must not be undone */
+          const library = fontsForCanvas(current)
+          const foreign = foreignFontAssetIds(current)
+          const saved = repairFacesInComponents(canvas.id, library, foreign)
+          if (!stale || !frames) return saved
+          return (
+            saved +
+            rewriteFrameFaces(
+              canvas.id,
+              (html) => [...stale].some((id) => html.includes(`/a/${id}.`)),
+              (html) => healFaceRules(html, library, foreign, (doc) => withCanvasFaces(canvas.id, doc)),
+            )
+          )
+        }),
+      )
+      if (written) canvases++
+    } catch (err) {
+      failed++
+      console.error(`[fonts] stale font rules not repaired in canvas ${canvas.id}:`, err)
+    }
+  }
+  let published = 0
+  try {
+    published = runOperation('fonts.repair', undefined, () => repairPublishedFaces()).length
+  } catch (err) {
+    failed++
+    console.error('[fonts] stale font rules not repaired in published library components:', err)
+  }
+  return { canvases, published, failed }
+}
+
+function componentFacesStale(def: ComponentDef, library: readonly CustomFont[], foreign: ReadonlySet<string>): boolean {
+  return (
+    withLibraryFaceRules(def.css, library, foreign) !== def.css ||
+    withLibraryFaceRules(def.rawCss, library, foreign) !== def.rawCss
+  )
+}
 
 function renameTokenRefs(html: string, from: string, to: string): string {
   const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

@@ -90,6 +90,14 @@ export function fontsForCanvas(canvas: { workspaceId?: string | null; ownerId?: 
   return canvas.ownerId ? listFonts({ personal: true }, canvas.ownerId) : []
 }
 
+/** The asset ids of the font files other libraries hold at the moment, which a canvas's
+ *  own library must not re-point. A file no library holds any more (its row was deleted or
+ *  replaced) has no record of the library it was uploaded to, so it is not listed here. */
+export function foreignFontAssetIds(canvas: { workspaceId?: string | null; ownerId?: string | null }): Set<string> {
+  const own = new Set(fontsForCanvas(canvas).map((font) => font.id))
+  return new Set([...rows.values()].filter((row) => !own.has(row.id)).map((row) => row.assetId))
+}
+
 /** Add a font file to a library. A file for a face the library already has
  *  (same family, weight and style) replaces it, so re-uploading a fixed
  *  version needs no delete first; so does the same file stored earlier under

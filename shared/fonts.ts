@@ -91,14 +91,14 @@ const FACE_RULE_RE = /@font-face\s*\{[^}]*\}/gi
 const FAMILY_RE = /font-family\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^;}]*))/i
 
 /** What a written `@font-face` rule says about its face; null for one with no url or family. */
-function readFaceRule(rule: string): { key: string; url: string } | null {
+function readFaceRule(rule: string): { key: string; family: string; url: string } | null {
   const url = /url\(\s*(["']?)(.*?)\1\s*\)/i.exec(rule)?.[2]
   const match = FAMILY_RE.exec(rule)
   const family = (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').replace(/\\(.)/g, '$1').trim()
   if (!url || !family) return null
   const weight = /font-weight\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? '400'
   const style = /font-style\s*:\s*([^;}]*)/i.exec(rule)?.[1] ?? 'normal'
-  return { key: faceKey(family, weight, style), url }
+  return { key: faceKey(family, weight, style), family, url }
 }
 
 function faceKey(family: string, weight: string, style: string): string {
@@ -139,20 +139,61 @@ function uploadPrefix(url: string): string | undefined {
 /** The stylesheet with each rule that loads an upload of this server the library no
  *  longer lists, where the library has that family, weight and style from another
  *  file, pointed at that file, so a component read from a main whose own stylesheet
- *  still loads a replaced file reads the same as one already swapped. A rule loading
- *  anything else (a hosted font, a file served elsewhere) is left as written. */
-export function withLibraryFaceRules(css: string, library: readonly CustomFont[]): string {
+ *  still loads a replaced file reads the same as one already swapped. A family wearing
+ *  the suffix a paste renamed it with (a carried rule, also once a component's CSS holds
+ *  it) stands for the library family it was renamed from. A rule loading anything else
+ *  (a hosted font, a file served elsewhere) is left as written, and so is a file named in
+ *  `foreign` (the asset ids another library holds), which a layer pasted from that library brought. */
+export function withLibraryFaceRules(
+  css: string,
+  library: readonly CustomFont[],
+  foreign: ReadonlySet<string> = new Set(),
+): string {
   if (!library.length || !css.includes('@font-face')) return css
   const prefixes = new Set(library.flatMap((font) => uploadPrefix(font.url) ?? []))
   const listed = new Set(library.map((font) => font.url))
   return css.replace(FACE_RULE_RE, (rule) => {
     const face = readFaceRule(rule)
     if (!face || listed.has(face.url)) return rule
+    if (foreign.has(/\/a\/([^/?#.]+)\./.exec(face.url)?.[1] ?? '')) return rule
     const prefix = uploadPrefix(face.url)
     if (!prefix || !prefixes.has(prefix)) return rule
-    const successor = library.find((font) => fontKey(font) === face.key)
+    const successor = library.find((font) => fontKey(font) === face.key) ?? carriedSuccessor(face, library)
     return successor ? retargetFaceRule(rule, face.url, successor) : rule
   })
+}
+
+/** What `withCarriedCss` (src/lib/styleCarry.ts) appends to a family the destination
+ *  already defines: `-<scope>` (a `newScope()` id of at most six characters, or `carried`),
+ *  then `-<n>` when that is taken too. A longer suffix ("Brand-Display") is a family of its own. */
+const CARRY_RENAME_RE = /^-(?:[0-9a-z]{1,6}|carried)(?:-\d+)?$/
+
+/** The library face a carried rule renamed `<family>-<scope>` stands for: same family, weight and style. */
+function carriedSuccessor(face: { key: string; family: string }, library: readonly CustomFont[]) {
+  const family = face.family.trim().toLowerCase()
+  const descriptors = face.key.slice(family.length)
+  return library.find((font) => {
+    const name = font.family.trim().toLowerCase()
+    return (
+      family.startsWith(name) &&
+      CARRY_RENAME_RE.test(family.slice(name.length)) &&
+      fontKey(font) === `${name}${descriptors}`
+    )
+  })
+}
+
+/** The style blocks Doop writes when layers move or paste between frames
+ *  (`CARRIED_ATTR` in src/lib/styleCarry.ts): written by Doop, so their font rules may be
+ *  retargeted like the ones in the font block. */
+const CARRIED_BLOCK_RE = /(<style\b[^>]*\bdata-doop-carried\b[^>]*>)([\s\S]*?)(<\/style>)/gi
+
+/** The HTML with `rewrite` run over each carried style block's CSS; the input itself when nothing changes. */
+export function rewriteCarriedCss(html: string, rewrite: (css: string) => string): string {
+  if (!html.includes('data-doop-carried') || !html.includes('@font-face')) return html
+  return html.replace(
+    CARRIED_BLOCK_RE,
+    (_, open: string, css: string, close: string) => `${open}${rewrite(css)}${close}`,
+  )
 }
 
 export interface FontFacesOptions {
@@ -170,11 +211,14 @@ export interface FontFacesOptions {
  * that it does not already load (its URL appears nowhere in the document, and
  * the block has no rule for that family, weight and style). With `rebuild`, a
  * rule already in the block is dropped when its face was replaced: its URL is
- * in `replaced`, or a library face covers the same family, weight and style
- * from another file. A rule whose font merely left the library stays, since
- * its asset is immutable and keeps rendering. Rules outside the block are
- * never touched. Returns the input string itself when nothing changes, so
- * callers can compare by identity.
+ * in `replaced`, a library face covers the same family, weight and style from
+ * another file, or it loads one of this server's uploads that the library no
+ * longer lists while the library still has a face of that family (the library
+ * is the source of truth for a family it has, so its own faces are written
+ * instead). A rule for a family the library no longer has at all, and one
+ * loading a font from another host, stays and keeps rendering. Rules outside
+ * the block are never touched. Returns the input string itself when nothing
+ * changes, so callers can compare by identity.
  */
 export function withFontFaces(
   html: string,
@@ -188,10 +232,17 @@ export function withFontFaces(
   const design = block ? decoded.replace(BLOCK_RE, '') : decoded
   const libraryUrls = new Set(library.map((font) => font.url))
   const covered = new Set(library.map(fontKey))
+  const prefixes = new Set(library.flatMap((font) => uploadPrefix(font.url) ?? []))
+  const families = new Set(library.map((font) => familyKey(font.family)))
   const stale = (rule: string): boolean => {
     const face = readFaceRule(rule)
     if (!face || libraryUrls.has(face.url)) return false
-    return covered.has(face.key) || replaced.some(({ from }) => from === face.url)
+    const prefix = uploadPrefix(face.url)
+    /* a font served from another host is never ours to rewrite */
+    if (!prefix || !prefixes.has(prefix)) return false
+    return (
+      covered.has(face.key) || replaced.some(({ from }) => from === face.url) || families.has(familyKey(face.family))
+    )
   }
   let base = html
   let kept = block

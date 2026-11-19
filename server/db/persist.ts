@@ -695,6 +695,55 @@ export async function canvasesWithFrameText(canvasIds: readonly string[], texts:
   return rows.map((row) => row.canvasId)
 }
 
+/** The font files each canvas's frames load, by canvas: read from the asset_refs
+ *  projection, so no frame html is read. Only assets of a font type count. */
+export async function fontAssetsByCanvas(exts: readonly string[]): Promise<Map<string, Set<string>>> {
+  const byCanvas = new Map<string, Set<string>>()
+  if (!exts.length) return byCanvas
+  const rows = await db
+    .selectDistinct({ canvasId: t.frames.canvasId, assetId: t.assetRefs.assetId })
+    .from(t.assetRefs)
+    .innerJoin(t.assets, eq(t.assetRefs.assetId, t.assets.id))
+    .innerJoin(t.frames, eq(t.assetRefs.frameId, t.frames.id))
+    .where(inArray(t.assets.ext, [...exts]))
+  for (const { canvasId, assetId } of rows) {
+    const ids = byCanvas.get(canvasId) ?? new Set<string>()
+    ids.add(assetId)
+    byCanvas.set(canvasId, ids)
+  }
+  return byCanvas
+}
+
+/** Every `<style>` block, by canvas, that loads one of `assetIds` in a stored frame of
+ *  `canvasIds`: the stylesheets only, cut out by Postgres, so a caller can tell whether a
+ *  rewrite would change them before reading any canvas's frame html. Only frames asset_refs
+ *  says load one of the ids qualify; the planner may still scan the others' html first. */
+export async function styleBlocksLoading(
+  canvasIds: readonly string[],
+  assetIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const byCanvas = new Map<string, string[]>()
+  if (!canvasIds.length || !assetIds.length) return byCanvas
+  // sql.param binds each list as one array: a bare array expands to `($1, $2, …)`, which `::text[]` refuses
+  const canvases = sql.param([...canvasIds])
+  const assets = sql.param([...assetIds])
+  /* the body is "anything but a closing tag", not a lazy `.*?`: in Postgres' regex the
+     first quantifier sets the whole match's greed, so the opening tag's `[^>]*` would make a lazy body greedy */
+  const result = await db.execute(sql`
+    select distinct f.canvas_id as "canvasId", m[1] as block
+    from frames f
+    cross join lateral regexp_matches(f.html, '<style[^>]*>(?:[^<]|<(?!/style>))*</style>', 'gi') as m
+    where f.canvas_id = any(${canvases}::text[])
+      and exists (select 1 from asset_refs r where r.frame_id = f.id and r.asset_id = any(${assets}::text[]))
+      and exists (select 1 from unnest(${assets}::text[]) as s(id) where position('/a/' || s.id || '.' in m[1]) > 0)`)
+  for (const { canvasId, block } of (result as unknown as { rows: { canvasId: string; block: string }[] }).rows) {
+    const blocks = byCanvas.get(canvasId) ?? []
+    blocks.push(block)
+    byCanvas.set(canvasId, blocks)
+  }
+  return byCanvas
+}
+
 const frameMetaColumns = {
   id: t.frames.id,
   canvasId: t.frames.canvasId,

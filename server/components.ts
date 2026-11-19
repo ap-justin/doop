@@ -17,7 +17,7 @@ import {
   type ComponentProp,
 } from '../shared/components.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
-import { fontsForCanvas } from './fonts.ts'
+import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withLibraryFaceRules } from '../shared/fonts.ts'
 import {
   attrOf,
@@ -220,8 +220,10 @@ function prepareMains(
   let sheetCache: string | undefined
   let headCache: string[] | undefined
   /* a main whose own rule still loads a replaced face's file reads as the library's face,
-     the way the swap rewrote this definition (actions' swapReplacedFacesInComponents) */
-  const sheet = () => (sheetCache ??= withLibraryFaceRules(frameStylesheets(html), fontsForCanvas(canvas)))
+     the way the swap rewrote this definition (actions' swapReplacedFacesInComponents); a file
+     another library holds (a layer pasted from it) is left as written, as the swap and repair leave it */
+  const sheet = () =>
+    (sheetCache ??= withLibraryFaceRules(frameStylesheets(html), fontsForCanvas(canvas), foreignFontAssetIds(canvas)))
   const headTags = () => [...(headCache ??= frameHeadTags(html))]
   for (const found of findMarked(html, COMPONENT_ATTR)) {
     const id = attrOf(found.el, COMPONENT_ATTR) ?? ''
