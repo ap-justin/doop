@@ -253,6 +253,14 @@ needs a reusable piece the system lacks, add it, then use it.
   instance of those. A NavItem written out by hand nine times inside a Sidebar is the same mistake
   as a Button written out by hand inside a frame. Check list_components before writing a main, as
   you would before writing a frame.
+- A component's inside is its own: its class names are renamed per component (\`sl\` becomes
+  \`sl__in-<id>\`) wherever its stylesheet styles them, so a frame's own rule for \`.sl\` never
+  restyles a placed component. The renaming is done for you: a main in its frame, and get_frame,
+  show natural names, and you write natural names in a main, in update_component's html and in its
+  css. get_component shows the stored, renamed text, and find text for find/replace can be copied
+  from it. To change one instance, use its props, slots, part overrides, CSS custom properties, or
+  a rule on the instance's outer element, which keeps its classes. Never target an instance's
+  internal class from a frame's stylesheet.
 - Build from the smallest piece up: name the pieces a large component repeats (Button, NavItem)
   and create those first, then the one that holds them:
       <aside class="sb">
