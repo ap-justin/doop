@@ -13,7 +13,8 @@ vi.mock('../server/db/persist.ts', () => ({
 
 import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
-import { blankComponent } from '../server/components.ts'
+import { blankComponent, contextFor } from '../server/components.ts'
+import { compactDocument } from '../server/componentEngine.ts'
 import {
   changeInstances,
   deleteComponent,
@@ -214,6 +215,88 @@ describe('a placed component and the classes of its frame', () => {
     expect(rootClasses(html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
     actions.updateFrame(page.id, { html: `${html} ` }, actor)
     expect(rootClasses(store.getFrame(page.id)!.html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+  })
+
+  describe('a class put on the instance, through an upgrade', () => {
+    const current = (id: string) => store.getComponents(canvasId).find((candidate) => candidate.id === id)!
+    const pageHtml = (id: string) => store.getFrame(id)!.html
+    /* a write of the page upgrades its instances whether or not propagation has reached it yet */
+    const rewrite = (id: string) => actions.updateFrame(id, { html: `${pageHtml(id)} ` }, actor)
+
+    it('keeps it beside the root’s class when the main’s next write renames that class', () => {
+      const def = makeSelect()
+      const plain = (text: string) => text.replaceAll(/__in-\w+/g, '')
+      store.saveComponent(canvasId, {
+        ...def,
+        template: plain(def.template),
+        css: plain(def.css),
+        rawCss: plain(def.rawCss),
+      })
+      const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+      actions.updateFrame(
+        page.id,
+        {
+          html: doc(`<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`, '.wide { width: 320px }'),
+        },
+        actor,
+      )
+      expect(rootClasses(pageHtml(page.id), def.id)).toEqual(['select', 'wide'])
+
+      const main = store.getFrame(def.mainFrameId!)!
+      actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+      expect(current(def.id).rev).toBe(def.rev + 1)
+      rewrite(page.id)
+      const upgraded = pageHtml(page.id)
+      expect(rootClasses(upgraded, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+
+      /* the same markup again, at the same revision: nothing moves */
+      actions.updateFrame(page.id, { html: upgraded }, actor)
+      expect(pageHtml(page.id)).toBe(upgraded)
+    })
+
+    it('takes a class the root gained and keeps one the instance took away gone', () => {
+      const def = blankComponent({ name: 'Box', by: 'Tester', props: [] })
+      store.saveComponent(canvasId, def)
+      const main = actions.createFrame(canvasId, { name: 'Box main', html: '' }, actor)!
+      const css = '.box { display: flex } .boxed { border: 1px solid } .raised { box-shadow: 0 1px 2px }'
+      actions.updateFrame(
+        main.id,
+        { html: doc(`<div class="box boxed" ${COMPONENT_ATTR}="${def.id}"><b>Box</b></div>`, css) },
+        actor,
+      )
+      const page = actions.createFrame(canvasId, { name: 'Page', html: '' }, actor)!
+      actions.updateFrame(page.id, { html: doc(`<doop-use component="${def.id}"></doop-use>`) }, actor)
+      const id = def.id
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, `boxed__in-${id}`])
+      /* edited by hand on the page: `boxed` taken off, `wide` put on */
+      actions.updateFrame(
+        page.id,
+        { html: pageHtml(page.id).replace(`class="box__in-${id} boxed__in-${id}"`, `class="box__in-${id} wide"`) },
+        actor,
+      )
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, 'wide'])
+      const rev = current(id).rev
+
+      /* the main as stored, part keys and all, so the root keeps its key across the revision */
+      const stored = store.getFrame(main.id)!.html
+      actions.updateFrame(main.id, { html: stored.replace('class="box boxed"', 'class="box boxed raised"') }, actor)
+      expect(current(id).rev).toBe(rev + 1)
+      rewrite(page.id)
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, `raised__in-${id}`, 'wide'])
+    })
+
+    it('reads back as the class it was given, not as an override spelling the root’s classes', () => {
+      const def = makeSelect()
+      const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+      actions.updateFrame(
+        page.id,
+        { html: doc(`<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`) },
+        actor,
+      )
+      const compact = compactDocument(pageHtml(page.id), contextFor(canvasId))
+      expect(compact).toMatch(/<doop-use [^>]*class="wide"/)
+      expect(compact).not.toContain(`__in-${def.id}`)
+    })
   })
 
   it('keeps the main in its own frame on natural root names, with no new revision on a re-save', () => {
