@@ -984,8 +984,15 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   are one class), so an upgrade never drops the root's renamed class. A parent's rule that
   ends at a nested component's root (`.plan .btn`) is read as naming that root's renamed class
   (`withNestedRootNames`, in `prepareMains` and the not-kept report), so it still reaches the nested
-  instance. Not yet: in the parent's own main frame that rule, written in natural names, misses the
-  nested root, which wears its renamed class there too. `update_component`'s find/replace reads the
+  instance. In the parent's own main frame the author's rule stays in natural names and so misses the
+  nested root, which wears its renamed class there too: `prepareMains` writes a managed
+  `<style data-doop-main-css="<parentId>">` block (`nestedRootRules`, `withMainCssBlock`; in
+  `MANAGED_STYLE_ATTRS`, so never read back as the author's CSS) at the head of that frame, holding only
+  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]`. It is
+  removed when the main leaves the frame. A save that renames a main's root class also returns a
+  `root_class_renamed` note naming the frames whose own rule for that class (old-guide placement,
+  `.card { grid-column: span 2 }`) no longer reaches its instances, and where it belongs now
+  (a class on `<doop-use class>`); nothing is migrated. `update_component`'s find/replace reads the
   template with natural names when the stored text has no match, the lookalike check always reads
   natural names, and `replace_matching` links hand-drawn elements to the
   renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested

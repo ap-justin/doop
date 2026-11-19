@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Window } from 'happy-dom'
 import { Client, startServer, type Server } from './harness'
 
 vi.mock('../server/db/persist.ts', () => ({
@@ -371,6 +372,95 @@ describe('a placed component and the classes of its frame', () => {
     )
     /* and the frame's own `.btn` rule does not */
     expect(html).not.toMatch(/<button class="btn"/)
+  })
+
+  /** A Plan whose main holds a Button, the Plan's sheet styling `.plan .btn`; the Plan's own frame. */
+  function planWithButton(extraCss = '') {
+    const button = blankComponent({ name: 'Button', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, button)
+    const buttonFrame = actions.createFrame(canvasId, { name: 'Button main', html: '' }, actor)!
+    actions.updateFrame(
+      buttonFrame.id,
+      {
+        html: doc(`<button class="btn" ${COMPONENT_ATTR}="${button.id}">Go</button>`, '.btn { display: inline-flex }'),
+      },
+      actor,
+    )
+    const plan = blankComponent({ name: 'Plan', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, plan)
+    const planFrame = actions.createFrame(canvasId, { name: 'Plan main', html: '' }, actor)!
+    actions.updateFrame(
+      planFrame.id,
+      {
+        html: doc(
+          `<div class="plan" ${COMPONENT_ATTR}="${plan.id}"><doop-use component="${button.id}"></doop-use></div><div class="plan"><i class="btn">plain</i></div>`,
+          `.plan { padding: 8px } .plan .btn { width: 100% }${extraCss}`,
+        ),
+      },
+      actor,
+    )
+    return { button, plan, planFrame }
+  }
+  const mainCssBlock = (html: string, id: string) =>
+    new RegExp(`<style data-doop-main-css="${id}">\\n([\\s\\S]*?)\\n</style>`).exec(html)
+
+  it('writes the parent’s nested-root rules into its own main frame, where they match the nested instance', () => {
+    const { button, plan, planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    const block = mainCssBlock(html, plan.id)
+    expect(block, html).not.toBeNull()
+    /* before the frame's own styles, which stay in natural names */
+    expect(html.indexOf('data-doop-main-css')).toBeLessThan(html.indexOf('<style>'))
+    expect(html).toContain('.plan .btn { width: 100% }')
+    const window = new Window()
+    window.document.write(html)
+    const nested = window.document.querySelector(`[${INSTANCE_ATTR}="${button.id}"]`)!
+    const plain = window.document.querySelector('i.btn')!
+    const selectors = [...block![1]!.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(','))
+    expect(selectors.length).toBeGreaterThan(0)
+    /* a rule that reaches the Button inside the Plan, and none that reaches a plain `.btn` */
+    const matches = (selector: string) => [...window.document.querySelectorAll(selector.trim())]
+    expect(selectors.some((selector) => matches(selector).includes(nested))).toBe(true)
+    for (const selector of selectors) expect(matches(selector)).not.toContain(plain)
+  })
+
+  it('files no new revision when that main is saved again, and never reads the block back as the author’s CSS', () => {
+    const { plan, planFrame } = planWithButton()
+    const before = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    const frame = store.getFrame(planFrame.id)!
+    actions.updateFrame(planFrame.id, { html: `${frame.html} ` }, actor)
+    const after = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    expect(after.rev).toBe(before.rev)
+    expect(after.css).toBe(before.css)
+    expect(after.rawCss).toBe(before.rawCss)
+    expect(store.getFrame(planFrame.id)!.html.match(/data-doop-main-css/g)).toHaveLength(1)
+  })
+
+  it('removes the block when the main leaves the frame', () => {
+    const { plan, planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    const plain = html.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    actions.updateFrame(planFrame.id, { html: plain }, actor)
+    expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
+  })
+
+  it('says which frames’ own rules stop reaching a main whose root class is renamed', () => {
+    const plan = makeSelect()
+    const page = actions.createFrame(canvasId, { name: 'Landing', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      { html: doc(`<doop-use component="${plan.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+      actor,
+    )
+    /* the component was made before its root class was renamed: write its main again with an old-style definition */
+    const stale = { ...plan, template: plan.template.replace(`select__in-${plan.id}`, 'select') }
+    store.saveComponent(canvasId, stale)
+    const main = store.getFrame(plan.mainFrameId!)!
+    actions.takeComponentIssues(main.id)
+    actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+    const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+    expect(note?.message).toContain('“Landing” (.select)')
+    expect(note?.message).toContain('class="your-class"')
   })
 
   it('leaves a detached instance looking as it did', () => {

@@ -1,7 +1,7 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
-import { attrOf, isElement, parseTemplateRoot, setAttr } from './componentEngine.ts'
-import { MANAGED_STYLE_ATTRS } from './componentCss.ts'
-import { INSTANCE_ATTR, USE_TAG } from '../shared/components.ts'
+import { attrOf, insertIntoHead, isElement, parseTemplateRoot, setAttr } from './componentEngine.ts'
+import { MANAGED_STYLE_ATTRS, parseCss, scopeSelector, splitTopLevel, type CssNode } from './componentCss.ts'
+import { COMPONENT_ATTR, INSTANCE_ATTR, MAIN_CSS_ATTR, USE_TAG } from '../shared/components.ts'
 import { PROTO_ATTRS } from '../shared/prototype.ts'
 
 type Element = Tree.Element
@@ -27,7 +27,8 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const CSS_CLASSES =
   /\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\burl\(\s*[^)'"\s]*\s*\)|(?<!\\)\.((?:[\w-]|[\u{80}-\u{10ffff}]|\\[\s\S])+)/giu
 
-const classesNamedIn = (css: string) => new Set([...css.matchAll(CSS_CLASSES)].flatMap((match) => match[1] ?? []))
+export const classesNamedIn = (css: string) =>
+  new Set([...css.matchAll(CSS_CLASSES)].flatMap((match) => match[1] ?? []))
 
 /** Values that hold script or a selector: inline handlers and prototype targets. */
 const readsSelectors = (attr: string) =>
@@ -72,6 +73,11 @@ const MANAGED_STYLE_OPEN = new RegExp(`\\s(?:${[...MANAGED_STYLE_ATTRS].join('|'
  * root's.
  */
 export function withNestedRootNames(sheet: string, main: Element): string {
+  return nestedRootRenamer(main)(sheet)
+}
+
+/** Natural name to renamed name, for the classes nested instance roots wear and this main's own elements do not. */
+function nestedRootRenamer(main: Element): (css: string) => string {
   const renamed = new Map<string, string>()
   const own = new Set<string>()
   const stack: Element[] = [main]
@@ -85,11 +91,64 @@ export function withNestedRootNames(sheet: string, main: Element): string {
     const suffix = isolatedName('', nested)
     for (const name of classesOf(el)) if (name.endsWith(suffix)) renamed.set(naturalName(name, nested), name)
   }
-  if (!renamed.size) return sheet
-  return sheet.replace(CSS_CLASSES, (match, name: string | undefined) => {
-    const to = name === undefined || own.has(name) ? undefined : renamed.get(name)
-    return to === undefined ? match : `.${to}`
-  })
+  return (css) =>
+    renamed.size
+      ? css.replace(CSS_CLASSES, (match, name: string | undefined) => {
+          const to = name === undefined || own.has(name) ? undefined : renamed.get(name)
+          return to === undefined ? match : `.${to}`
+        })
+      : css
+}
+
+/**
+ * The rules of a main's natural sheet that end at a nested instance's root, as the main's own frame
+ * needs them: the nested root wears its renamed class there, so the author's `.plan .btn` matches
+ * nothing. Written with the renamed class and scoped to the main, so they reach the nested instance
+ * and nothing else (`withNestedRootNames`'s output, narrowed to the rules it changed).
+ */
+export function nestedRootRules(sheet: string, main: Element, componentId: string): string {
+  const rename = nestedRootRenamer(main)
+  const scope = `[${COMPONENT_ATTR}="${componentId}"]`
+  const keep = (nodes: CssNode[]): string[] =>
+    nodes.flatMap((node) => {
+      if (node.kind === 'group') {
+        const inner = keep(node.nodes)
+        return inner.length ? [`${node.prelude} {\n${inner.join('\n')}\n}`] : []
+      }
+      if (node.kind !== 'rule') return []
+      const selectors = splitTopLevel(node.selector, ',')
+        .map((selector) => selector.trim())
+        .flatMap((selector) => {
+          const renamed = rename(selector)
+          return renamed === selector ? [] : [scopeSelector(renamed, scope)]
+        })
+      return selectors.length ? [`${selectors.join(', ')} {${node.body}}`] : []
+    })
+  return keep(parseCss(sheet)).join('\n')
+}
+
+/** The root classes `after` wears renamed that `before` did not (natural names): what a frame's own rule stops reaching. */
+export function newlyRenamedRootClasses(before: string, after: string, componentId: string): string[] {
+  const rootClasses = (template: string) => {
+    const root = template ? parseTemplateRoot(template) : undefined
+    return root ? classesOf(root) : []
+  }
+  const had = new Set(rootClasses(before))
+  const suffix = isolatedName('', componentId)
+  return rootClasses(after)
+    .filter((name) => name.endsWith(suffix) && !had.has(name))
+    .map((name) => naturalName(name, componentId))
+}
+
+/** The frame with this main's block of nested-root rules set to `css`, or gone when it is empty. It leads the head, before the frame's own styles. */
+export function withMainCssBlock(html: string, componentId: string, css: string): string {
+  const own = new RegExp(`<style[^>]*\\b${MAIN_CSS_ATTR}="${componentId}"[^>]*>[\\s\\S]*?</style>\\n?`, 'i')
+  const bare = html.replace(own, '')
+  if (!css) return bare
+  const block = `<style ${MAIN_CSS_ATTR}="${componentId}">\n${css}\n</style>\n`
+  const head = /<head\b[^>]*>\n?/i.exec(bare)
+  if (head) return `${bare.slice(0, head.index + head[0].length)}${block}${bare.slice(head.index + head[0].length)}`
+  return insertIntoHead(bare, block.trimEnd())
 }
 
 /** A stored template with this component's renamed classes put back, for a find written the way the

@@ -1,7 +1,7 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
 import { parse } from './workBudget.ts'
 import { elementIs } from './parse5Select.ts'
-import { CSS_ATTR, DETACHED_CSS_ATTR, HEAD_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
+import { CSS_ATTR, DETACHED_CSS_ATTR, HEAD_ATTR, INSTANCE_ATTR, MAIN_CSS_ATTR } from '../shared/components.ts'
 import { TOKEN_BLOCK_ATTR } from '../shared/designTokens.ts'
 import { FONT_BLOCK_ATTR } from '../shared/fonts.ts'
 import { WEB_FONT_LINK_ATTR } from '../shared/webFonts.ts'
@@ -39,7 +39,7 @@ const INHERITED = new Set([
 
 const GROUP_AT_RULES = new Set(['media', 'supports', 'container', 'layer'])
 
-type CssNode =
+export type CssNode =
   | { kind: 'rule'; selector: string; body: string }
   | { kind: 'group'; prelude: string; nodes: CssNode[] }
   | { kind: 'atomic'; name: string; text: string; prelude: string; body: string }
@@ -60,7 +60,7 @@ function blockEnd(css: string, open: number): number {
   return css.length
 }
 
-function parseCss(source: string): CssNode[] {
+export function parseCss(source: string): CssNode[] {
   const css = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const nodes: CssNode[] = []
   let at = 0
@@ -436,7 +436,13 @@ function cssVarsIn(text: string): string[] {
 
 /* blocks the server writes into every frame after the components pass: not a design's own rules,
    and reading them back would freeze a token's value into a component and bump it on the next save */
-export const MANAGED_STYLE_ATTRS = new Set([CSS_ATTR, DETACHED_CSS_ATTR, TOKEN_BLOCK_ATTR, FONT_BLOCK_ATTR])
+export const MANAGED_STYLE_ATTRS = new Set([
+  CSS_ATTR,
+  DETACHED_CSS_ATTR,
+  MAIN_CSS_ATTR,
+  TOKEN_BLOCK_ATTR,
+  FONT_BLOCK_ATTR,
+])
 
 /** Everything in a frame's own stylesheets (never another component's copy, nor a managed block). */
 export function frameStylesheets(html: string): string {

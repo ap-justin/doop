@@ -1462,7 +1462,7 @@ export function syncComponentHead(html: string, defs: ComponentDef[]): string {
   return next
 }
 
-function insertIntoHead(html: string, block: string): string {
+export function insertIntoHead(html: string, block: string): string {
   const close = /<\/head\s*>/i.exec(html)
   if (close) return `${html.slice(0, close.index)}${block}\n${html.slice(close.index)}`
   const open = /<head\b[^>]*>/i.exec(html)

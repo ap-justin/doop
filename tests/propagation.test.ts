@@ -149,7 +149,7 @@ describe('the propagation queue', () => {
     await propagation.whenIdle()
     for (const [index, frame] of frames.entries()) {
       if (index % 3 === 2) expect(framed(frame.id)).toBe(before[frame.id])
-      else expect(framed(frame.id)).toContain('btn fresh')
+      else expect(framed(frame.id)).toMatch(/btn__in-\w+ fresh/)
     }
     expect(propagation.pendingFrames(canvas.id)).toBe(0)
   })
@@ -161,7 +161,7 @@ describe('the propagation queue', () => {
     /* an override on one instance, which both have to keep */
     actions.updateFrame(
       frames[4]!.id,
-      { html: framed(frames[4]!.id).replace('<button class="btn"', '<button class="btn" title="mine"') },
+      { html: framed(frames[4]!.id).replace(/<button (class="btn[\w-]*")/, '<button $1 title="mine"') },
       actor,
     )
     await propagation.whenIdle()
@@ -173,7 +173,7 @@ describe('the propagation queue', () => {
     await propagation.whenIdle()
     const queued = { html: htmlOf(canvas), defs: defsOf(canvas) }
     expect(queued.html[frames[4]!.id]).toContain('title="mine"')
-    expect(queued.html[frames[0]!.id]).toContain('btn fresh')
+    expect(queued.html[frames[0]!.id]).toMatch(/btn__in-\w+ fresh/)
     expect(store.getFrame(frames[1]!.id)!.approval?.status).toBe('ready_for_dev')
 
     for (const frame of canvas.frames) store.updateFrame(frame.id, { html: start.html[frame.id]! }, actor.name)
@@ -216,12 +216,12 @@ describe('the propagation queue', () => {
     /* one tick in: some frames are done, the last one is not */
     await new Promise((resolve) => setImmediate(resolve))
     const last = frames[7]!
-    expect(framed(last.id)).not.toContain('btn fresh')
+    expect(framed(last.id)).not.toMatch(/btn__in-\w+ fresh/)
     actions.updateFrame(last.id, { html: framed(last.id).replace('<p>text 7</p>', '<p>edited</p>') }, actor)
 
     await propagation.whenIdle()
     expect(framed(last.id)).toContain('<p>edited</p>')
-    expect(framed(last.id)).toContain('btn fresh')
+    expect(framed(last.id)).toMatch(/btn__in-\w+ fresh/)
   })
 
   it('re-queues a frame that changed while it was being prepared instead of overwriting it', async () => {
@@ -238,7 +238,7 @@ describe('the propagation queue', () => {
     await propagation.whenIdle()
     expect(raced).toBeGreaterThan(1)
     expect(framed(target.id)).toContain('<p>raced</p>')
-    expect(framed(target.id)).toContain('btn fresh')
+    expect(framed(target.id)).toMatch(/btn__in-\w+ fresh/)
   })
 
   it('lets two canvases take turns', async () => {
@@ -272,7 +272,7 @@ describe('the propagation queue', () => {
     for (const [frameId] of writes.mock.calls) perFrame.set(frameId, (perFrame.get(frameId) ?? 0) + 1)
     expect(perFrame.size).toBe(7)
     expect([...perFrame.values()].every((count) => count === 1)).toBe(true)
-    expect(framed(frames[1]!.id)).toContain('btn e')
+    expect(framed(frames[1]!.id)).toMatch(/btn__in-\w+ e/)
     const lines = actions.getActivity(canvas.id).filter((item) => item.message.startsWith('updated “Button”'))
     expect(lines).toHaveLength(1)
     expect(lines[0]!.message).toBe('updated “Button” in 7 frames')
@@ -295,10 +295,10 @@ describe('the propagation queue', () => {
     stubEnv('DOOP_DEFER_COMPONENT_PROPAGATION', 'true')
     restyle(buttonMain.id, 'fresh')
     await propagation.whenIdle()
-    expect(framed(frames[1]!.id)).not.toContain('btn fresh')
+    expect(framed(frames[1]!.id)).not.toMatch(/btn__in-\w+ fresh/)
     /* its own next write brings it up to date, as before */
     actions.updateFrame(frames[1]!.id, { html: framed(frames[1]!.id) + '<!-- touched -->' }, actor)
-    expect(framed(frames[1]!.id)).toContain('btn fresh')
+    expect(framed(frames[1]!.id)).toMatch(/btn__in-\w+ fresh/)
   })
 })
 
@@ -325,8 +325,8 @@ describe('what a component update reports', () => {
     for (const frame of frames) expect(framed(frame.id)).toBe(before[frame.id])
 
     await propagation.whenIdle()
-    expect(framed(frames[0]!.id)).toContain('btn big')
-    expect(framed(frames[1]!.id)).toContain('btn big')
+    expect(framed(frames[0]!.id)).toMatch(/btn__in-\w+ big/)
+    expect(framed(frames[1]!.id)).toMatch(/btn__in-\w+ big/)
   })
 
   it('queues new prop defaults, which no frame write carries', async () => {
@@ -351,6 +351,6 @@ describe('what a component update reports', () => {
     const applied = updateComponent(canvas.id, 'Button', { find: 'class="btn"', replace: 'class="btn big"' }, actor)
     expect(applied.propagation).toEqual({ status: 'deferred', frames: 3 })
     await propagation.whenIdle()
-    expect(framed(frames[1]!.id)).not.toContain('btn big')
+    expect(framed(frames[1]!.id)).not.toMatch(/btn\S* big/)
   })
 })
