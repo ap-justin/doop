@@ -30,7 +30,7 @@ export interface FontOverride {
   style?: FontStyle
 }
 
-const FORMATS = {
+export const FORMATS = {
   woff2: { mime: 'font/woff2', ext: 'woff2' },
   woff: { mime: 'font/woff', ext: 'woff' },
   truetype: { mime: 'font/ttf', ext: 'ttf' },

@@ -8,8 +8,10 @@ import {
   type LibraryComponent,
 } from '../shared/components.ts'
 import type { Canvas } from '../shared/types.ts'
+import { swapFaceRules, withLibraryFaceRules, type FaceReplacement } from '../shared/fonts.ts'
 import { libraryLandingPageId } from '../shared/pages.ts'
 import * as persist from './db/persist.ts'
+import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { afterCommit, recordUndo } from './journal.ts'
 import { store } from './store.ts'
 import { getWorkspace, isActive } from './workspaces.ts'
@@ -49,6 +51,45 @@ export async function hydrateLibraries(): Promise<void> {
 /** What a canvas has published, whether or not anyone may use it right now. */
 export function publishedOn(canvasId: string): LibraryComponent[] {
   return published.get(canvasId) ?? []
+}
+
+/** Rewrite the replaced faces' @font-face rules inside published snapshots, in place of
+ *  a new publication: the revision stays, so no consumer sees an update to pull. Returns
+ *  the snapshots that changed. */
+export function swapPublishedFaces(replaced: readonly FaceReplacement[]): LibraryComponent[] {
+  return rewritePublishedCss(() => (css) => swapFaceRules(css, replaced))
+}
+
+/** The same rewrite for faces replaced before anything announced it: each snapshot's rules
+ *  that load an upload its publishing canvas's library no longer lists are pointed at the
+ *  library's face for that family, weight and style. A no-op when nothing is stale. */
+export function repairPublishedFaces(): LibraryComponent[] {
+  return rewritePublishedCss((canvasId) => {
+    const canvas = store.getCanvas(canvasId)
+    const library = canvas ? fontsForCanvas(canvas) : []
+    const foreign = canvas ? foreignFontAssetIds(canvas) : new Set<string>()
+    return (css) => withLibraryFaceRules(css, library, foreign)
+  })
+}
+
+function rewritePublishedCss(rewriteFor: (canvasId: string) => (css: string) => string): LibraryComponent[] {
+  const changed: LibraryComponent[] = []
+  for (const [canvasId, list] of [...published]) {
+    let touched = false
+    const rewrite = rewriteFor(canvasId)
+    const next = list.map((entry) => {
+      const css = rewrite(entry.css)
+      const rawCss = rewrite(entry.rawCss)
+      if (css === entry.css && rawCss === entry.rawCss) return entry
+      touched = true
+      const swapped = { ...entry, css, rawCss }
+      changed.push(swapped)
+      afterCommit(() => persist.saveLibraryComponent(swapped))
+      return swapped
+    })
+    if (touched) setPublished(canvasId, next)
+  }
+  return changed
 }
 
 export function isLibrary(canvasId: string): boolean {

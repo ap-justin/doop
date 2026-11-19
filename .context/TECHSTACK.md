@@ -258,16 +258,48 @@
   same file (byte for byte) uploaded again under another weight or style; writes queue per library,
   so racing uploads of one face leave one row.
   A frame stays self-contained: `withFontFaces` adds the `@font-face` rules for the library
-  families its CSS names to one `<style data-doop-fonts>` block in its own HTML (only adds, never
-  removes). `actions.createFrame` / `updateFrame` / every append chunk run it on every write
-  (`withCanvasFaces` in `server/canvasFaces.ts`; mid-stream once a complete `<head>` or `<body>`
-  tag has arrived, so the first section's screenshot already has its fonts and tokens),
-  and `FrameView`'s save path runs it too, so a family picked from the Design panel's "Custom
-  fonts" group renders at once. Every renderer that reads frame HTML (screenshots, PDF
-  export, iOS) gets the font that way. Agents see the library as `fonts` plus a note in
+  families its CSS names to one `<style data-doop-fonts>` block in its own HTML (it rebuilds that
+  block from the library on the server (`rebuild`): the library is the source of truth for a family
+  it still has, so a rule loading one of this server's uploads that the library no longer lists is
+  dropped (replaced by name, covered by a library face of the same family, weight and style, or
+  simply gone while the library holds another face of that family) and the library's own faces are
+  written instead; a rule for a family the library no longer has at all, a font from another host
+  and rules outside the block are never touched; the browser's
+  pass only adds, so a stale library there cannot undo a swap). A replacing upload announces it
+  (`server/fontReplaced.ts`, a listener's failure is logged and never fails the upload) and
+  `actions` rewrites the block in the frames that load the old file on the canvases using that
+  library (loaded canvases at once; idle ones after the response, read only when a stored frame
+  names the file), plus the component and published-library copies that carry the face, as
+  annotation writes (no version, no undo step); the instance stylesheets inside those frames get
+  the same in-place URL swap, never a rebuild from the definitions; so do the `<style
+data-doop-carried>` blocks a moved or pasted layer brings (`rewriteCarriedCss`; the rule keeps
+  its family, `unicode-range` and `local()` sources, and takes the successor's weight and style;
+  a family a paste renamed `<family>-<scope>` counts as its library family, in a component's CSS
+  too), and the instance frames of a canvas that designs with another library but holds a copy of
+  the component. Faces replaced before the swap existed, or removed from a library that keeps
+  their family, are healed by `actions.repairStaleFaces`, run
+  after the asset-ref reconcile at every boot: `persist.fontAssetsByCanvas` names, from
+  `asset_refs`, the canvases whose frames load a font file their library lacks, and
+  `persist.styleBlocksLoading` cuts out the stylesheets that do, so a canvas is read only where
+  healing would change something; their font blocks, carried and component stylesheets, the canvas's components
+  (library copies included) and published copies (`repairPublishedFaces`) are rewritten as annotation writes, a failure is logged
+  per canvas, and a second run changes nothing. A file another library's `fonts` row holds
+  (`foreignFontAssetIds`: what a layer pasted from that library brought) is left as written; a
+  file no row holds any more has no record of its library and is treated as this one's. A component or published
+  rule is pointed at the new file in place, keeping its family and descriptors. A main's
+  stylesheet is read with each rule loading an upload the library no longer lists pointed at the
+  library's file for that face (`withLibraryFaceRules` in `prepareMains`; hosted fonts and files on
+  another host are left alone), so its next write files no revision. `actions.createFrame` /
+  `updateFrame` / every append chunk run `withFontFaces` on every write (`withCanvasFaces` in
+  `server/canvasFaces.ts`; mid-stream once a complete `<head>` or `<body>` tag has arrived, so the
+  first section's screenshot already has its fonts and tokens), and `FrameView`'s save path runs
+  it too, so a family picked from the Design panel's "Custom fonts" group renders at once. Every
+  renderer that reads frame HTML (screenshots, PDF export, iOS) gets the font that way.
+  Agents see the library as `fonts` plus a note in
   `get_canvas` and as a system block in the resident agent (`libraryBrief`): name the family,
   never load it from Google Fonts. Tests: `fonts.test.ts` (a real WOFF2 in `tests/fixtures/fonts`), `fontLibrary.test.ts`,
-  `fontLibraryRace.test.ts`, `fontFrameWrites.test.ts` (faces on create, stream end and idle; an idle close sends viewers the
+  `fontLibraryRace.test.ts`, `fontRepair.test.ts` (stale rules healed by a write and at boot, carried
+  styles, copy-only canvases), `fontFrameWrites.test.ts` (faces on create, stream end and idle; an idle close sends viewers the
   healed document, so a cut-off script never runs).
 - No files inside frames (`server/inlineData.ts`, `LEAN_FRAMES` in `server/guide.ts`): an agent
   write that adds a base64 `data:` URI of any kind is refused and nothing is written, with what to
