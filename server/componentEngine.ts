@@ -863,7 +863,7 @@ export function reconcileInstance(el: Element, ctx: EngineContext): InstanceStat
 
 const classTokens = (value: string | null | undefined) => (value ?? '').split(/\s+/).filter(Boolean)
 
-/** One class whichever spelling: `card` and the `card__in-<id>` componentClasses' isolatedName makes of it. */
+/** `card` and its renamed spelling `card__in-<id>` (componentClasses' `isolatedName`) as one key. */
 function classKey(name: string, componentId: string): string {
   const suffix = `__in-${componentId}`
   return name.length > suffix.length && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name

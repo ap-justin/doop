@@ -977,11 +977,17 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   root and below it, are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike.
   A class the designer puts on a placed instance (`<doop-use class>`, or one the frame adds to the
   root) is not in the template and stays as written, so the frame places and sizes the instance with
-  its own classes (the engine appends a `<doop-use>`'s classes after the root's). A parent's rule that
+  its own classes (the engine appends a `<doop-use>`'s classes after the root's, and `useMarkup`
+  writes them back as `class`). A class override is stored whole against the revision it was read
+  at; `reconcileInstance` carries it onto a newer one as what the instance changed
+  (`rebasedClassOverrides`: added classes stay, removed ones stay gone, `card` and `card__in-<id>`
+  are one class), so an upgrade never drops the root's renamed class. A parent's rule that
   ends at a nested component's root (`.plan .btn`) is read as naming that root's renamed class
   (`withNestedRootNames`, in `prepareMains` and the not-kept report), so it still reaches the nested
-  instance; `update_component`'s find/replace and the lookalike check read the template with natural
-  names when the stored text has no match, and `replace_matching` links hand-drawn elements to the
+  instance. Not yet: in the parent's own main frame that rule, written in natural names, misses the
+  nested root, which wears its renamed class there too. `update_component`'s find/replace reads the
+  template with natural names when the stored text has no match, the lookalike check always reads
+  natural names, and `replace_matching` links hand-drawn elements to the
   renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested
   `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own
