@@ -42,8 +42,9 @@ function naturalName(name: string, componentId: string): string {
 
 /**
  * The renamed vocabulary lives in the stored definition and its instances only; a main in its frame
- * wears natural names, which its frame's stylesheet styles. These undo the rename, so markup or CSS
- * copied from get_component reads as the main's own.
+ * wears natural names, which its frame's stylesheet styles. This, `withNaturalFrameStyles` and
+ * `naturalCss` undo the rename, so markup or CSS copied from get_component reads as the main's own.
+ * True when it renamed anything.
  */
 export function withNaturalClasses(root: Element, componentId: string): boolean {
   let changed = false

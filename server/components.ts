@@ -308,7 +308,8 @@ function prepareMains(
 /**
  * Re-derive these definitions from their mains in this frame, as a write of the frame would,
  * and nothing else: no other main is looked at and no instance is rendered again. `html` is
- * the frame as the pass would leave it; it differs only where a main needed part keys.
+ * the frame as the pass would leave it; it differs only where a main needed part keys or wore
+ * the component's renamed class names (put back to natural ones, in its own stylesheets too).
  */
 export function rederiveFromMains(
   canvas: Canvas,
