@@ -18,6 +18,7 @@ import { compactDocument } from '../server/componentEngine.ts'
 import {
   changeInstances,
   deleteComponent,
+  lookalikesIn,
   restoreComponent,
   restoreComponentVersion,
   updateComponent,
@@ -299,17 +300,30 @@ describe('a placed component and the classes of its frame', () => {
     })
   })
 
+  it('reports a hand-drawn copy on natural names as a lookalike of a component stored on renamed ones', () => {
+    const def = makeSelect()
+    expect(def.template).toContain(`select__in-${def.id}`)
+    const copy = '<div class="select"><span class="sl">Size</span><div class="ctl">M</div></div>'
+    const drawn = actions.createFrame(canvasId, { name: 'Drawn', html: '' }, actor)!
+    actions.updateFrame(drawn.id, { html: doc(`<main>${copy}${copy}</main>`) }, actor)
+    expect(lookalikesIn(store.getFrame(drawn.id)!)).toEqual([
+      { component: 'Select', occurrences: 2, usage: expect.any(String) },
+    ])
+  })
+
   it('keeps the main in its own frame on natural root names, with no new revision on a re-save', () => {
     const def = makeSelect()
+    /* plain values: the store may update a definition in place, which would make `def` and `again` one object */
+    const { rev, template, css } = def
     const frame = store.getFrame(def.mainFrameId!)!
     expect(frame.html).toContain('<div class="select"')
     actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
     const renamed = frame.html.replace('class="select"', `class="select__in-${def.id}"`)
     actions.updateFrame(frame.id, { html: renamed }, actor)
     const again = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
-    expect(again.rev).toBe(def.rev)
-    expect(again.template).toBe(def.template)
-    expect(again.css).toBe(def.css)
+    expect(again.rev).toBe(rev)
+    expect(again.template).toBe(template)
+    expect(again.css).toBe(css)
     const stored = store.getFrame(frame.id)!.html
     expect(stored).toContain('<div class="select"')
     expect(stored).not.toContain('__in-')

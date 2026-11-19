@@ -292,6 +292,38 @@ describe('an agent working with components', () => {
     expect(store.getFrame(b)!.html).toContain('Three')
   })
 
+  it('links hand-drawn copies of a styled component without a class override', async () => {
+    const canvas = newCanvas()
+    const markup = (title: string, id = '') =>
+      `<article class="card"${id ? ` data-doop-id="${id}"` : ''}><h3 class="title">${title}</h3></article>`
+    const page = (body: string) =>
+      `<!doctype html><html><head><style>.card { padding: 8px } .title { font-weight: 600 }</style></head><body>${body}</body></html>`
+    const { data: main } = await call('create_frame', {
+      canvas_id: canvas.id,
+      name: 'A',
+      html: page(markup('One', 'card-one')),
+    })
+    const { data: other } = await call('create_frame', { canvas_id: canvas.id, name: 'B', html: page(markup('Two')) })
+
+    const made = await call('create_component', {
+      canvas_id: canvas.id,
+      name: 'Card',
+      frame_id: main.frame.id,
+      element: 'card-one',
+      replace_matching: true,
+    })
+    expect(made.isError).toBe(false)
+    expect(made.data.converted).toEqual([{ frameId: other.frame.id, instances: 1 }])
+
+    /* the stylesheet names both classes, so the component stores them renamed */
+    const id = made.data.component.id as string
+    const html = store.getFrame(other.frame.id)!.html
+    expect(html).toContain(`class="card__in-${id}"`)
+    expect(html).toContain(`class="title__in-${id}"`)
+    /* the copy's natural names are the template's classes, not a change to record */
+    expect(html).not.toContain('data-doop-overrides')
+  })
+
   it('places instances and changes several in one write', async () => {
     const canvas = newCanvas()
     await button(canvas.id)
