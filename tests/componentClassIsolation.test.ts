@@ -310,7 +310,7 @@ describe('a placed component and the classes of its frame', () => {
       expect(stored).toContain('class="sl"')
     })
 
-    it('leaves a nested component’s renamed names alone when the outer main is written back', () => {
+    it('leaves another component’s renamed names alone when a main is written back', () => {
       const def = makeSelect()
       const badge = blankComponent({ name: 'Badge', by: 'Tester', props: [] })
       store.saveComponent(canvasId, badge)

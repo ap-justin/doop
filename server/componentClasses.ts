@@ -66,7 +66,7 @@ const MANAGED_STYLE_OPEN = new RegExp(`\\s(?:${[...MANAGED_STYLE_ATTRS].join('|'
 
 /** The frame's own `<style>` blocks with this component's renamed classes put back, so the frame's
  *  rules match the natural names its main wears. The blocks the definition does not read as the
- *  frame's own (`MANAGED_STYLE_ATTRS`: component, token and font blocks) keep their names; any other,
+ *  frame's own (`MANAGED_STYLE_ATTRS`: component, detached-copy, token and font blocks) keep their names; any other,
  *  carried and imported ones included, is read and written back the way the definition reads it. */
 export function withNaturalFrameStyles(html: string, componentId: string): string {
   if (!html.includes(isolatedName('', componentId))) return html
