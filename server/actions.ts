@@ -3051,11 +3051,16 @@ function rewriteFrameFaces(
 /** A component's CSS with replaced faces swapped, read the way its main's next write reads
  *  it (components.ts `prepareMains`), so that write files no revision: in a definition whose
  *  main is on this canvas, a rule loading an upload the canvas library no longer lists points
- *  at the library's file for that face; a library copy, with no main here, takes the replacement. */
+ *  at the library's file for that face, unless another library holds that file; a library
+ *  copy, with no main here, takes the replacement. */
 function swappedFaceCss(canvas: Canvas, def: ComponentDef, replaced: readonly FaceReplacement[]) {
   if (def.source?.library) return { css: swapFaceRules(def.css, replaced), rawCss: swapFaceRules(def.rawCss, replaced) }
   const library = fontsForCanvas(canvas)
-  return { css: withLibraryFaceRules(def.css, library), rawCss: withLibraryFaceRules(def.rawCss, library) }
+  const foreign = foreignFontAssetIds(canvas)
+  return {
+    css: withLibraryFaceRules(def.css, library, foreign),
+    rawCss: withLibraryFaceRules(def.rawCss, library, foreign),
+  }
 }
 
 const swapReplacedFacesInComponents = atomic(function swapReplacedFacesInComponents(
@@ -3142,7 +3147,8 @@ const FONT_ASSET_EXTS = Object.values(FONT_FORMATS).map((format) => format.ext)
 
 /** A document's font rules healed against `library`: its font block rebuilt by `fontBlock`,
  *  and each rule of its component and carried stylesheets that loads an upload the library
- *  no longer lists pointed at the library's file for that face. */
+ *  no longer lists pointed at the library's file for that face; a rule loading a file in
+ *  `foreign` (one another library holds) is left as written. */
 function healFaceRules(
   html: string,
   library: readonly CustomFont[],
@@ -3200,6 +3206,14 @@ const repairFacesInComponents = atomic(function repairFacesInComponents(
  *  never thrown. */
 export async function repairStaleFaces(): Promise<{ canvases: number; published: number; failed: number }> {
   let failed = 0
+  /* one scan of every font row per library for the run, not per canvas */
+  const foreignByLibrary = new Map<string, Set<string>>()
+  const foreignFor = (canvas: Canvas) => {
+    const key = canvas.workspaceId ? `ws:${canvas.workspaceId}` : `user:${canvas.ownerId ?? ''}`
+    let foreign = foreignByLibrary.get(key)
+    if (!foreign) foreignByLibrary.set(key, (foreign = foreignFontAssetIds(canvas)))
+    return foreign
+  }
   const staleByCanvas = new Map<string, Set<string>>()
   let blocks = new Map<string, string[]>()
   try {
@@ -3210,7 +3224,7 @@ export async function repairStaleFaces(): Promise<{ canvases: number; published:
       if (!library.length) continue
       const listed = new Set(library.flatMap((font) => [...extractAssetIds(font.url)]))
       /* a file another library holds came with a layer pasted from it: not this library's to re-point */
-      const foreign = foreignFontAssetIds(canvas)
+      const foreign = foreignFor(canvas)
       const stale = new Set([...ids].filter((id) => !listed.has(id) && !foreign.has(id)))
       if (stale.size) staleByCanvas.set(canvasId, stale)
     }
@@ -3225,7 +3239,7 @@ export async function repairStaleFaces(): Promise<{ canvases: number; published:
     const library = fontsForCanvas(canvas)
     if (!library.length) continue
     const stale = staleByCanvas.get(canvas.id)
-    const foreign = foreignFontAssetIds(canvas)
+    const foreign = foreignFor(canvas)
     const frames = !!stale && healsStyleBlocks(blocks.get(canvas.id) ?? [], stale, library, foreign)
     const components = (canvas.components ?? []).some((def) => componentFacesStale(def, library, foreign))
     if (!frames && !components) continue
