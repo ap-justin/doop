@@ -2351,8 +2351,8 @@ function healCanvas(canvas: Canvas, counts: { healed: number; noMain: number; fa
   }
 }
 
-/** The definitions only: the frame is written just where a main needed part keys, as an
- *  annotation, since nothing in it looks different. */
+/** The definitions only: the frame is written just where a main needed part keys or natural
+ *  class names back, as an annotation, since neither is an edit of the design. */
 function healFromMain(canvas: Canvas, frame: Frame, ids: ReadonlySet<string>) {
   const actor = resolveActor({ name: frame.updatedBy, kind: 'user' })
   const { html, saved } = rederiveFromMains(canvas, frame.id, ids, actor.name)

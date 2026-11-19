@@ -1,5 +1,6 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
 import { attrOf, isElement, parseTemplateRoot, setAttr } from './componentEngine.ts'
+import { MANAGED_STYLE_ATTRS } from './componentCss.ts'
 import { INSTANCE_ATTR, USE_TAG } from '../shared/components.ts'
 import { PROTO_ATTRS } from '../shared/prototype.ts'
 
@@ -42,17 +43,36 @@ function naturalName(name: string, componentId: string): string {
 
 /**
  * The renamed vocabulary lives in the stored definition and its instances only; a main in its frame
- * wears natural names, which its frame's stylesheet styles. These undo the rename, so markup or CSS
- * copied from get_component reads as the main's own.
+ * wears natural names, which its frame's stylesheet styles. This, `withNaturalFrameStyles` and
+ * `naturalCss` undo the rename, so markup or CSS copied from get_component reads as the main's own.
+ * True when it renamed anything.
  */
-export function withNaturalClasses(root: Element, componentId: string): void {
+export function withNaturalClasses(root: Element, componentId: string): boolean {
+  let changed = false
   const stack: Element[] = [root]
   for (let el = stack.pop(); el; el = stack.pop()) {
     const classes = classesOf(el)
     const natural = classes.map((name) => naturalName(name, componentId))
-    if (natural.some((name, index) => name !== classes[index])) setAttr(el, 'class', natural.join(' '))
+    if (natural.some((name, index) => name !== classes[index])) {
+      setAttr(el, 'class', natural.join(' '))
+      changed = true
+    }
     stack.push(...el.childNodes.filter(isElement))
   }
+  return changed
+}
+
+const MANAGED_STYLE_OPEN = new RegExp(`\\s(?:${[...MANAGED_STYLE_ATTRS].join('|')})(?=[\\s=>/])`)
+
+/** The frame's own `<style>` blocks with this component's renamed classes put back, so the frame's
+ *  rules match the natural names its main wears. The blocks the definition does not read as the
+ *  frame's own (`MANAGED_STYLE_ATTRS`: component, detached-copy, token and font blocks) keep their names; any other,
+ *  carried and imported ones included, is read and written back the way the definition reads it. */
+export function withNaturalFrameStyles(html: string, componentId: string): string {
+  if (!html.includes(isolatedName('', componentId))) return html
+  return html.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (block, open: string, css: string, close: string) =>
+    MANAGED_STYLE_OPEN.test(open) ? block : `${open}${naturalCss(css, componentId)}${close}`,
+  )
 }
 
 export function naturalCss(css: string, componentId: string): string {

@@ -21,7 +21,7 @@ import {
   restoreComponentVersion,
   updateComponent,
 } from '../server/componentActions.ts'
-import { isolateClasses } from '../server/componentClasses.ts'
+import { isolateClasses, withNaturalFrameStyles } from '../server/componentClasses.ts'
 import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
@@ -283,7 +283,63 @@ describe('a placed component and the classes of its frame', () => {
         expect(again.css).toBe(def.css)
         expect(again.rawCss).toBe(def.rawCss)
         expect(again.rev).toBe(def.rev)
+        /* the main in its frame wears natural names, which the frame's own rule styles */
+        const stored = store.getFrame(frame.id)!.html
+        expect(stored).not.toContain('__in-')
+        expect(stored).toContain('class="sl"')
+        expect(stored).toMatch(/\.sl \{/)
       }
+    })
+
+    it('keeps the renamed names in the stylesheet of an instance placed in the main’s own frame', () => {
+      const def = makeSelect()
+      const frame = store.getFrame(def.mainFrameId!)!
+      const instance = `<doop-use component="${def.id}" label="Again"></doop-use>`
+      actions.updateFrame(frame.id, { html: frame.html.replace('</body>', `${instance}</body>`) }, actor)
+      const block = (html: string) =>
+        new RegExp(`<style data-doop-component-css="${def.id}">[\\s\\S]*?</style>`).exec(html)?.[0] ?? ''
+      const before = block(store.getFrame(frame.id)!.html)
+      expect(before).toContain(`.sl__in-${def.id}`)
+      actions.updateFrame(
+        frame.id,
+        { html: store.getFrame(frame.id)!.html.replace('class="sl"', `class="sl__in-${def.id}"`) },
+        actor,
+      )
+      const stored = store.getFrame(frame.id)!.html
+      expect(block(stored)).toBe(before)
+      expect(stored).toContain('class="sl"')
+    })
+
+    it('leaves another component’s renamed names alone when a main is written back', () => {
+      const def = makeSelect()
+      const badge = blankComponent({ name: 'Badge', by: 'Tester', props: [] })
+      store.saveComponent(canvasId, badge)
+      const badgeFrame = actions.createFrame(canvasId, { name: 'Badge main', html: '' }, actor)!
+      actions.updateFrame(
+        badgeFrame.id,
+        {
+          html: doc(
+            `<span class="badge" ${COMPONENT_ATTR}="${badge.id}"><b class="tag">New</b></span>`,
+            '.badge { display: inline-flex } .tag { font-weight: 600 }',
+          ),
+        },
+        actor,
+      )
+      const inner = `tag__in-${badge.id}`
+      const frame = store.getFrame(def.mainFrameId!)!
+      /* the frame's own sheet names both components' renamed classes: only the outer one's come back */
+      const nested = `<span class="${inner}" data-keep>x</span><style>.${inner} { outline: 1px solid } .sl__in-${def.id} { margin: 0 }</style>`
+      actions.updateFrame(frame.id, { html: frame.html.replace('</body>', `${nested}</body>`) }, actor)
+      actions.updateFrame(
+        frame.id,
+        { html: store.getFrame(frame.id)!.html.replace('class="sl"', `class="sl__in-${def.id}"`) },
+        actor,
+      )
+      const stored = store.getFrame(frame.id)!.html
+      expect(stored).toContain(`<span class="${inner}" data-keep>`)
+      expect(stored).toContain(`.${inner} { outline: 1px solid }`)
+      expect(stored).toContain('.sl { margin: 0 }')
+      expect(stored).not.toContain(`__in-${def.id}`)
     })
   })
 
@@ -640,5 +696,25 @@ describe('a library component placed on another canvas', () => {
     const main = (await canvasOf(targetId)).frames.find((frame) => frame.id === target.mainFrameId)!
     expect(classesIn(main.html, /<span class="([^"]*)"/g)).toEqual(['sl'])
     expect(main.html.includes('__in-')).toBe(false)
+  })
+})
+
+describe('withNaturalFrameStyles', () => {
+  const rule = (attrs: string) => `<style${attrs}>.sl__in-abc { color: red }</style>`
+  const natural = '.sl { color: red }'
+
+  it('reads the frame’s own and carried blocks as the definition does, and leaves the managed ones', () => {
+    const html = [
+      rule(''),
+      rule(' data-doop-carried="x"'),
+      rule(' data-doop-import="x"'),
+      rule(' data-doop-component-css="abc"'),
+      rule(' data-doop-detached-css="abc-1"'),
+      rule(' data-doop-tokens'),
+      rule(' data-doop-fonts'),
+    ].join('\n')
+    const out = withNaturalFrameStyles(html, 'abc').split('\n')
+    expect(out.slice(0, 3).every((block) => block.includes(natural))).toBe(true)
+    expect(out.slice(3)).toEqual(html.split('\n').slice(3))
   })
 })
