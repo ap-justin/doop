@@ -982,7 +982,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   frame wears natural names, which its frame's stylesheet styles. `prepareMains` strips this
   component's suffix from the main and the sheet before deriving (`withNaturalClasses`,
   `naturalCss`) and writes the main and the frame's own `<style>` blocks back that way
-  (`withNaturalFrameStyles`; `data-doop-*` blocks keep their names), and every write of a main from stored or agent text (`update_component`'s `html`,
+  (`withNaturalFrameStyles`; the component, token and font blocks, `MANAGED_STYLE_ATTRS`, keep their names; carried and imported ones are read as the definition reads them), and every write of a main from stored or agent text (`update_component`'s `html`,
   find/replace and `css`, restores, `writeNewMain`, library import) writes natural names, so either
   vocabulary derives the same definition and a re-save makes no new revision.
   It is the one derivation point: library snapshots, imports, `sync_component`,
