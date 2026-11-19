@@ -98,12 +98,14 @@ describe('a placed component and the classes of its frame', () => {
     expect(def.css).toContain(`.${renamed}`)
     expect(def.css).not.toMatch(/\.sl[\s{,:.[]/)
     expect(def.rawCss).toContain(`.${renamed}`)
-    /* the instance's outer element keeps its class, so the frame can still place and size it */
-    expect(def.template).toMatch(/^<div class="select"/)
-    const selectRule = def.css.split('\n').find((line) => line.includes('.select') && line.includes('display: flex'))
+    /* the root's class is the component's own too, once its stylesheet names it */
+    expect(def.template).toMatch(new RegExp(`^<div class="select__in-${def.id}"`))
+    const selectRule = def.css
+      .split('\n')
+      .find((line) => line.includes('.select__in-') && line.includes('display: flex'))
     expect(selectRule).toContain('{ display: flex; flex-direction: column }')
-    expect(def.css).not.toContain('.select__in-')
-    expect(def.rawCss).not.toContain('.select__in-')
+    expect(def.css).not.toMatch(/\.select[\s{,:.[]/)
+    expect(def.rawCss).not.toMatch(/\.select[\s{,:.[]/)
   })
 
   it('is the same on every write, and a main saved again is not a new revision', () => {
@@ -183,6 +185,95 @@ describe('a placed component and the classes of its frame', () => {
     expect(migrated.rawCss).toBe(def.rawCss)
     expect(migrated.css).toContain(`.sl__in-${def.id}`)
     expect(migrated.rawCss).toContain(`.sl__in-${def.id}`)
+  })
+
+  const rootClasses = (html: string, id: string) =>
+    (new RegExp(`<div class="([^"]*)"[^>]*${INSTANCE_ATTR}="${id}"`).exec(html)?.[1] ?? '').split(' ')
+
+  it('keeps the frame’s rule for the root’s class off a placed instance’s root', () => {
+    const def = makeSelect()
+    const html = store.getFrame(place(def.id).id)!.html
+    /* the frame styles `.select` too (FRAME_CSS), and the component's own rule names it */
+    expect(rootClasses(html, def.id)).toEqual([`select__in-${def.id}`])
+  })
+
+  it('keeps a class put on the placed instance as written, so the frame can still size it', () => {
+    const def = makeSelect()
+    const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      {
+        html: doc(
+          `<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`,
+          '.wide { width: 320px } .select { margin: 8px }',
+        ),
+      },
+      actor,
+    )
+    const html = store.getFrame(page.id)!.html
+    expect(rootClasses(html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+    actions.updateFrame(page.id, { html: `${html} ` }, actor)
+    expect(rootClasses(store.getFrame(page.id)!.html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+  })
+
+  it('keeps the main in its own frame on natural root names, with no new revision on a re-save', () => {
+    const def = makeSelect()
+    const frame = store.getFrame(def.mainFrameId!)!
+    expect(frame.html).toContain('<div class="select"')
+    actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
+    const renamed = frame.html.replace('class="select"', `class="select__in-${def.id}"`)
+    actions.updateFrame(frame.id, { html: renamed }, actor)
+    const again = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
+    expect(again.rev).toBe(def.rev)
+    expect(again.template).toBe(def.template)
+    expect(again.css).toBe(def.css)
+    const stored = store.getFrame(frame.id)!.html
+    expect(stored).toContain('<div class="select"')
+    expect(stored).not.toContain('__in-')
+  })
+
+  it('lets a parent component’s rule reach a nested component’s root, which wears its renamed class', () => {
+    const button = blankComponent({ name: 'Button', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, button)
+    const buttonFrame = actions.createFrame(canvasId, { name: 'Button main', html: '' }, actor)!
+    actions.updateFrame(
+      buttonFrame.id,
+      {
+        html: doc(`<button class="btn" ${COMPONENT_ATTR}="${button.id}">Go</button>`, '.btn { display: inline-flex }'),
+      },
+      actor,
+    )
+    const plan = blankComponent({ name: 'Plan', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, plan)
+    const planFrame = actions.createFrame(canvasId, { name: 'Plan main', html: '' }, actor)!
+    actions.updateFrame(
+      planFrame.id,
+      {
+        html: doc(
+          `<div class="plan" ${COMPONENT_ATTR}="${plan.id}"><doop-use component="${button.id}"></doop-use></div>`,
+          '.plan { padding: 8px } .plan .btn { width: 100% }',
+        ),
+      },
+      actor,
+    )
+    const planDef = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    const btn = `btn__in-${button.id}`
+    /* the sheet names the nested root's renamed class, so it is kept and matches the Button inside a Plan */
+    expect(planDef.rawCss).toContain(`.plan__in-${plan.id} .${btn} { width: 100% }`)
+    const page = actions.createFrame(canvasId, { name: 'Pricing', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      { html: doc(`<doop-use component="${plan.id}"></doop-use>`, '.btn { width: 10px }') },
+      actor,
+    )
+    const html = store.getFrame(page.id)!.html
+    const planBlock = new RegExp(`<style data-doop-component-css="${plan.id}">[\\s\\S]*?</style>`).exec(html)![0]
+    expect(planBlock).toContain(`:where([data-doop-instance="${plan.id}"]) .${btn}`)
+    expect(html).toMatch(
+      new RegExp(`<div class="plan__in-${plan.id}"[^>]*${INSTANCE_ATTR}="${plan.id}"[\\s\\S]*<button class="${btn}"`),
+    )
+    /* and the frame's own `.btn` rule does not */
+    expect(html).not.toMatch(/<button class="btn"/)
   })
 
   it('leaves a detached instance looking as it did', () => {
@@ -343,7 +434,7 @@ describe('a placed component and the classes of its frame', () => {
     })
   })
 
-  it('does not rename a class the stylesheet never names, a root class, or one a script uses', () => {
+  it('does not rename a class the stylesheet never names, or one a script uses', () => {
     const out = isolateClasses(
       {
         template: `<div class="card"><span class="card tw-text-sm">a</span><i class="open hit"></i><script>el.classList.add('open')</script></div>`,
@@ -352,13 +443,12 @@ describe('a placed component and the classes of its frame', () => {
       },
       'abc',
     )
-    const renamed = '.card .hit__in-abc { color: red } .open { color: blue }'
+    const renamed = '.card__in-abc .hit__in-abc { color: red } .open { color: blue }'
     expect(out.template).toBe(
-      `<div class="card"><span class="card tw-text-sm">a</span><i class="open hit__in-abc"></i><script>el.classList.add('open')</script></div>`,
+      `<div class="card__in-abc"><span class="card__in-abc tw-text-sm">a</span><i class="open hit__in-abc"></i><script>el.classList.add('open')</script></div>`,
     )
     expect(out.css).toBe(renamed)
     expect(out.rawCss).toBe(renamed)
-    expect(out.css).not.toContain('.card__in-')
     expect(isolateClasses(out, 'abc')).toEqual(out)
   })
 })

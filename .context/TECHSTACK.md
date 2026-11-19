@@ -973,10 +973,17 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `create_components` cases in `componentTools.test.ts`, `tokenComponentGuidance.test.ts`.
 - Component class isolation (`server/componentClasses.ts`, run by `prepareMains` in
   `server/components.ts`): a frame's own `.sl` rule must not match the `sl` element inside a placed
-  component. When a main is read into its definition, the classes its stylesheet styles on elements
-  below the root are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike. The
-  root's classes (the frame places and sizes it), classes a nested `<doop-use>` or instance root
-  wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
+  component. When a main is read into its definition, the classes its stylesheet styles, on the
+  root and below it, are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike.
+  A class the designer puts on a placed instance (`<doop-use class>`, or one the frame adds to the
+  root) is not in the template and stays as written, so the frame places and sizes the instance with
+  its own classes (the engine appends a `<doop-use>`'s classes after the root's). A parent's rule that
+  ends at a nested component's root (`.plan .btn`) is read as naming that root's renamed class
+  (`withNestedRootNames`, in `prepareMains` and the not-kept report), so it still reaches the nested
+  instance; `update_component`'s find/replace and the lookalike check read the template with natural
+  names when the stored text has no match, and `replace_matching` links hand-drawn elements to the
+  renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested
+  `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own
   component's) stay. The renamed names live in the definition and its instances only: a main in its
   frame wears natural names, which its frame's stylesheet styles. `prepareMains` strips this

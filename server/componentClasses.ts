@@ -64,6 +64,42 @@ export function withNaturalClasses(root: Element, componentId: string): boolean 
 
 const MANAGED_STYLE_OPEN = new RegExp(`\\s(?:${[...MANAGED_STYLE_ATTRS].join('|')})(?=[\\s=>/])`)
 
+/**
+ * A rule of this component's sheet that ends at a nested component's root (`.plan .btn`) names the
+ * class that root wore when the sheet was written. The nested root now wears the renamed class
+ * (`btn__in-<nestedId>`), so the rule is read as naming that, or it would match nothing and be
+ * dropped. A name this component's own elements wear too is left alone: it is not only the nested
+ * root's.
+ */
+export function withNestedRootNames(sheet: string, main: Element): string {
+  const renamed = new Map<string, string>()
+  const own = new Set<string>()
+  const stack: Element[] = [main]
+  for (let el = stack.pop(); el; el = stack.pop()) {
+    const nested = el !== main ? attrOf(el, INSTANCE_ATTR) : undefined
+    if (nested === undefined) {
+      for (const name of classesOf(el)) own.add(name)
+      stack.push(...el.childNodes.filter(isElement))
+      continue
+    }
+    const suffix = isolatedName('', nested)
+    for (const name of classesOf(el)) if (name.endsWith(suffix)) renamed.set(naturalName(name, nested), name)
+  }
+  if (!renamed.size) return sheet
+  return sheet.replace(CSS_CLASSES, (match, name: string | undefined) => {
+    const to = name === undefined || own.has(name) ? undefined : renamed.get(name)
+    return to === undefined ? match : `.${to}`
+  })
+}
+
+/** A stored template with this component's renamed classes put back, for a find written the way the
+ *  main reads (an agent that never saw the renamed text). */
+export function naturalTemplate(template: string, componentId: string): string {
+  const root = parseTemplateRoot(template)
+  if (!root || !withNaturalClasses(root, componentId)) return template
+  return serializeOuter(root)
+}
+
 /** The frame's own `<style>` blocks with this component's renamed classes put back, so the frame's
  *  rules match the natural names its main wears. The blocks the definition does not read as the
  *  frame's own (`MANAGED_STYLE_ATTRS`: component, detached-copy, token and font blocks) keep their names; any other,
@@ -85,19 +121,23 @@ export function naturalCss(css: string, componentId: string): string {
  * A frame's own rules must not reach into a placed component: its `.sl` rule would match the
  * component's `sl` element too. So the classes the component's stylesheet styles are renamed,
  * in its template and in its stylesheets alike, with the component's id as the suffix.
- * Left alone: the root's classes (the frame places and sizes that element), classes a nested
- * component's root wears (this component's rules place it), classes the stylesheet never names
- * (utility classes), classes a script, style, inline handler or prototype interaction in the
- * template reads, and anything inside a nested instance, which is its own component's. Renaming
- * twice changes nothing, so a main regenerated from a renamed template derives the same one again.
+ * The root is the component's own element too: a class on it that the stylesheet names is renamed
+ * like any other, or the frame's `.sl` rule would restyle every instance. What the designer puts
+ * on a placed instance (`<doop-use class>`, a class the frame adds to the root) is not in the
+ * template and stays as written, so the frame still places and sizes the instance with its own
+ * classes. Left alone: classes a nested component's root wears (this component's rules place it),
+ * classes the stylesheet never names (utility classes), classes a script, style, inline handler or
+ * prototype interaction in the template reads, and anything inside a nested instance, which is its
+ * own component's. Renaming twice changes nothing, so a main regenerated from a renamed template
+ * derives the same one again.
  */
 export function isolateClasses(parts: ClassedParts, componentId: string): ClassedParts {
   const root = parseTemplateRoot(parts.template)
   if (!root) return parts
   const suffix = isolatedName('', componentId)
-  const rootClasses = new Set(classesOf(root))
   const nestedRootClasses = new Set<string>()
-  const inner: Element[] = []
+  /* the root and everything below it that is this component's own */
+  const inner: Element[] = [root]
   let sources = ''
   const stack: Element[] = [root]
   for (let el = stack.pop(); el; el = stack.pop()) {
@@ -124,7 +164,6 @@ export function isolateClasses(parts: ClassedParts, componentId: string): Classe
         (name) =>
           CLASS_NAME.test(name) &&
           !name.endsWith(suffix) &&
-          !rootClasses.has(name) &&
           !nestedRootClasses.has(name) &&
           styled.has(name) &&
           !read(name),

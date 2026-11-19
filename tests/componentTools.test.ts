@@ -202,7 +202,7 @@ describe('an agent working with components', () => {
     expect(dry.data.dry_run).toBe(true)
     expect(dry.data.impact.instances).toBe(3)
     expect(dry.data.impact.approvals_affected).toBe(1)
-    expect(store.getFrame(a)!.html).not.toContain('btn big')
+    expect(store.getFrame(a)!.html).not.toMatch(/btn\S* big/)
 
     const applied = await call('update_component', {
       canvas_id: canvas.id,
@@ -212,7 +212,9 @@ describe('an agent working with components', () => {
     })
     expect(applied.isError).toBe(false)
     expect(applied.data.rev).toBe(2)
-    for (const id of [a, b, created.main_frame_id]) expect(store.getFrame(id)!.html).toContain('btn big')
+    for (const id of [a, b]) expect(store.getFrame(id)!.html).toMatch(/btn__in-\w+ big/)
+    /* the main in its own frame wears natural names */
+    expect(store.getFrame(created.main_frame_id)!.html).toContain('class="btn big"')
     expect(store.getFrame(a)!.html).toContain('Keep A')
     expect(store.getFrame(b)!.html).toContain('Keep B')
     /* the frame follows the component and keeps its sign-off */
@@ -221,7 +223,7 @@ describe('an agent working with components', () => {
     const back = await call('restore_component_version', { canvas_id: canvas.id, component: 'Button', rev: 1 })
     expect(back.isError).toBe(false)
     expect(back.data.rev).toBe(3)
-    expect(store.getFrame(a)!.html).not.toContain('btn big')
+    expect(store.getFrame(a)!.html).not.toMatch(/btn\S* big/)
     expect(store.getFrame(a)!.html).toContain('Keep A')
   })
 
@@ -249,7 +251,7 @@ describe('an agent working with components', () => {
     })
     expect(rewrite.data.impact.overrides_orphaned).toEqual([])
     const html = store.getFrame(frameId)!.html
-    expect(html).toContain('btn wide')
+    expect(html).toMatch(/btn__in-\w+ wide/)
     expect(html).toContain('color: red')
   })
 
@@ -470,10 +472,14 @@ describe('an agent working with components', () => {
     })
     expect(made.isError).toBe(false)
     const plan = () => findComponent(canvas.id, 'Plan')!
-    expect(plan().rawCss).toContain('.plan .btn { width: 100% }')
-    expect(plan().rawCss).toContain('.plan > .btn .label { color: red }')
+    /* the Plan's own root class is renamed; the Button's `.btn` is another component's and stays */
+    const planClass = () => `.plan__in-${plan().id}`
+    /* the nested Button's root wears its renamed class, and the Plan's rule names that */
+    const btn = () => `.btn__in-${findComponent(canvas.id, 'Button')!.id}`
+    expect(plan().rawCss).toContain(`${planClass()} ${btn()} { width: 100% }`)
+    expect(plan().rawCss).toContain(`${planClass()} > ${btn()} .label { color: red }`)
     /* scoped to this component's instances, so it reaches the Button inside a Plan and no other */
-    expect(plan().css).toContain(`.plan:where([data-doop-instance="${plan().id}"]) .btn { width: 100% }`)
+    expect(plan().css).toContain(`${planClass()}:where([data-doop-instance="${plan().id}"]) ${btn()} { width: 100% }`)
     expect(plan().rawCss).not.toContain('color: blue')
     expect(plan().rawCss).not.toContain('.nope')
     expect(made.text).toContain('COMPONENT: these CSS rules name nothing in “Plan”')
@@ -484,7 +490,9 @@ describe('an agent working with components', () => {
       canvas.id,
       '<doop-use component="Plan"></doop-use><doop-use component="Button"></doop-use>',
     )
-    expect(store.getFrame(frameId)!.html).toContain(`.plan:where([data-doop-instance="${plan().id}"]) .btn`)
+    expect(store.getFrame(frameId)!.html).toContain(
+      `${planClass()}:where([data-doop-instance="${plan().id}"]) ${btn()}`,
+    )
 
     const updated = await call('update_component', {
       canvas_id: canvas.id,
@@ -492,7 +500,7 @@ describe('an agent working with components', () => {
       css: '.plan .btn { width: auto } .label { font-weight: 600 }',
     })
     expect(updated.isError).toBe(false)
-    expect(plan().rawCss).toContain('.plan .btn { width: auto }')
+    expect(plan().rawCss).toContain(`${planClass()} ${btn()} { width: auto }`)
     expect(updated.text).toContain('were not kept: .label.')
     expect(store.getFrame(frameId)!.html).toContain('width: auto')
 
@@ -565,7 +573,7 @@ describe('an agent working with components', () => {
     expect(after.history[0]!.template).toBe(before.template)
     expect(after.history[0]!.props).toEqual(before.props)
     const html = store.getFrame(frameId)!.html
-    expect(html).toContain('btn wide')
+    expect(html).toMatch(/btn__in-\w+ wide/)
     expect(html).toContain('data-doop-rev="2"')
     /* an instance that set nothing follows the new default */
     expect(html).toContain('data-tone="ghost"')
@@ -581,7 +589,7 @@ describe('an agent working with components', () => {
     const back = await call('restore_component_version', { canvas_id: canvas.id, component: 'Button', rev: 1 })
     expect(back.data.rev).toBe(4)
     expect(findComponent(canvas.id, 'Button')!.history.map((entry) => entry.rev)).toEqual([1, 2, 3])
-    expect(store.getFrame(frameId)!.html).not.toContain('btn wide')
+    expect(store.getFrame(frameId)!.html).not.toMatch(/btn\S* wide/)
   })
 
   it('cannot reach a canvas it cannot read', async () => {

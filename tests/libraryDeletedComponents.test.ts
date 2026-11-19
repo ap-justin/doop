@@ -120,7 +120,7 @@ describe('deleted components and the workspace library', () => {
       const heroId = await frame(consumerId, '<doop-use component="Card"></doop-use>')
       const html = await htmlOf(consumerId, heroId)
       expect(html).toContain('Plan')
-      expect(html).toContain('class="btn"')
+      expect(html).toMatch(/class="btn__in-\w+"/)
       expect(html).toContain('Start')
       const defs = (await canvasOf(consumerId)).components ?? []
       expect(defs.map((def) => def.id).sort()).toEqual([buttonId, cardId].sort())
@@ -147,7 +147,7 @@ describe('deleted components and the workspace library', () => {
       const consumerId = await canvas('Pricing', workspaceId)
       const heroId = await frame(consumerId, '<doop-use component="Card"></doop-use>')
       const html = await htmlOf(consumerId, heroId)
-      expect(html).toContain('card v2')
+      expect(html).toMatch(/card__in-\w+ v2/)
       expect(html).toContain('Start')
     })
 
@@ -200,10 +200,11 @@ describe('deleted components and the workspace library', () => {
     }, 60_000)
 
     async function expectFrozen(consumer: (typeof consumers)[number]) {
-      const html = await until(consumer.id, consumer.frameId, 'panel v2')
+      const html = await until(consumer.id, consumer.frameId, ' v2')
       /* the Panel is the new one; the Chip inside it is the one this canvas froze */
-      expect(html).not.toContain('chip v2')
-      expect(html).toContain('class="chip"')
+      expect(html).toMatch(/panel__in-\w+ v2/)
+      expect(html).not.toMatch(/chip__in-\w+ v2/)
+      expect(html).toMatch(/class="chip__in-\w+"/)
       const chip = await chipOf(consumer.id)
       expect(chip.status).toBe('deleted')
       expect(chip.template).toBe(consumer.chip.template)

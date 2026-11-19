@@ -16,7 +16,13 @@ import {
   type ComponentIssue,
   type ComponentProp,
 } from '../shared/components.ts'
-import { isolateClasses, naturalCss, withNaturalClasses, withNaturalFrameStyles } from './componentClasses.ts'
+import {
+  isolateClasses,
+  naturalCss,
+  withNaturalClasses,
+  withNaturalFrameStyles,
+  withNestedRootNames,
+} from './componentClasses.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
 import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withLibraryFaceRules } from '../shared/fonts.ts'
@@ -271,7 +277,12 @@ function prepareMains(
       continue
     }
     const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
-    const extracted = extractComponentCss(naturalCss(sheet(), id), found.el, id, variants)
+    const extracted = extractComponentCss(
+      withNestedRootNames(naturalCss(sheet(), id), found.el),
+      found.el,
+      id,
+      variants,
+    )
     const { template, css, rawCss } = isolateClasses({ template: drawn, ...extracted }, id)
     const head = headTags()
     const { props, slots } = derivePropsAndSlots(template, def.props)

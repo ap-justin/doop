@@ -216,9 +216,9 @@ describe('deleting a component', () => {
     actions.updateFrame(cardMain.id, { html: framed(cardMain.id).replace('class="card"', 'class="card wide"') }, actor)
     await propagation.whenIdle()
     const cardPage = frames[1]!
-    expect(framed(cardPage.id)).toContain('card wide')
+    expect(framed(cardPage.id)).toMatch(/card__in-\w+ wide/)
     expect(framed(cardPage.id)).toContain('Inside')
-    expect(framed(cardPage.id)).toContain('class="btn"')
+    expect(framed(cardPage.id)).toMatch(/class="btn__in-\w+"/)
     expect(framed(cardMain.id)).toContain('Inside')
     /* a new Card can still be placed, Button and all */
     actions.updateFrame(frames[0]!.id, { html: doc(`<doop-use component="Card" title="Fresh"></doop-use>`) }, actor)
@@ -261,7 +261,7 @@ describe('importing a component built from a deleted one', () => {
     /* the Card's own main, and a new instance of it, hold the button */
     expect(card.template).toContain(`component="${source.button.id}"`)
     expect(framed(card.mainFrameId!)).toContain('Inside')
-    expect(framed(card.mainFrameId!)).toContain('class="btn"')
+    expect(framed(card.mainFrameId!)).toMatch(/class="btn__in-\w+"/)
     const page = actions.createFrame(target.id, { name: 'Page', html: '' }, actor)!
     actions.updateFrame(page.id, { html: doc('<doop-use component="Card" title="Mine"></doop-use>') }, actor)
     expect(framed(page.id)).toContain('Mine')
@@ -288,7 +288,7 @@ describe('importing a component built from a deleted one', () => {
     const synced = syncComponent(target.id, 'Card', actor, () => true)
     await propagation.whenIdle()
     expect(synced.updated).toBe(true)
-    expect(current(target.id, source.card.id).template).toContain('card v2')
+    expect(current(target.id, source.card.id).template).toMatch(/card__in-\w+ v2/)
     expect(current(target.id, source.button.id)).toBe(mine)
   })
 })
@@ -326,8 +326,8 @@ describe('restoring a component', () => {
       actor,
     )
     await propagation.whenIdle()
-    expect(framed(frames[0]!.id)).toContain('btn again')
-    expect(framed(frames[1]!.id)).toContain('btn again')
+    expect(framed(frames[0]!.id)).toMatch(/btn__in-\w+ again/)
+    expect(framed(frames[1]!.id)).toMatch(/btn__in-\w+ again/)
   })
 
   it('writes a main from the kept definition when the old one is gone', async () => {
@@ -364,7 +364,7 @@ describe('restoring a component', () => {
     restoreComponent(canvas.id, 'Button', actor)
     expect(current(canvas.id, button.id).rev).toBe(2)
     await propagation.whenIdle()
-    expect(framed(frames[0]!.id)).toContain('btn late')
+    expect(framed(frames[0]!.id)).toMatch(/btn__in-\w+ late/)
   })
 
   it('takes another name when its own was given away meanwhile', () => {
