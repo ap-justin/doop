@@ -709,6 +709,7 @@ describe('withNaturalFrameStyles', () => {
       rule(' data-doop-carried="x"'),
       rule(' data-doop-import="x"'),
       rule(' data-doop-component-css="abc"'),
+      rule(' data-doop-detached-css="abc-1"'),
       rule(' data-doop-tokens'),
       rule(' data-doop-fonts'),
     ].join('\n')
