@@ -988,9 +988,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   nested root, which wears its renamed class there too: `prepareMains` writes a managed
   `<style data-doop-main-css="<parentId>">` block (`nestedRootRules`, `withMainCssBlock`; in
   `MANAGED_STYLE_ATTRS`, so never read back as the author's CSS) at the head of that frame, holding only
-  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]`. It is
-  removed when the main leaves the frame, and a whole-frame write drops one whose main the frame no
-  longer holds (a copied main frame, a deleted component's removed main; `holdsMain` reads the
+  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]`. A
+  whole-frame write drops the block once the frame no longer holds its main (moved or deleted, turned
+  into an instance in a copied frame, a deleted component's removed main; `holdsMain` reads the
   attribute, never the block's scope); `get_frame` leaves it out, and the next write of the main frame
   puts it back. A save that renames a main's root class also returns a
   `root_class_renamed` note naming the frames whose own rule for that class (old-guide placement,
