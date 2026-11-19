@@ -223,7 +223,8 @@ describe('a placed component and the classes of its frame', () => {
     it('keeps the styling through a props-only update', () => {
       const def = makeSelect()
       expect(labelRule(def)).toContain('{ color: #333; font-size: 12px }')
-      updateComponent(canvasId, def.id, { props: [] }, actor)
+      /* the props it already has: `[]` would remove the `label` prop the markup binds, a new revision */
+      updateComponent(canvasId, def.id, { props: def.props }, actor)
       expectStyledAndNatural(def)
       expect(current(def.id).css).toBe(def.css)
       expect(current(def.id).template).toBe(def.template)
@@ -267,13 +268,15 @@ describe('a placed component and the classes of its frame', () => {
     it('derives the same definition from a main written with renamed names, with no new revision', () => {
       const def = makeSelect()
       const frame = store.getFrame(def.mainFrameId!)!
+      /* the store's frame object is updated in place, so each rewrite starts from this copy */
+      const written = frame.html
       const markup = (html: string) =>
         html.replace('class="sl"', `class="sl__in-${def.id}"`).replace('class="ctl"', `class="ctl__in-${def.id}"`)
       const sheet = (html: string) =>
         html.replace('.sl {', `.sl__in-${def.id} {`).replace('.ctl {', `.ctl__in-${def.id} {`)
       for (const rewrite of [markup, sheet, (html: string) => sheet(markup(html))]) {
-        const html = rewrite(frame.html)
-        expect(html).not.toBe(frame.html)
+        const html = rewrite(written)
+        expect(html).not.toBe(written)
         actions.updateFrame(frame.id, { html }, actor)
         const again = current(def.id)
         expect(again.template).toBe(def.template)
@@ -343,7 +346,7 @@ describe('isolateClasses', () => {
 
   it('keeps a class a prototype interaction targets', () => {
     const template = (plain: string) =>
-      `<div class="page"><a data-doop-on="click" data-doop-action="scroll-to:.faq">FAQ</a><a data-doop-interactions='[{"on":"click","action":"scroll-to:.top"}]'>Top</a><section class="faq"></section><header class="top"></header><i class="${plain}"></i></div>`
+      `<div class="page"><a data-doop-on="click" data-doop-action="scroll-to:.faq">FAQ</a><a data-doop-interactions="[{&quot;on&quot;:&quot;click&quot;,&quot;action&quot;:&quot;scroll-to:.top&quot;}]">Top</a><section class="faq"></section><header class="top"></header><i class="${plain}"></i></div>`
     const css = '.faq { margin: 0 } .top { margin: 0 } .plain { margin: 0 }'
     const out = isolate(template('plain'), css)
     /* the two the interactions target stay; one nothing reads is renamed, so the pass ran */
@@ -598,9 +601,10 @@ describe('a library component placed on another canvas', () => {
     ] as const) {
       const def = await defOf(canvas)
       expect(classesIn(def.template, /<b class="([^"]*)"/g), canvas).toEqual([`chip__in-${selectId}`])
-      expect(def.css.split('\n').find((line) => line.includes(`.chip__in-${selectId}`)), canvas).toContain(
-        '{ color: green }',
-      )
+      expect(
+        def.css.split('\n').find((line) => line.includes(`.chip__in-${selectId}`)),
+        canvas,
+      ).toContain('{ color: green }')
       for (const part of ['template', 'css', 'rawCss'] as const) {
         expect(suffixes(def[part]), `${canvas} ${part}`).toEqual([selectId])
         expect(def[part], `${canvas} ${part}`).toBe(library[part])
