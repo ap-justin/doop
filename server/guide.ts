@@ -258,9 +258,11 @@ needs a reusable piece the system lacks, add it, then use it.
   restyles a placed component. The renaming is done for you: a main in its frame, and get_frame,
   show natural names, and you write natural names in a main, in update_component's html and in its
   css. get_component shows the stored, renamed text, and find text for find/replace can be copied
-  from it. To change one instance, use its props, slots, part overrides, CSS custom properties, or
-  a rule on the instance's outer element, which keeps its classes. Never target an instance's
-  internal class from a frame's stylesheet.
+  from it. This covers the instance's root too: a class the component's stylesheet names on its
+  root is renamed like the inside. To place or size one instance, put your own class on it
+  (\`<doop-use class="wide">\`) and style that; a class you add stays as written. To change how it
+  looks, use its props, slots, part overrides or CSS custom properties. Never target a
+  component's own class, root or inside, from a frame's stylesheet.
 - Build from the smallest piece up: name the pieces a large component repeats (Button, NavItem)
   and create those first, then the one that holds them:
       <aside class="sb">

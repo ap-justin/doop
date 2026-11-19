@@ -78,7 +78,7 @@ describe('the work budget', () => {
     expect(spent.parsedBytes).toBeGreaterThan(0)
     expect(spent.parsedBytes).toBeLessThan(64 * 1024)
     await propagation.whenIdle()
-    expect(framed(frames[0]!.id)).toContain('btn big')
+    expect(framed(frames[0]!.id)).toMatch(/btn__in-\w+ big/)
   })
 
   it('charges each operation on its own, and work outside one is never refused', () => {
@@ -160,8 +160,8 @@ describe('the work budget', () => {
 
     await propagation.whenIdle()
     expect(framed(heavy.id)).toBe(before)
-    expect(framed(frames[0]!.id)).toContain('btn big')
-    expect(framed(frames[2]!.id)).toContain('btn big')
+    expect(framed(frames[0]!.id)).toMatch(/btn__in-\w+ big/)
+    expect(framed(frames[2]!.id)).toMatch(/btn__in-\w+ big/)
     expect(logged.mock.calls.some(([line]) => String(line).includes(`frame ${heavy.id} skipped`))).toBe(true)
   })
 

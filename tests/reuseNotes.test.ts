@@ -92,6 +92,17 @@ describe('reuse notes on frame writes', () => {
     expect(store.getCanvas(canvasId)!.frames.at(-1)!.html).toContain('data-doop-tokens')
   })
 
+  it('does not count the nested-root and detached-copy blocks Doop wrote into a frame', () => {
+    const canvasId = canvasWithTokens()
+    const frame = actions.createFrame(canvasId, { name: 'Plan main', html: page('<p>x</p>') }, agent)!
+    frame.html = page(
+      '<p>x</p>',
+      '<style data-doop-main-css="cplan">:where([data-doop-component="cplan"]) .btn__in-cbtn { color: #111111 }</style>' +
+        '<style data-doop-detached-css="cbtn.1">.b { border-color: #e5533c }</style>',
+    )
+    expect(componentWriteNotes(frame, { review: true })).toEqual([])
+  })
+
   it('flags a palette declared on :root, and a token redefined there', () => {
     const own = write(
       canvasWithTokens(),

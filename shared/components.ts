@@ -33,6 +33,9 @@ export const DETACHED_ATTR = 'data-doop-detached-from'
 /** That stylesheet, in the head of the frame holding the detached element. Nothing regenerates it. */
 export const DETACHED_CSS_ATTR = 'data-doop-detached-css'
 
+/** In the frame holding a main: the parent's rules that reach a nested instance's renamed root. Server-written, never the design's own CSS. */
+export const MAIN_CSS_ATTR = 'data-doop-main-css'
+
 export const MAX_COMPONENTS = 500
 export const MAX_COMPONENT_HISTORY = 20
 export const MAX_COMPONENT_NAME = 80
@@ -199,6 +202,7 @@ export type ComponentIssueCode =
   | 'css_not_kept'
   | 'empty_template'
   | 'unclosed_use'
+  | 'root_class_renamed'
 
 /** Something an agent should hear about instead of finding out from a screenshot. */
 export interface ComponentIssue {

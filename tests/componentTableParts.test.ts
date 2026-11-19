@@ -62,7 +62,7 @@ describe('a component made from a table part', () => {
 
     updateComponent(canvas.id, 'Cell', { find: 'class="cell"', replace: 'class="cell wide"' }, actor)
     await propagation.whenIdle()
-    expect(store.getFrame(page.id)!.html).toContain('cell wide')
+    expect(store.getFrame(page.id)!.html).toMatch(/cell__in-\w+ wide/)
     expect(store.getFrame(page.id)!.html).toContain('>A<')
   })
 

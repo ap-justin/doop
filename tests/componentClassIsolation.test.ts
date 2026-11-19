@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Window } from 'happy-dom'
 import { Client, startServer, type Server } from './harness'
 
 vi.mock('../server/db/persist.ts', () => ({
@@ -13,10 +14,12 @@ vi.mock('../server/db/persist.ts', () => ({
 
 import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
-import { blankComponent } from '../server/components.ts'
+import { blankComponent, contextFor } from '../server/components.ts'
+import { compactDocument } from '../server/componentEngine.ts'
 import {
   changeInstances,
   deleteComponent,
+  lookalikesIn,
   restoreComponent,
   restoreComponentVersion,
   updateComponent,
@@ -98,12 +101,14 @@ describe('a placed component and the classes of its frame', () => {
     expect(def.css).toContain(`.${renamed}`)
     expect(def.css).not.toMatch(/\.sl[\s{,:.[]/)
     expect(def.rawCss).toContain(`.${renamed}`)
-    /* the instance's outer element keeps its class, so the frame can still place and size it */
-    expect(def.template).toMatch(/^<div class="select"/)
-    const selectRule = def.css.split('\n').find((line) => line.includes('.select') && line.includes('display: flex'))
+    /* the root's class is the component's own too, once its stylesheet names it */
+    expect(def.template).toMatch(new RegExp(`^<div class="select__in-${def.id}"`))
+    const selectRule = def.css
+      .split('\n')
+      .find((line) => line.includes('.select__in-') && line.includes('display: flex'))
     expect(selectRule).toContain('{ display: flex; flex-direction: column }')
-    expect(def.css).not.toContain('.select__in-')
-    expect(def.rawCss).not.toContain('.select__in-')
+    expect(def.css).not.toMatch(/\.select[\s{,:.[]/)
+    expect(def.rawCss).not.toMatch(/\.select[\s{,:.[]/)
   })
 
   it('is the same on every write, and a main saved again is not a new revision', () => {
@@ -183,6 +188,495 @@ describe('a placed component and the classes of its frame', () => {
     expect(migrated.rawCss).toBe(def.rawCss)
     expect(migrated.css).toContain(`.sl__in-${def.id}`)
     expect(migrated.rawCss).toContain(`.sl__in-${def.id}`)
+  })
+
+  const rootClasses = (html: string, id: string) =>
+    (new RegExp(`<div class="([^"]*)"[^>]*${INSTANCE_ATTR}="${id}"`).exec(html)?.[1] ?? '').split(' ')
+
+  it('keeps the frame’s rule for the root’s class off a placed instance’s root', () => {
+    const def = makeSelect()
+    const html = store.getFrame(place(def.id).id)!.html
+    /* the frame styles `.select` too (FRAME_CSS), and the component's own rule names it */
+    expect(rootClasses(html, def.id)).toEqual([`select__in-${def.id}`])
+  })
+
+  it('keeps a class put on the placed instance as written, so the frame can still size it', () => {
+    const def = makeSelect()
+    const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      {
+        html: doc(
+          `<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`,
+          '.wide { width: 320px } .select { margin: 8px }',
+        ),
+      },
+      actor,
+    )
+    const html = store.getFrame(page.id)!.html
+    expect(rootClasses(html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+    actions.updateFrame(page.id, { html: `${html} ` }, actor)
+    expect(rootClasses(store.getFrame(page.id)!.html, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+  })
+
+  describe('a class put on the instance, through an upgrade', () => {
+    const current = (id: string) => store.getComponents(canvasId).find((candidate) => candidate.id === id)!
+    const pageHtml = (id: string) => store.getFrame(id)!.html
+    /* a write of the page upgrades its instances whether or not propagation has reached it yet */
+    const rewrite = (id: string) => actions.updateFrame(id, { html: `${pageHtml(id)} ` }, actor)
+
+    it('keeps it beside the root’s class when the main’s next write renames that class', () => {
+      const def = makeSelect()
+      const plain = (text: string) => text.replaceAll(/__in-\w+/g, '')
+      store.saveComponent(canvasId, {
+        ...def,
+        template: plain(def.template),
+        css: plain(def.css),
+        rawCss: plain(def.rawCss),
+      })
+      const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+      actions.updateFrame(
+        page.id,
+        {
+          html: doc(`<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`, '.wide { width: 320px }'),
+        },
+        actor,
+      )
+      expect(rootClasses(pageHtml(page.id), def.id)).toEqual(['select', 'wide'])
+
+      const main = store.getFrame(def.mainFrameId!)!
+      actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+      expect(current(def.id).rev).toBe(def.rev + 1)
+      rewrite(page.id)
+      const upgraded = pageHtml(page.id)
+      expect(rootClasses(upgraded, def.id)).toEqual([`select__in-${def.id}`, 'wide'])
+
+      /* the same markup again, at the same revision: nothing moves */
+      actions.updateFrame(page.id, { html: upgraded }, actor)
+      expect(pageHtml(page.id)).toBe(upgraded)
+    })
+
+    it('takes a class the root gained and keeps one the instance took away gone', () => {
+      const def = blankComponent({ name: 'Box', by: 'Tester', props: [] })
+      store.saveComponent(canvasId, def)
+      const main = actions.createFrame(canvasId, { name: 'Box main', html: '' }, actor)!
+      const css = '.box { display: flex } .boxed { border: 1px solid } .raised { box-shadow: 0 1px 2px }'
+      actions.updateFrame(
+        main.id,
+        { html: doc(`<div class="box boxed" ${COMPONENT_ATTR}="${def.id}"><b>Box</b></div>`, css) },
+        actor,
+      )
+      const page = actions.createFrame(canvasId, { name: 'Page', html: '' }, actor)!
+      actions.updateFrame(page.id, { html: doc(`<doop-use component="${def.id}"></doop-use>`) }, actor)
+      const id = def.id
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, `boxed__in-${id}`])
+      /* edited by hand on the page: `boxed` taken off, `wide` put on */
+      actions.updateFrame(
+        page.id,
+        { html: pageHtml(page.id).replace(`class="box__in-${id} boxed__in-${id}"`, `class="box__in-${id} wide"`) },
+        actor,
+      )
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, 'wide'])
+      const rev = current(id).rev
+
+      /* the main as stored, part keys and all, so the root keeps its key across the revision */
+      const stored = store.getFrame(main.id)!.html
+      actions.updateFrame(main.id, { html: stored.replace('class="box boxed"', 'class="box boxed raised"') }, actor)
+      expect(current(id).rev).toBe(rev + 1)
+      rewrite(page.id)
+      expect(rootClasses(pageHtml(page.id), id)).toEqual([`box__in-${id}`, `raised__in-${id}`, 'wide'])
+    })
+
+    it('reads back as the class it was given, not as an override spelling the root’s classes', () => {
+      const def = makeSelect()
+      const page = actions.createFrame(canvasId, { name: 'Sized', html: '' }, actor)!
+      actions.updateFrame(
+        page.id,
+        { html: doc(`<doop-use component="${def.id}" class="wide" label="Pick"></doop-use>`) },
+        actor,
+      )
+      const compact = compactDocument(pageHtml(page.id), contextFor(canvasId))
+      expect(compact).toMatch(/<doop-use [^>]*class="wide"/)
+      expect(compact).not.toContain(`__in-${def.id}`)
+    })
+  })
+
+  it('reports a hand-drawn copy on natural names as a lookalike of a component stored on renamed ones', () => {
+    const def = makeSelect()
+    expect(def.template).toContain(`select__in-${def.id}`)
+    const copy = '<div class="select"><span class="sl">Size</span><div class="ctl">M</div></div>'
+    const drawn = actions.createFrame(canvasId, { name: 'Drawn', html: '' }, actor)!
+    actions.updateFrame(drawn.id, { html: doc(`<main>${copy}${copy}</main>`) }, actor)
+    expect(lookalikesIn(store.getFrame(drawn.id)!)).toEqual([
+      { component: 'Select', occurrences: 2, usage: expect.any(String) },
+    ])
+  })
+
+  it('keeps the main in its own frame on natural root names, with no new revision on a re-save', () => {
+    const def = makeSelect()
+    /* plain values: the store may update a definition in place, which would make `def` and `again` one object */
+    const { rev, template, css } = def
+    const frame = store.getFrame(def.mainFrameId!)!
+    expect(frame.html).toContain('<div class="select"')
+    actions.updateFrame(frame.id, { html: `${frame.html} ` }, actor)
+    const renamed = frame.html.replace('class="select"', `class="select__in-${def.id}"`)
+    actions.updateFrame(frame.id, { html: renamed }, actor)
+    const again = store.getComponents(canvasId).find((candidate) => candidate.id === def.id)!
+    expect(again.rev).toBe(rev)
+    expect(again.template).toBe(template)
+    expect(again.css).toBe(css)
+    const stored = store.getFrame(frame.id)!.html
+    expect(stored).toContain('<div class="select"')
+    expect(stored).not.toContain('__in-')
+  })
+
+  it('lets a parent component’s rule reach a nested component’s root, which wears its renamed class', () => {
+    const button = blankComponent({ name: 'Button', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, button)
+    const buttonFrame = actions.createFrame(canvasId, { name: 'Button main', html: '' }, actor)!
+    actions.updateFrame(
+      buttonFrame.id,
+      {
+        html: doc(`<button class="btn" ${COMPONENT_ATTR}="${button.id}">Go</button>`, '.btn { display: inline-flex }'),
+      },
+      actor,
+    )
+    const plan = blankComponent({ name: 'Plan', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, plan)
+    const planFrame = actions.createFrame(canvasId, { name: 'Plan main', html: '' }, actor)!
+    actions.updateFrame(
+      planFrame.id,
+      {
+        html: doc(
+          `<div class="plan" ${COMPONENT_ATTR}="${plan.id}"><doop-use component="${button.id}"></doop-use></div>`,
+          '.plan { padding: 8px } .plan .btn { width: 100% }',
+        ),
+      },
+      actor,
+    )
+    const planDef = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    const btn = `btn__in-${button.id}`
+    /* the sheet names the nested root's renamed class, so it is kept and matches the Button inside a Plan */
+    expect(planDef.rawCss).toContain(`.plan__in-${plan.id} .${btn} { width: 100% }`)
+    const page = actions.createFrame(canvasId, { name: 'Pricing', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      { html: doc(`<doop-use component="${plan.id}"></doop-use>`, '.btn { width: 10px }') },
+      actor,
+    )
+    const html = store.getFrame(page.id)!.html
+    const planBlock = new RegExp(`<style data-doop-component-css="${plan.id}">[\\s\\S]*?</style>`).exec(html)![0]
+    expect(planBlock).toContain(`:where([data-doop-instance="${plan.id}"]) .${btn}`)
+    expect(html).toMatch(
+      new RegExp(`<div class="plan__in-${plan.id}"[^>]*${INSTANCE_ATTR}="${plan.id}"[\\s\\S]*<button class="${btn}"`),
+    )
+    /* and the frame's own `.btn` rule does not */
+    expect(html).not.toMatch(/<button class="btn"/)
+  })
+
+  function makeButton() {
+    const button = blankComponent({ name: 'Button', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, button)
+    const buttonFrame = actions.createFrame(canvasId, { name: 'Button main', html: '' }, actor)!
+    actions.updateFrame(
+      buttonFrame.id,
+      {
+        html: doc(`<button class="btn" ${COMPONENT_ATTR}="${button.id}">Go</button>`, '.btn { display: inline-flex }'),
+      },
+      actor,
+    )
+    return button
+  }
+
+  /**
+   * A Plan whose main holds a Button, the Plan's sheet styling `.plan .btn`; the Plan's own frame.
+   * `outside` is markup written after the main, given the Button's id.
+   */
+  function planWithButton(extraCss = '', outside: (buttonId: string) => string = () => '') {
+    const button = makeButton()
+    const plan = blankComponent({ name: 'Plan', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, plan)
+    const planFrame = actions.createFrame(canvasId, { name: 'Plan main', html: '' }, actor)!
+    actions.updateFrame(
+      planFrame.id,
+      {
+        html: doc(
+          `<div class="plan" ${COMPONENT_ATTR}="${plan.id}"><doop-use component="${button.id}"></doop-use></div><div class="plan"><i class="btn">plain</i></div>${outside(button.id)}`,
+          `.plan { padding: 8px } .plan .btn { width: 100% }${extraCss}`,
+        ),
+      },
+      actor,
+    )
+    return { button, plan, planFrame }
+  }
+  const mainCssBlock = (html: string, id: string) =>
+    new RegExp(`<style data-doop-main-css="${id}">\\n([\\s\\S]*?)\\n</style>`).exec(html)
+  /** The selectors of a block of plain rules (no at-rule groups), one per comma-separated entry. */
+  const selectorsOf = (css: string) =>
+    [...css.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(',').map((selector) => selector.trim()))
+
+  it('writes the parent’s nested-root rules into its own main frame, where they match the nested instance', () => {
+    const { button, plan, planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    const block = mainCssBlock(html, plan.id)
+    expect(block, html).not.toBeNull()
+    /* before the frame's own styles, which stay in natural names */
+    expect(html.indexOf('data-doop-main-css')).toBeLessThan(html.indexOf('<style>'))
+    expect(html).toContain('.plan .btn { width: 100% }')
+    const window = new Window()
+    window.document.write(html)
+    const nested = window.document.querySelector(`[${INSTANCE_ATTR}="${button.id}"]`)!
+    const plain = window.document.querySelector('i.btn')!
+    const selectors = [...block![1]!.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(','))
+    expect(selectors.length).toBeGreaterThan(0)
+    /* a rule that reaches the Button inside the Plan, and none that reaches a plain `.btn` */
+    const matches = (selector: string) => [...window.document.querySelectorAll(selector.trim())]
+    expect(selectors.some((selector) => matches(selector).includes(nested))).toBe(true)
+    for (const selector of selectors) expect(matches(selector)).not.toContain(plain)
+  })
+
+  it('files no new revision when that main is saved again, and never reads the block back as the author’s CSS', () => {
+    const { plan, planFrame } = planWithButton()
+    const before = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    const frame = store.getFrame(planFrame.id)!
+    const blockBefore = mainCssBlock(frame.html, plan.id)![0]
+    actions.updateFrame(planFrame.id, { html: `${frame.html} ` }, actor)
+    const after = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    expect(after.rev).toBe(before.rev)
+    expect(after.css).toBe(before.css)
+    expect(after.rawCss).toBe(before.rawCss)
+    const saved = store.getFrame(planFrame.id)!.html
+    expect(saved.match(/data-doop-main-css/g)).toHaveLength(1)
+    expect(mainCssBlock(saved, plan.id)![0]).toBe(blockBefore)
+    /* the saved frame is a fixed point: saving its own output changes no byte */
+    actions.updateFrame(planFrame.id, { html: saved }, actor)
+    expect(store.getFrame(planFrame.id)!.html).toBe(saved)
+  })
+
+  it('scopes the block to its main, so the Button in a Plan outside the main gets none of its rules', () => {
+    const { button, plan, planFrame } = planWithButton(
+      '',
+      (buttonId) => `<div class="plan"><doop-use component="${buttonId}"></doop-use></div>`,
+    )
+    const html = store.getFrame(planFrame.id)!.html
+    const block = mainCssBlock(html, plan.id)![1]!
+    const selectors = selectorsOf(block)
+    expect(selectors.length).toBeGreaterThan(0)
+    for (const selector of selectors) expect(selector).toContain(`[${COMPONENT_ATTR}="${plan.id}"]`)
+    /* only the rule that ends at the nested Button, not the Plan's own `.plan { padding }` */
+    expect(block).toContain(`.btn__in-${button.id}`)
+    expect(block).not.toContain('padding')
+
+    const window = new Window()
+    window.document.write(html)
+    const all = [...window.document.querySelectorAll(`[${INSTANCE_ATTR}="${button.id}"]`)]
+    expect(all).toHaveLength(2)
+    const inside = window.document.querySelector(`[${COMPONENT_ATTR}] [${INSTANCE_ATTR}="${button.id}"]`)!
+    const outside = all.find((el) => el !== inside)!
+    const matches = (selector: string) => [...window.document.querySelectorAll(selector)]
+    expect(selectors.some((selector) => matches(selector).includes(inside))).toBe(true)
+    for (const selector of selectors) expect(matches(selector)).not.toContain(outside)
+  })
+
+  it('removes the block when the last nested instance leaves the main and the frame is saved', () => {
+    const { button, plan, planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    expect(mainCssBlock(html, plan.id)).not.toBeNull()
+    const withoutButton = html.replace(
+      new RegExp(`<button[^>]*${INSTANCE_ATTR}="${button.id}"[^>]*>[\\s\\S]*?</button>`),
+      '',
+    )
+    /* the instance is gone, the leftover block is still in the text that is saved */
+    expect(withoutButton).not.toBe(html)
+    expect(mainCssBlock(withoutButton, plan.id)).not.toBeNull()
+    actions.updateFrame(planFrame.id, { html: withoutButton }, actor)
+    expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
+  })
+
+  it('keeps an @media rule inside its group and only the nested-root selectors of a mixed list', () => {
+    const { button, plan, planFrame } = planWithButton(
+      '\n@media (max-width: 600px) { .plan .btn { width: 50% } }\n.plan .btn, .plan .other { gap: 4px }',
+    )
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    const renamed = `.btn__in-${button.id}`
+    const media = /@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*)\n\}/.exec(block)
+    expect(media, block).not.toBeNull()
+    expect(media![1]).toContain(renamed)
+    expect(media![1]).toMatch(/width:\s*50%/)
+    /* the plain rule stays outside the group */
+    expect(block.slice(0, media!.index)).toMatch(/width:\s*100%/)
+    /* `.plan .other` ends at no nested root: dropped, its sibling in the list kept */
+    expect(block).not.toContain('.other')
+    expect(block).toMatch(new RegExp(`${renamed}\\s*\\{[^}]*gap:\\s*4px`))
+  })
+
+  it('gives each of two mains in one frame its own block, scoped to it, and saving the output changes nothing', () => {
+    const button = makeButton()
+    const first = blankComponent({ name: 'Plan', by: 'Tester', props: [] })
+    const second = blankComponent({ name: 'Tier', by: 'Tester', props: [] })
+    store.saveComponent(canvasId, first)
+    store.saveComponent(canvasId, second)
+    const frame = actions.createFrame(canvasId, { name: 'Mains', html: '' }, actor)!
+    const main = (cls: string, id: string) =>
+      `<div class="${cls}" ${COMPONENT_ATTR}="${id}"><doop-use component="${button.id}"></doop-use></div>`
+    actions.updateFrame(
+      frame.id,
+      {
+        html: doc(`${main('pa', first.id)}${main('pb', second.id)}`, '.pa .btn { width: 1px } .pb .btn { width: 2px }'),
+      },
+      actor,
+    )
+    const html = store.getFrame(frame.id)!.html
+    expect(html.match(/data-doop-main-css/g)).toHaveLength(2)
+    for (const [id, width] of [
+      [first.id, 'width: 1px'],
+      [second.id, 'width: 2px'],
+    ] as const) {
+      const block = mainCssBlock(html, id)![1]!
+      const selectors = selectorsOf(block)
+      expect(selectors.length).toBeGreaterThan(0)
+      for (const selector of selectors) expect(selector).toContain(`[${COMPONENT_ATTR}="${id}"]`)
+      expect(block).toContain(width)
+    }
+    actions.updateFrame(frame.id, { html }, actor)
+    expect(store.getFrame(frame.id)!.html).toBe(html)
+  })
+
+  it('removes the block when the main leaves the frame', () => {
+    const { plan, planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    const plain = html.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    actions.updateFrame(planFrame.id, { html: plain }, actor)
+    expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
+  })
+
+  it('drops the block from a copy of the main’s frame, and never takes the copy for the main', () => {
+    const { plan, planFrame } = planWithButton()
+    const copy = actions.createFrame(
+      canvasId,
+      { name: 'Plan main copy', html: store.getFrame(planFrame.id)!.html },
+      actor,
+    )!
+    expect(store.getFrame(copy.id)!.html).toContain(`${INSTANCE_ATTR}="${plan.id}"`)
+    expect(store.getFrame(copy.id)!.html).not.toContain('data-doop-main-css')
+    actions.deleteFrame(planFrame.id, actor)
+    expect(store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!.mainFrameId).toBeNull()
+  })
+
+  it('takes no frame for a main because its stylesheet names the main', () => {
+    const { plan, planFrame } = planWithButton()
+    const other = actions.createFrame(canvasId, { name: 'Other', html: '' }, actor)!
+    /* the block's scope, `[data-doop-component="…"]`, in a frame with no main */
+    store.getFrame(other.id)!.html = doc('<p>x</p>', `:where([${COMPONENT_ATTR}="${plan.id}"]) .x { color: red }`)
+    actions.deleteFrame(planFrame.id, actor)
+    expect(store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!.mainFrameId).toBeNull()
+  })
+
+  it('keeps a deleted component’s block while its frozen main stays, and drops it once the main is gone', () => {
+    const { plan, planFrame } = planWithButton()
+    deleteComponent(canvasId, plan.id, actor)
+    const frozen = store.getFrame(planFrame.id)!.html
+    actions.updateFrame(planFrame.id, { html: `${frozen} ` }, actor)
+    /* the frozen main still holds the nested instance its rules reach */
+    expect(mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)).not.toBeNull()
+    const plain = frozen.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    actions.updateFrame(planFrame.id, { html: plain }, actor)
+    expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
+  })
+
+  it('leaves a frame with no leftover block as it was', () => {
+    const { planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    actions.updateFrame(planFrame.id, { html }, actor)
+    expect(store.getFrame(planFrame.id)!.html).toBe(html)
+  })
+
+  it('writes a new main on restore when the frame carries the deleted component’s block and no main', () => {
+    const { plan, planFrame } = planWithButton()
+    deleteComponent(canvasId, plan.id, actor)
+    const frame = store.getFrame(planFrame.id)!
+    /* as a write that kept a leftover block could have stored it */
+    frame.html = frame.html.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    expect(mainCssBlock(frame.html, plan.id)).not.toBeNull()
+    expect(restoreComponent(canvasId, plan.id, actor).main).toBe('written')
+  })
+
+  it('leaves the block out of the frame agents read, and writes it again when that is saved', () => {
+    const { plan, planFrame } = planWithButton()
+    const compact = compactDocument(store.getFrame(planFrame.id)!.html, contextFor(canvasId))
+    expect(compact).not.toContain('data-doop-main-css')
+    actions.updateFrame(planFrame.id, { html: compact }, actor)
+    expect(mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)).not.toBeNull()
+  })
+
+  it('says which frames’ own rules stop reaching a main whose root class is renamed', () => {
+    const plan = makeSelect()
+    const page = actions.createFrame(canvasId, { name: 'Landing', html: '' }, actor)!
+    actions.updateFrame(
+      page.id,
+      { html: doc(`<doop-use component="${plan.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+      actor,
+    )
+    /* the component was made before its root class was renamed: write its main again with an old-style definition */
+    const stale = { ...plan, template: plan.template.replace(`select__in-${plan.id}`, 'select') }
+    store.saveComponent(canvasId, stale)
+    const main = store.getFrame(plan.mainFrameId!)!
+    actions.takeComponentIssues(main.id)
+    actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+    const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+    expect(note?.message).toContain('“Landing” (.select)')
+    expect(note?.message).toContain('class="your-class"')
+  })
+
+  describe('the note for a renamed root class', () => {
+    /** A Select whose stored definition predates the rename, and frames around it; the note is read after saving its main. */
+    function staleSelect() {
+      const select = makeSelect()
+      const frame = (name: string, html: string) => {
+        const created = actions.createFrame(canvasId, { name, html: '' }, actor)!
+        if (html) store.getFrame(created.id)!.html = html
+        return created
+      }
+      const instance = `<div class="select__in-${select.id}" ${INSTANCE_ATTR}="${select.id}">x</div>`
+      const landing = frame('Landing', '')
+      actions.updateFrame(
+        landing.id,
+        { html: doc(`<doop-use component="${select.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+        actor,
+      )
+      frame('No rule', doc(instance, '.other { color: red }'))
+      frame('Rule only', doc('<p class="select">x</p>', '.select { margin: 1px }'))
+      frame(
+        'Managed only',
+        `<!doctype html><html><head><style ${CSS_ATTR}="${select.id}">.select { color: red }</style></head><body>${instance}</body></html>`,
+      )
+      store.saveComponent(canvasId, {
+        ...select,
+        template: select.template.replace(`select__in-${select.id}`, 'select'),
+      })
+      const main = store.getFrame(select.mainFrameId!)!
+      actions.takeComponentIssues(main.id)
+      const save = () => {
+        actions.updateFrame(main.id, { html: `${store.getFrame(main.id)!.html} ` }, actor)
+        return actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+      }
+      return { save }
+    }
+
+    it('names the frames that hold an instance and a rule of their own for the class, and no other', () => {
+      const note = staleSelect().save()
+      expect(note).toBeDefined()
+      /* the whole list: not the frame without a rule, the one without an instance, the one with only a managed block, nor the main's own */
+      expect(note!.message).toContain(
+        "these frames' own rules for it no longer reach its instances: “Landing” (.select). Move each",
+      )
+    })
+
+    it('is not repeated by a second save of the main', () => {
+      const { save } = staleSelect()
+      expect(save()).toBeDefined()
+      expect(save()).toBeUndefined()
+    })
   })
 
   it('leaves a detached instance looking as it did', () => {
@@ -343,7 +837,7 @@ describe('a placed component and the classes of its frame', () => {
     })
   })
 
-  it('does not rename a class the stylesheet never names, a root class, or one a script uses', () => {
+  it('does not rename a class the stylesheet never names, or one a script uses', () => {
     const out = isolateClasses(
       {
         template: `<div class="card"><span class="card tw-text-sm">a</span><i class="open hit"></i><script>el.classList.add('open')</script></div>`,
@@ -352,13 +846,12 @@ describe('a placed component and the classes of its frame', () => {
       },
       'abc',
     )
-    const renamed = '.card .hit__in-abc { color: red } .open { color: blue }'
+    const renamed = '.card__in-abc .hit__in-abc { color: red } .open { color: blue }'
     expect(out.template).toBe(
-      `<div class="card"><span class="card tw-text-sm">a</span><i class="open hit__in-abc"></i><script>el.classList.add('open')</script></div>`,
+      `<div class="card__in-abc"><span class="card__in-abc tw-text-sm">a</span><i class="open hit__in-abc"></i><script>el.classList.add('open')</script></div>`,
     )
     expect(out.css).toBe(renamed)
     expect(out.rawCss).toBe(renamed)
-    expect(out.css).not.toContain('.card__in-')
     expect(isolateClasses(out, 'abc')).toEqual(out)
   })
 })

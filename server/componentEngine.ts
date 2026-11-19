@@ -17,6 +17,7 @@ import {
   IF_ATTR,
   HEAD_ATTR,
   INSTANCE_ATTR,
+  MAIN_CSS_ATTR,
   MAX_INSTANCE_DEPTH,
   MAX_NESTING_DEPTH,
   OVERRIDES_ATTR,
@@ -824,7 +825,8 @@ function templateValueOf(prop: string, parts: Map<string, PartInfo>): string | u
 
 /** The state that explains this instance's markup: its marker, plus whatever
  *  was edited relative to what its own revision would have rendered. When that
- *  revision is gone there is nothing to diff against and the marker stands. */
+ *  revision is gone there is nothing to diff against and the marker stands. Either
+ *  way its class overrides are carried onto the current revision, which renders it. */
 export function reconcileInstance(el: Element, ctx: EngineContext): InstanceState | undefined {
   const marker = readMarker(el)
   if (!marker) return undefined
@@ -832,8 +834,12 @@ export function reconcileInstance(el: Element, ctx: EngineContext): InstanceStat
   const current = ctx.find(marker.componentId)
   const known = revision ?? current
   if (!known) return marker
+  const ontoCurrent = (state: InstanceState): InstanceState =>
+    current && current.rev !== revision?.rev
+      ? { ...state, overrides: rebasedClassOverrides(state.overrides, revision, current) }
+      : state
   const read = readInstance(el, known, ctx) ?? marker
-  if (!revision) return read
+  if (!revision) return ontoCurrent(read)
   const parts = partsOf(revision.template)
   /* the base holds the marker's overrides; slots and nested instances are read from the DOM */
   const base = renderInstance(revision, revision, marker.overrides, marker.instanceId, {
@@ -841,7 +847,7 @@ export function reconcileInstance(el: Element, ctx: EngineContext): InstanceStat
     stack: [],
     shallow: true,
   })
-  if (!base) return read
+  if (!base) return ontoCurrent(read)
   const state: InstanceOverrides = {
     ...(read.overrides.props ? { props: { ...read.overrides.props } } : {}),
     ...(read.overrides.parts ? { parts: { ...read.overrides.parts } } : {}),
@@ -853,7 +859,66 @@ export function reconcileInstance(el: Element, ctx: EngineContext): InstanceStat
     setAttr(base, PART_ATTR, key)
     diffPart(base, el, key, parts, revision, true, state, ctx)
   }
-  return { ...read, overrides: pruneOverrides(state, parts, revision) }
+  return ontoCurrent({ ...read, overrides: pruneOverrides(state, parts, revision) })
+}
+
+const classTokens = (value: string | null | undefined) => (value ?? '').split(/\s+/).filter(Boolean)
+
+/** `card` and its renamed spelling `card__in-<id>` (componentClasses' `isolatedName`) as one key. */
+function classKey(name: string, componentId: string): string {
+  const suffix = `__in-${componentId}`
+  return name.length > suffix.length && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+}
+
+/**
+ * A part's class override is the whole attribute as the instance wore it at `from`. Applied as
+ * it stands at `to`, it would put back `from`'s classes over `to`'s (a root renamed `card` →
+ * `card__in-<id>` would lose its own rules). So it is carried as what the instance changed: the
+ * classes it added stay, the ones it took away stay gone, natural and renamed spellings being one
+ * class, and the rest are `to`'s. `from` unknown (no longer kept): only the spelling is carried.
+ */
+function rebasedClassOverrides(
+  overrides: InstanceOverrides,
+  from: Revision | undefined,
+  to: Revision,
+): InstanceOverrides {
+  if (!overrides.parts) return overrides
+  const before = from ? partsOf(from.template) : undefined
+  const after = partsOf(to.template)
+  const key = (name: string) => classKey(name, to.id)
+  let changed = false
+  const parts: Record<string, PartOverride> = {}
+  for (const [partKey, part] of Object.entries(overrides.parts)) {
+    const value = part.attrs?.class
+    const target = after.get(partKey)?.el
+    if (typeof value !== 'string' || !target || !part.attrs) {
+      parts[partKey] = part
+      continue
+    }
+    const source = before?.get(partKey)?.el
+    const targetClass = attrOf(target, 'class') ?? ''
+    const wore = classTokens(value)
+    const woreKeys = new Set(wore.map(key))
+    const baseKeys = new Set(classTokens(source ? (attrOf(source, 'class') ?? '') : targetClass).map(key))
+    const next = new Map<string, string>()
+    for (const name of [
+      ...classTokens(targetClass).filter((name) => !baseKeys.has(key(name)) || woreKeys.has(key(name))),
+      ...wore.filter((name) => !baseKeys.has(key(name))),
+    ])
+      if (!next.has(key(name))) next.set(key(name), name)
+    const rebased = [...next.values()].join(' ')
+    if (rebased === value) {
+      parts[partKey] = part
+      continue
+    }
+    changed = true
+    const { class: _class, ...attrs } = part.attrs
+    const { attrs: _attrs, ...others } = part
+    const kept: Record<string, string | null> = rebased === targetClass ? attrs : { ...attrs, class: rebased }
+    const out: PartOverride = Object.keys(kept).length ? { ...others, attrs: kept } : others
+    if (Object.keys(out).length) parts[partKey] = out
+  }
+  return changed ? clean({ ...overrides, parts }) : overrides
 }
 
 /* ------------------------------------------------------------------ */
@@ -883,9 +948,12 @@ export function useTagFor(
   if (!marker) return serializeOuter(el)
   const def = ctx.find(marker.componentId)
   const revision = ctx.atRev(marker.componentId, marker.rev) ?? def
-  const state = (reconcile ? reconcileInstance(el, ctx) : undefined) ?? readInstance(el, revision, ctx) ?? marker
+  const reconciled = reconcile ? reconcileInstance(el, ctx) : undefined
+  const state = reconciled ?? readInstance(el, revision, ctx) ?? marker
   const ref = byId ? marker.componentId : (def?.name ?? marker.componentId)
-  return useMarkup(ref, state, revision, inTemplate ? attrOf(el, PART_ATTR) : undefined, withId)
+  /* a reconciled state is carried onto the current revision already */
+  const markupDef = reconciled ? (def ?? revision) : revision
+  return useMarkup(ref, state, markupDef, inTemplate ? attrOf(el, PART_ATTR) : undefined, withId)
 }
 
 export function useMarkup(
@@ -907,13 +975,39 @@ export function useMarkup(
     }
     if (Object.keys(others).length) rest[key] = others
   }
+  const addedClasses = def ? takeAddedRootClasses(def, rest) : undefined
   let tag = `<${USE_TAG}${attrText('component', name)}`
   if (part) tag += attrText(PART_ATTR, part)
   if ((!part || withId) && isElementId(state.instanceId)) tag += attrText('id', state.instanceId)
   for (const [prop, value] of Object.entries(state.overrides.props ?? {}).sort(([a], [b]) => a.localeCompare(b)))
     tag += attrText(prop, value)
   if (Object.keys(rest).length) tag += attrText('overrides', stableJson(rest))
+  /* after overrides: stateFromUseAttrs lets `overrides` replace the root's part whole, then merges `class` into it */
+  if (addedClasses) tag += attrText('class', addedClasses)
   return `${tag}>${slotChildren.join('')}</${USE_TAG}>`
+}
+
+/**
+ * A root class override in the form `stateFromUseAttrs` writes (the template root's class, then
+ * what the `<doop-use class>` added) goes back out as that `class`, not as an override spelling the
+ * template's classes, so it reads as written and expands onto whatever the root wears when it is
+ * next rendered. Taken out of `rest`; any other root class override stays in it.
+ */
+function takeAddedRootClasses(def: Revision, rest: Record<string, PartOverride>): string | undefined {
+  const root = parseTemplateRoot(def.template)
+  const key = root ? attrOf(root, PART_ATTR) : undefined
+  const override = key ? rest[key] : undefined
+  const value = override?.attrs?.class
+  if (!root || !key || !override?.attrs || typeof value !== 'string') return undefined
+  const own = attrOf(root, 'class') ?? ''
+  const added = own ? (value.startsWith(`${own} `) ? value.slice(own.length + 1) : undefined) : value
+  if (!added?.trim()) return undefined
+  const { class: _class, ...attrs } = override.attrs
+  const { attrs: _attrs, ...others } = override
+  const next: PartOverride = Object.keys(attrs).length ? { ...others, attrs } : others
+  if (Object.keys(next).length) rest[key] = next
+  else delete rest[key]
+  return added
 }
 
 /* Attributes that mean something on a template's own element and nothing on a `<doop-use>`: the
@@ -1266,7 +1360,7 @@ export function splice(html: string, edits: { start: number; end: number; text: 
 /** Short form of a whole document: instances as `<doop-use>`, their CSS copies gone.
  *  What agents read: a screen of 40 buttons costs 40 lines rather than 40 subtrees. */
 export function compactDocument(html: string, ctx: EngineContext): string {
-  if (!html.includes(INSTANCE_ATTR) && !html.includes(CSS_ATTR)) return html
+  if (!html.includes(INSTANCE_ATTR) && !html.includes(CSS_ATTR) && !html.includes(MAIN_CSS_ATTR)) return html
   /* an instance of a deleted component stays written out: as <doop-use> it would be a new
      use of it when the frame is written back, and those are refused. One of a hollow
      component too, with its stylesheet: written back as <doop-use> it would render nothing */
@@ -1282,7 +1376,8 @@ export function compactDocument(html: string, ctx: EngineContext): string {
     end: found.end,
     text: insideMain(found.el) ? useTagFor(found.el, ctx, true, false, false, true) : useTagFor(found.el, ctx),
   }))
-  return stripComponentHead(splice(html, edits), hollow)
+  /* a main's nested-root block too: renamed classes agents never see, written again with the frame */
+  return stripComponentHead(splice(html, edits), hollow).replace(mainCssBlocks(), '')
 }
 
 /** Outermost instances, also those below a main: the main itself is not an instance. */
@@ -1317,6 +1412,16 @@ function hollowIds(html: string, ctx: EngineContext): Set<string> {
  *  newline after it. */
 function componentCssBlocks(): RegExp {
   return new RegExp(`(<style[^>]*\\b${CSS_ATTR}="([^"]*)"[^>]*>)([\\s\\S]*?)</style>(\\n?)`, 'gi')
+}
+
+/** A main's block of nested-root rules in its frame's head: the main's id, and the newline after it. */
+function mainCssBlocks(): RegExp {
+  return new RegExp(`<style[^>]*\\b${MAIN_CSS_ATTR}="([^"]*)"[^>]*>[\\s\\S]*?</style>\\n?`, 'gi')
+}
+
+/** The mains whose nested-root blocks this document carries. */
+export function mainCssBlockIds(html: string): string[] {
+  return [...html.matchAll(mainCssBlocks())].map((match) => match[1]!)
 }
 
 /** Everything a component put in the head: its stylesheet, and the links and scripts it brought.
@@ -1369,7 +1474,7 @@ export function syncComponentHead(html: string, defs: ComponentDef[]): string {
   return next
 }
 
-function insertIntoHead(html: string, block: string): string {
+export function insertIntoHead(html: string, block: string): string {
   const close = /<\/head\s*>/i.exec(html)
   if (close) return `${html.slice(0, close.index)}${block}\n${html.slice(close.index)}`
   const open = /<head\b[^>]*>/i.exec(html)

@@ -13,9 +13,16 @@ import {
   recordUndo,
   transaction,
 } from './journal.ts'
-import { dedupeIssues, prepareChunk, prepareFrameHtml, referencesComponent, rederiveFromMains } from './components.ts'
+import {
+  dedupeIssues,
+  holdsMain,
+  prepareChunk,
+  prepareFrameHtml,
+  referencesComponent,
+  rederiveFromMains,
+} from './components.ts'
 import { rewriteComponentCss } from './componentEngine.ts'
-import { COMPONENT_ATTR, isDeleted, isHollow, type ComponentDef, type ComponentIssue } from '../shared/components.ts'
+import { isDeleted, isHollow, type ComponentDef, type ComponentIssue } from '../shared/components.ts'
 import { MAX_DECISION_CHARS } from '../shared/designDecisions.ts'
 import { MAX_PAGES, PageLimitError, store } from './store.ts'
 import * as persist from './db/persist.ts'
@@ -2012,8 +2019,7 @@ function settleIdleStream(frameId: string, s: StreamState) {
 function releaseMains(canvasId: string, frameId: string, actor: Actor) {
   for (const def of store.getComponents(canvasId)) {
     if (def.mainFrameId !== frameId) continue
-    const marker = `${COMPONENT_ATTR}="${def.id}"`
-    const elsewhere = store.getCanvas(canvasId)?.frames.find((frame) => frame.html.includes(marker))
+    const elsewhere = store.getCanvas(canvasId)?.frames.find((frame) => holdsMain(frame.html, def.id))
     const released = { ...def, mainFrameId: elsewhere?.id ?? null, updatedAt: Date.now(), updatedBy: actor.name }
     store.saveComponent(canvasId, released)
     broadcastComponent(canvasId, released, actor)
@@ -2331,7 +2337,7 @@ function healCanvas(canvas: Canvas, counts: { healed: number; noMain: number; fa
   const byFrame = new Map<Frame, Set<string>>()
   for (const def of canvas.components ?? []) {
     if (!isHollow(def) || isDeleted(def) || def.source?.library) continue
-    const main = canvas.frames.find((frame) => frame.html.includes(`${COMPONENT_ATTR}="${def.id}"`))
+    const main = canvas.frames.find((frame) => holdsMain(frame.html, def.id))
     if (!main) {
       counts.noMain++
       continue

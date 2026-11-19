@@ -57,7 +57,7 @@ function makeComponent(
 
 const nestedCard = (frameId: string) =>
   new RegExp(
-    `<div[^>]*class="card"[^>]*${INSTANCE_ATTR}="([^"]+)"|<div[^>]*${INSTANCE_ATTR}="([^"]+)"[^>]*class="card"`,
+    `<div[^>]*class="card[\\w-]*"[^>]*${INSTANCE_ATTR}="([^"]+)"|<div[^>]*${INSTANCE_ATTR}="([^"]+)"[^>]*class="card[\\w-]*"`,
   )
     .exec(store.getFrame(frameId)!.html)!
     .slice(1)

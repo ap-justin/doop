@@ -16,7 +16,17 @@ import {
   type ComponentIssue,
   type ComponentProp,
 } from '../shared/components.ts'
-import { isolateClasses, naturalCss, withNaturalClasses, withNaturalFrameStyles } from './componentClasses.ts'
+import {
+  classesNamedIn,
+  isolateClasses,
+  naturalCss,
+  nestedRootRules,
+  newlyRenamedRootClasses,
+  withMainCssBlock,
+  withNaturalClasses,
+  withNaturalFrameStyles,
+  withNestedRootNames,
+} from './componentClasses.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
 import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withLibraryFaceRules } from '../shared/fonts.ts'
@@ -26,6 +36,7 @@ import {
   expandUses,
   findMarked,
   holdsHollow,
+  mainCssBlockIds,
   renderInstance,
   reconcileInstance,
   setAttr,
@@ -125,6 +136,14 @@ export function referencesComponent(html: string, id: string): boolean {
   return html.includes(` ${INSTANCE_ATTR}="${id}"`) || html.includes(` ${COMPONENT_ATTR}="${id}"`)
 }
 
+/** Does this frame hold component `id`'s main? The attribute, after whitespace: a stylesheet's
+ *  `[data-doop-component="…"]` (the main-css block's scope) names it too, and is no main. */
+export function holdsMain(html: string, id: string): boolean {
+  return new RegExp(`\\s${COMPONENT_ATTR}="${escapedForRegExp(id)}"`).test(html)
+}
+
+const escapedForRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 function touchesComponents(html: string): boolean {
   return (
     html.includes(INSTANCE_ATTR) ||
@@ -215,6 +234,8 @@ function prepareMains(
   const changed: ComponentDef[] = []
   const moved: ComponentDef[] = []
   const claimed = new Set<string>()
+  /* per main in this frame: the block of rules that reach a nested instance's renamed root */
+  const mainCss = new Map<string, string>()
   const edits: { start: number; end: number; text: string }[] = []
   /* each parses the whole frame, so once per call, not once per main: a frame
      holding hundreds of mains re-parsed itself hundreds of times per propagation */
@@ -246,7 +267,7 @@ function prepareMains(
     const mainElsewhere =
       def.mainFrameId !== null &&
       def.mainFrameId !== frameId &&
-      !!store.getFrame(def.mainFrameId)?.html.includes(`${COMPONENT_ATTR}="${id}"`)
+      holdsMain(store.getFrame(def.mainFrameId)?.html ?? '', id)
     if (claimed.has(id) || mainElsewhere || !frameId || def.source?.library) {
       /* a copy of a main is an instance, the way copying a Figma main is; and a
          library component's main lives on its library canvas, so one pasted
@@ -271,10 +292,14 @@ function prepareMains(
       continue
     }
     const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
-    const extracted = extractComponentCss(naturalCss(sheet(), id), found.el, id, variants)
+    const naturalSheet = naturalCss(sheet(), id)
+    const extracted = extractComponentCss(withNestedRootNames(naturalSheet, found.el), found.el, id, variants)
     const { template, css, rawCss } = isolateClasses({ template: drawn, ...extracted }, id)
+    mainCss.set(id, nestedRootRules(naturalSheet, found.el, id))
     const head = headTags()
     const { props, slots } = derivePropsAndSlots(template, def.props)
+    const lost = newlyRenamedRootClasses(def.template, template, id)
+    if (lost.length) warnOwnRootRules(canvas, frameId, def, lost, ctx)
     const same =
       def.template === template &&
       def.css === css &&
@@ -295,14 +320,40 @@ function prepareMains(
   /* a main this frame held and no longer does: the component lives on without one */
   for (const def of only ? [] : store.getComponents(canvas.id)) {
     if (def.mainFrameId !== frameId || !frameId || claimed.has(def.id) || isDeleted(def)) continue
-    if (html.includes(`${COMPONENT_ATTR}="${def.id}"`)) continue
+    if (holdsMain(html, def.id)) continue
     const saved = { ...def, mainFrameId: null, updatedAt: Date.now(), updatedBy: by }
     store.saveComponent(canvas.id, saved)
     moved.push(saved)
+    mainCss.set(def.id, '')
   }
   const written = edits.length ? splice(html, edits) : html
+  /* a block for a main this frame no longer holds: a copy of a main frame (its main became an
+     instance), a deleted component whose frozen main was removed. A frozen main keeps its block */
+  if (!only)
+    for (const id of mainCssBlockIds(written)) if (!mainCss.has(id) && !holdsMain(written, id)) mainCss.set(id, '')
   const natural = [...claimed].reduce((text, id) => withNaturalFrameStyles(text, id), written)
-  return { html: natural, changed, moved }
+  const withBlocks = [...mainCss].reduce((text, [id, css]) => withMainCssBlock(text, id, css), natural)
+  return { html: withBlocks, changed, moved }
+}
+
+/**
+ * A main's root class is renamed now: a frame's own rule for it (`.card { grid-column: span 2 }`,
+ * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
+ * save that renames it, naming the frames and where the rule belongs now.
+ */
+function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
+  const hits: string[] = []
+  for (const frame of canvas.frames) {
+    if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
+    const named = classesNamedIn(frameStylesheets(frame.html))
+    const used = names.filter((name) => named.has(name))
+    if (used.length) hits.push(`“${frame.name}” (${used.map((name) => `.${name}`).join(', ')})`)
+  }
+  if (!hits.length) return
+  ctx.issues.push({
+    code: 'root_class_renamed',
+    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. Move each such rule to a class on the placed instance (<doop-use component="${def.name}" class="your-class">) and style that class.`,
+  })
 }
 
 /**

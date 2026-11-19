@@ -973,10 +973,33 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `create_components` cases in `componentTools.test.ts`, `tokenComponentGuidance.test.ts`.
 - Component class isolation (`server/componentClasses.ts`, run by `prepareMains` in
   `server/components.ts`): a frame's own `.sl` rule must not match the `sl` element inside a placed
-  component. When a main is read into its definition, the classes its stylesheet styles on elements
-  below the root are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike. The
-  root's classes (the frame places and sizes it), classes a nested `<doop-use>` or instance root
-  wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
+  component. When a main is read into its definition, the classes its stylesheet styles, on the
+  root and below it, are renamed `<name>__in-<componentId>` in the template, `css` and `rawCss` alike.
+  A class the designer puts on a placed instance (`<doop-use class>`, or one the frame adds to the
+  root) is not in the template and stays as written, so the frame places and sizes the instance with
+  its own classes (the engine appends a `<doop-use>`'s classes after the root's, and `useMarkup`
+  writes them back as `class`). A class override is stored whole against the revision it was read
+  at; `reconcileInstance` carries it onto a newer one as what the instance changed
+  (`rebasedClassOverrides`: added classes stay, removed ones stay gone, `card` and `card__in-<id>`
+  are one class), so an upgrade never drops the root's renamed class. A parent's rule that
+  ends at a nested component's root (`.plan .btn`) is read as naming that root's renamed class
+  (`withNestedRootNames`, in `prepareMains` and the not-kept report), so it still reaches the nested
+  instance. In the parent's own main frame the author's rule stays in natural names and so misses the
+  nested root, which wears its renamed class there too: `prepareMains` writes a managed
+  `<style data-doop-main-css="<parentId>">` block (`nestedRootRules`, `withMainCssBlock`; in
+  `MANAGED_STYLE_ATTRS`, so never read back as the author's CSS) at the head of that frame, holding only
+  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]`. A
+  whole-frame write drops the block once the frame no longer holds its main (moved or deleted, turned
+  into an instance in a copied frame, a deleted component's removed main; `holdsMain` reads the
+  attribute, never the block's scope); `get_frame` leaves it out, and the next write of the main frame
+  puts it back. A save that renames a main's root class also returns a
+  `root_class_renamed` note naming the frames whose own rule for that class (old-guide placement,
+  `.card { grid-column: span 2 }`) no longer reaches its instances, and where it belongs now
+  (a class on `<doop-use class>`); nothing is migrated. `update_component`'s find/replace reads the
+  template with natural names when the stored text has no match, the lookalike check always reads
+  natural names, and `replace_matching` links hand-drawn elements to the
+  renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested
+  `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own
   component's) stay. The renamed names live in the definition and its instances only: a main in its
   frame wears natural names, which its frame's stylesheet styles. `prepareMains` strips this

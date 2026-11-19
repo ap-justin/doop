@@ -1,9 +1,9 @@
-import { activeComponents, COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR, type ComponentDef } from '../shared/components.ts'
+import { activeComponents, COMPONENT_ATTR, INSTANCE_ATTR, type ComponentDef } from '../shared/components.ts'
 import { canvasPages, COMPONENTS_PAGE, framePageId } from '../shared/pages.ts'
-import { resolveToken, TOKEN_BLOCK_ATTR, type DesignToken } from '../shared/designTokens.ts'
-import { FONT_BLOCK_ATTR } from '../shared/fonts.ts'
+import { resolveToken, type DesignToken } from '../shared/designTokens.ts'
 import type { Canvas, Frame } from '../shared/types.ts'
 import { findComponentCandidates } from './componentActions.ts'
+import { MANAGED_STYLE_ATTRS } from './componentCss.ts'
 
 /**
  * Notes an agent hears right after writing a whole frame or a component: blocks it wrote out
@@ -31,7 +31,7 @@ function repeatsIn(canvas: Canvas, frame: Frame) {
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
 const DOOP_STYLE = new RegExp(
-  `<style\\b[^>]*\\b(?:${TOKEN_BLOCK_ATTR}|${FONT_BLOCK_ATTR}|${CSS_ATTR})\\b[^>]*>[\\s\\S]*?</style>`,
+  `<style\\b[^>]*\\b(?:${[...MANAGED_STYLE_ATTRS].join('|')})\\b[^>]*>[\\s\\S]*?</style>`,
   'gi',
 )
 

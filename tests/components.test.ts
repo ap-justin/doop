@@ -172,7 +172,8 @@ describe('propagation', () => {
       { html: doc(`<doop-use component="Button" label="Keep me" id="abc123"></doop-use>`) },
       actor,
     )
-    const edited = framed(page.id).replace('<button class="btn"', '<button class="btn" title="mine"')
+    /* the instance's root wears the component's renamed class */
+    const edited = framed(page.id).replace(/<button (class="btn[\w-]*")/, '<button $1 title="mine"')
     actions.updateFrame(page.id, { html: edited }, actor)
     expect(framed(page.id)).toContain('title="mine"')
 
@@ -215,7 +216,7 @@ describe('propagation', () => {
     /* ... saves with one real edit */
     actions.updateFrame(page.id, { html: stale.replace('</span></button>', '</span></button><p>added</p>') }, actor)
     const html = framed(page.id)
-    expect(html).toContain('btn fresh')
+    expect(html).toMatch(/btn__in-\w+ fresh/)
     expect(html).toContain('<p>added</p>')
     expect(html).toContain('data-doop-rev="2"')
     expect(html).not.toContain('data-doop-overrides')
@@ -270,7 +271,7 @@ describe('edits inside an instance', () => {
 
   it('keep style changes per property and drop one set back to the template', () => {
     const { page } = placed()
-    const styled = framed(page.id).replace('<button class="btn"', '<button style="color: red; margin: 2px" class="btn"')
+    const styled = framed(page.id).replace(/<button (class="btn[\w-]*")/, '<button style="color: red; margin: 2px" $1')
     actions.updateFrame(page.id, { html: styled }, actor)
     expect(framed(page.id)).toContain('data-doop-overrides')
     const back = framed(page.id).replace(/ style="[^"]*"/, '')

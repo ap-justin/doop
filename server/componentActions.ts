@@ -30,8 +30,21 @@ import type { Actor, Canvas, Frame } from '../shared/types.ts'
 import { decodeQuotes, familyKey, fontFaceRule, usesFamily, type CustomFont } from '../shared/fonts.ts'
 import { fontsForCanvas } from './fonts.ts'
 import * as actions from './actions.ts'
-import { blankComponent, bumpRevision, contextFor, referencesComponent, withinRevision } from './components.ts'
-import { naturalCss, withNaturalClasses } from './componentClasses.ts'
+import {
+  blankComponent,
+  bumpRevision,
+  contextFor,
+  holdsMain,
+  referencesComponent,
+  withinRevision,
+} from './components.ts'
+import {
+  isolatedName,
+  naturalCss,
+  naturalTemplate,
+  withNaturalClasses,
+  withNestedRootNames,
+} from './componentClasses.ts'
 import { unmatchedSelectors } from './componentCss.ts'
 import {
   alignParts,
@@ -594,7 +607,10 @@ function reportCssNotKept(def: ComponentDef, css: string) {
     : undefined
   if (!frame || !main) return
   const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
-  const selectors = unmatchedSelectors(css, main.el, variants)
+  /* named as the author wrote them: the renamed nested root is read back as its natural class */
+  const selectors = unmatchedSelectors(withNestedRootNames(css, main.el), main.el, variants).map((selector) =>
+    selector.replace(/\.([\w-]+?)__in-\w+/g, '.$1'),
+  )
   if (!selectors.length) return
   const more = selectors.length - MAX_SELECTORS_NAMED
   const named = `${selectors.slice(0, MAX_SELECTORS_NAMED).join(', ')}${more > 0 ? ` and ${more} more` : ''}`
@@ -720,7 +736,10 @@ function alignedRoot(html: string, def: ComponentDef): Element {
 
 function nextHtml(def: ComponentDef, input: UpdateInput): string | undefined {
   if (input.find !== undefined) {
-    const count = def.template.split(input.find).length - 1
+    /* the stored text first (get_component's), then the main's own natural names */
+    const stored = def.template.includes(input.find)
+    const template = stored ? def.template : naturalTemplate(def.template, def.id)
+    const count = template.split(input.find).length - 1
     if (count === 0)
       fail(
         def.rawCss.includes(input.find)
@@ -728,7 +747,7 @@ function nextHtml(def: ComponentDef, input: UpdateInput): string | undefined {
           : 'find text is not in the template — read it with get_component. find + replace works on the template markup only; CSS is replaced whole through css',
       )
     if (count > 1) fail(`find text occurs ${count} times — include more context so it matches once`)
-    return def.template.replace(input.find, input.replace ?? '')
+    return template.replace(input.find, input.replace ?? '')
   }
   return input.html
 }
@@ -1124,9 +1143,8 @@ export const restoreComponent = atomic(function restoreComponent(
     )
   }
   checkCapacity(canvasId)
-  const marker = `${COMPONENT_ATTR}="${def.id}"`
   const remembered = def.mainFrameId ? store.getFrame(def.mainFrameId) : undefined
-  const home = [remembered, ...canvas.frames].find((frame) => frame?.html.includes(marker))
+  const home = [remembered, ...canvas.frames].find((frame) => frame && holdsMain(frame.html, def.id))
   const { status: _status, deletedAt: _deletedAt, deletedBy: _deletedBy, ...kept } = def
   const active: ComponentDef = {
     ...kept,
@@ -1388,7 +1406,7 @@ function convertFrames(
       if (attrOf(node, INSTANCE_ATTR) !== undefined || attrOf(node, COMPONENT_ATTR) !== undefined) continue
       const location = node.sourceCodeLocation
       if (location && measured.get(node)?.shape === shape) {
-        keyLike(node, template)
+        keyLike(node, template, def.id)
         setAttr(node, INSTANCE_ATTR, def.id)
         setAttr(node, REV_ATTR, String(def.rev))
         if (!attrOf(node, ELEMENT_ID_ATTR)) setAttr(node, ELEMENT_ID_ATTR, newId())
@@ -1406,14 +1424,21 @@ function convertFrames(
   }
 }
 
-function keyLike(el: Element, template: Element) {
+function keyLike(el: Element, template: Element, componentId: string) {
   const key = attrOf(template, PART_ATTR)
   if (key) setAttr(el, PART_ATTR, key)
+  /* the element wears natural class names and the template the renamed ones: the same classes, not an override */
+  const wanted = new Set((attrOf(template, 'class') ?? '').split(/\s+/))
+  const classes = (attrOf(el, 'class') ?? '').split(/\s+/).filter(Boolean)
+  const renamed = classes.map((name) =>
+    wanted.has(isolatedName(name, componentId)) ? isolatedName(name, componentId) : name,
+  )
+  if (renamed.some((name, index) => name !== classes[index])) setAttr(el, 'class', renamed.join(' '))
   const kids = kidsOf(el).filter((kid) => kid.tagName !== 'style' && kid.tagName !== 'script')
   const templateKids = kidsOf(template).filter((kid) => kid.tagName !== 'style' && kid.tagName !== 'script')
   kids.forEach((kid, index) => {
     const match = templateKids[index]
-    if (match) keyLike(kid, match)
+    if (match) keyLike(kid, match, componentId)
   })
 }
 
@@ -1432,7 +1457,8 @@ export function lookalikesIn(frame: Frame): { component: string; occurrences: nu
   if (!defs.length) return []
   const shapes = new Map(
     defs.flatMap((def) => {
-      const root = parseTemplateRoot(def.template)
+      /* a block drawn by hand wears natural class names */
+      const root = parseTemplateRoot(naturalTemplate(def.template, def.id))
       const shape = root ? shapeOf(root) : undefined
       return root && shape && elementCount(root) + (attrOf(root, 'class') ? 1 : 0) >= 2 ? [[shape, def] as const] : []
     }),
