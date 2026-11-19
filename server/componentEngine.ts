@@ -17,6 +17,7 @@ import {
   IF_ATTR,
   HEAD_ATTR,
   INSTANCE_ATTR,
+  MAIN_CSS_ATTR,
   MAX_INSTANCE_DEPTH,
   MAX_NESTING_DEPTH,
   OVERRIDES_ATTR,
@@ -1359,7 +1360,7 @@ export function splice(html: string, edits: { start: number; end: number; text: 
 /** Short form of a whole document: instances as `<doop-use>`, their CSS copies gone.
  *  What agents read: a screen of 40 buttons costs 40 lines rather than 40 subtrees. */
 export function compactDocument(html: string, ctx: EngineContext): string {
-  if (!html.includes(INSTANCE_ATTR) && !html.includes(CSS_ATTR)) return html
+  if (!html.includes(INSTANCE_ATTR) && !html.includes(CSS_ATTR) && !html.includes(MAIN_CSS_ATTR)) return html
   /* an instance of a deleted component stays written out: as <doop-use> it would be a new
      use of it when the frame is written back, and those are refused. One of a hollow
      component too, with its stylesheet: written back as <doop-use> it would render nothing */
@@ -1375,7 +1376,8 @@ export function compactDocument(html: string, ctx: EngineContext): string {
     end: found.end,
     text: insideMain(found.el) ? useTagFor(found.el, ctx, true, false, false, true) : useTagFor(found.el, ctx),
   }))
-  return stripComponentHead(splice(html, edits), hollow)
+  /* a main's nested-root block too: renamed classes agents never see, written again with the frame */
+  return stripComponentHead(splice(html, edits), hollow).replace(mainCssBlocks(), '')
 }
 
 /** Outermost instances, also those below a main: the main itself is not an instance. */
@@ -1410,6 +1412,16 @@ function hollowIds(html: string, ctx: EngineContext): Set<string> {
  *  newline after it. */
 function componentCssBlocks(): RegExp {
   return new RegExp(`(<style[^>]*\\b${CSS_ATTR}="([^"]*)"[^>]*>)([\\s\\S]*?)</style>(\\n?)`, 'gi')
+}
+
+/** A main's block of nested-root rules in its frame's head: the main's id, and the newline after it. */
+function mainCssBlocks(): RegExp {
+  return new RegExp(`<style[^>]*\\b${MAIN_CSS_ATTR}="([^"]*)"[^>]*>[\\s\\S]*?</style>\\n?`, 'gi')
+}
+
+/** The mains whose nested-root blocks this document carries. */
+export function mainCssBlockIds(html: string): string[] {
+  return [...html.matchAll(mainCssBlocks())].map((match) => match[1]!)
 }
 
 /** Everything a component put in the head: its stylesheet, and the links and scripts it brought.

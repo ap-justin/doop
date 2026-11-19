@@ -444,6 +444,65 @@ describe('a placed component and the classes of its frame', () => {
     expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
   })
 
+  it('drops the block from a copy of the main’s frame, and never takes the copy for the main', () => {
+    const { plan, planFrame } = planWithButton()
+    const copy = actions.createFrame(
+      canvasId,
+      { name: 'Plan main copy', html: store.getFrame(planFrame.id)!.html },
+      actor,
+    )!
+    expect(store.getFrame(copy.id)!.html).toContain(`${INSTANCE_ATTR}="${plan.id}"`)
+    expect(store.getFrame(copy.id)!.html).not.toContain('data-doop-main-css')
+    actions.deleteFrame(planFrame.id, actor)
+    expect(store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!.mainFrameId).toBeNull()
+  })
+
+  it('takes no frame for a main because its stylesheet names the main', () => {
+    const { plan, planFrame } = planWithButton()
+    const other = actions.createFrame(canvasId, { name: 'Other', html: '' }, actor)!
+    /* the block's scope, `[data-doop-component="…"]`, in a frame with no main */
+    store.getFrame(other.id)!.html = doc('<p>x</p>', `:where([${COMPONENT_ATTR}="${plan.id}"]) .x { color: red }`)
+    actions.deleteFrame(planFrame.id, actor)
+    expect(store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!.mainFrameId).toBeNull()
+  })
+
+  it('keeps a deleted component’s block while its frozen main stays, and drops it once the main is gone', () => {
+    const { plan, planFrame } = planWithButton()
+    deleteComponent(canvasId, plan.id, actor)
+    const frozen = store.getFrame(planFrame.id)!.html
+    actions.updateFrame(planFrame.id, { html: `${frozen} ` }, actor)
+    /* the frozen main still holds the nested instance its rules reach */
+    expect(mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)).not.toBeNull()
+    const plain = frozen.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    actions.updateFrame(planFrame.id, { html: plain }, actor)
+    expect(store.getFrame(planFrame.id)!.html).not.toContain('data-doop-main-css')
+  })
+
+  it('leaves a frame with no leftover block as it was', () => {
+    const { planFrame } = planWithButton()
+    const html = store.getFrame(planFrame.id)!.html
+    actions.updateFrame(planFrame.id, { html }, actor)
+    expect(store.getFrame(planFrame.id)!.html).toBe(html)
+  })
+
+  it('writes a new main on restore when the frame carries the deleted component’s block and no main', () => {
+    const { plan, planFrame } = planWithButton()
+    deleteComponent(canvasId, plan.id, actor)
+    const frame = store.getFrame(planFrame.id)!
+    /* as a write that kept a leftover block could have stored it */
+    frame.html = frame.html.replace(new RegExp(`\\s${COMPONENT_ATTR}="${plan.id}"`), '')
+    expect(mainCssBlock(frame.html, plan.id)).not.toBeNull()
+    expect(restoreComponent(canvasId, plan.id, actor).main).toBe('written')
+  })
+
+  it('leaves the block out of the frame agents read, and writes it again when that is saved', () => {
+    const { plan, planFrame } = planWithButton()
+    const compact = compactDocument(store.getFrame(planFrame.id)!.html, contextFor(canvasId))
+    expect(compact).not.toContain('data-doop-main-css')
+    actions.updateFrame(planFrame.id, { html: compact }, actor)
+    expect(mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)).not.toBeNull()
+  })
+
   it('says which frames’ own rules stop reaching a main whose root class is renamed', () => {
     const plan = makeSelect()
     const page = actions.createFrame(canvasId, { name: 'Landing', html: '' }, actor)!

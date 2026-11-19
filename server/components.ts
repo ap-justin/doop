@@ -36,6 +36,7 @@ import {
   expandUses,
   findMarked,
   holdsHollow,
+  mainCssBlockIds,
   renderInstance,
   reconcileInstance,
   setAttr,
@@ -134,6 +135,14 @@ function fromLibrary(
 export function referencesComponent(html: string, id: string): boolean {
   return html.includes(` ${INSTANCE_ATTR}="${id}"`) || html.includes(` ${COMPONENT_ATTR}="${id}"`)
 }
+
+/** Does this frame hold component `id`'s main? The attribute, after whitespace: a stylesheet's
+ *  `[data-doop-component="…"]` (the main-css block's scope) names it too, and is no main. */
+export function holdsMain(html: string, id: string): boolean {
+  return new RegExp(`\\s${COMPONENT_ATTR}="${escapedForRegExp(id)}"`).test(html)
+}
+
+const escapedForRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 function touchesComponents(html: string): boolean {
   return (
@@ -258,7 +267,7 @@ function prepareMains(
     const mainElsewhere =
       def.mainFrameId !== null &&
       def.mainFrameId !== frameId &&
-      !!store.getFrame(def.mainFrameId)?.html.includes(`${COMPONENT_ATTR}="${id}"`)
+      holdsMain(store.getFrame(def.mainFrameId)?.html ?? '', id)
     if (claimed.has(id) || mainElsewhere || !frameId || def.source?.library) {
       /* a copy of a main is an instance, the way copying a Figma main is; and a
          library component's main lives on its library canvas, so one pasted
@@ -311,14 +320,17 @@ function prepareMains(
   /* a main this frame held and no longer does: the component lives on without one */
   for (const def of only ? [] : store.getComponents(canvas.id)) {
     if (def.mainFrameId !== frameId || !frameId || claimed.has(def.id) || isDeleted(def)) continue
-    /* the block's own scope names the attribute too: it is not a main */
-    if (withMainCssBlock(html, def.id, '').includes(`${COMPONENT_ATTR}="${def.id}"`)) continue
+    if (holdsMain(html, def.id)) continue
     const saved = { ...def, mainFrameId: null, updatedAt: Date.now(), updatedBy: by }
     store.saveComponent(canvas.id, saved)
     moved.push(saved)
     mainCss.set(def.id, '')
   }
   const written = edits.length ? splice(html, edits) : html
+  /* a block for a main this frame no longer holds: a copy of a main frame (its main became an
+     instance), a deleted component whose frozen main was removed. A frozen main keeps its block */
+  if (!only)
+    for (const id of mainCssBlockIds(written)) if (!mainCss.has(id) && !holdsMain(written, id)) mainCss.set(id, '')
   const natural = [...claimed].reduce((text, id) => withNaturalFrameStyles(text, id), written)
   const withBlocks = [...mainCss].reduce((text, [id, css]) => withMainCssBlock(text, id, css), natural)
   return { html: withBlocks, changed, moved }

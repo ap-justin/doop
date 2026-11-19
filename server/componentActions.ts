@@ -30,7 +30,14 @@ import type { Actor, Canvas, Frame } from '../shared/types.ts'
 import { decodeQuotes, familyKey, fontFaceRule, usesFamily, type CustomFont } from '../shared/fonts.ts'
 import { fontsForCanvas } from './fonts.ts'
 import * as actions from './actions.ts'
-import { blankComponent, bumpRevision, contextFor, referencesComponent, withinRevision } from './components.ts'
+import {
+  blankComponent,
+  bumpRevision,
+  contextFor,
+  holdsMain,
+  referencesComponent,
+  withinRevision,
+} from './components.ts'
 import {
   isolatedName,
   naturalCss,
@@ -1136,9 +1143,8 @@ export const restoreComponent = atomic(function restoreComponent(
     )
   }
   checkCapacity(canvasId)
-  const marker = `${COMPONENT_ATTR}="${def.id}"`
   const remembered = def.mainFrameId ? store.getFrame(def.mainFrameId) : undefined
-  const home = [remembered, ...canvas.frames].find((frame) => frame?.html.includes(marker))
+  const home = [remembered, ...canvas.frames].find((frame) => frame && holdsMain(frame.html, def.id))
   const { status: _status, deletedAt: _deletedAt, deletedBy: _deletedBy, ...kept } = def
   const active: ComponentDef = {
     ...kept,
