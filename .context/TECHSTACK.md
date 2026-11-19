@@ -283,7 +283,9 @@ data-doop-carried>` blocks a moved or pasted layer brings (`rewriteCarriedCss`; 
   `persist.styleBlocksLoading` cuts out the stylesheets that do, so a canvas is read only where
   healing would change something; their font blocks, carried and component stylesheets, the canvas's components
   (library copies included) and published copies (`repairPublishedFaces`) are rewritten as annotation writes, a failure is logged
-  per canvas, and a second run changes nothing. A component or published
+  per canvas, and a second run changes nothing. A file another library's `fonts` row holds
+  (`foreignFontAssetIds`: what a layer pasted from that library brought) is left as written; a
+  file no row holds any more has no record of its library and is treated as this one's. A component or published
   rule is pointed at the new file in place, keeping its family and descriptors. A main's
   stylesheet is read with each rule loading an upload the library no longer lists pointed at the
   library's file for that face (`withLibraryFaceRules` in `prepareMains`; hosted fonts and files on

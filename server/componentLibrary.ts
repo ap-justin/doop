@@ -11,7 +11,7 @@ import type { Canvas } from '../shared/types.ts'
 import { swapFaceRules, withLibraryFaceRules, type FaceReplacement } from '../shared/fonts.ts'
 import { libraryLandingPageId } from '../shared/pages.ts'
 import * as persist from './db/persist.ts'
-import { fontsForCanvas } from './fonts.ts'
+import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { afterCommit, recordUndo } from './journal.ts'
 import { store } from './store.ts'
 import { getWorkspace, isActive } from './workspaces.ts'
@@ -67,7 +67,8 @@ export function repairPublishedFaces(): LibraryComponent[] {
   return rewritePublishedCss((canvasId) => {
     const canvas = store.getCanvas(canvasId)
     const library = canvas ? fontsForCanvas(canvas) : []
-    return (css) => withLibraryFaceRules(css, library)
+    const foreign = canvas ? foreignFontAssetIds(canvas) : new Set<string>()
+    return (css) => withLibraryFaceRules(css, library, foreign)
   })
 }
 

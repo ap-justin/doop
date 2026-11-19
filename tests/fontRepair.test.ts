@@ -79,9 +79,12 @@ async function versionsOf(frameId: string): Promise<unknown> {
   return (await owner.get(`/api/frames/${frameId}/versions`)).json()
 }
 
-/** canvases with frame HTML in memory, as /healthz/store reports it */
+/** canvases whose frame HTML was read into memory: /healthz/store's `loaded` also counts a
+ *  canvas with no frames, which has nothing to read, so those are taken off */
 async function loadedCanvases(): Promise<number> {
-  return ((await (await fetch(`${server.base}/healthz/store`)).json()) as { loaded: number }).loaded
+  const { loaded } = (await (await fetch(`${server.base}/healthz/store`)).json()) as { loaded: number }
+  const listed = (await (await owner.get('/api/canvases')).json()) as { frameCount: number }[]
+  return loaded - listed.filter((canvas) => !canvas.frameCount).length
 }
 
 /** the rules inside Doop's own font block */
@@ -198,10 +201,7 @@ describe('copies a replacing upload used to skip', () => {
     const canvasId = await newCanvas('Carry', workspaceId)
     const carried = (url: string) =>
       `<style data-doop-carried="c1">@font-face{font-family:"Carry Sans-c1";src:url("${url}") format("woff2");font-weight:400;unicode-range:U+0000-00FF}</style>`
-    const frameId = await newFrame(
-      canvasId,
-      doc(carried(regular.url), `<p style="font-family:'Carry Sans-c1'">Hi</p>`),
-    )
+    const frameId = await newFrame(canvasId, doc(carried(regular.url), `<p style="font-family:'Carry Sans-c1'">Hi</p>`))
     expect((await frameOn(canvasId, frameId)).html).toContain(carried(regular.url))
 
     const next = await upload(ttf({ family: 'Carry Sans' }), 'c2.ttf', workspaceId)
@@ -235,7 +235,9 @@ describe('copies a replacing upload used to skip', () => {
     const stored = (await frameOn(canvasId, frameId)).html
     expect(stored).toContain(`font-family:"Kit Carry-ab12cd";src:url("${next.url}")`)
 
-    const patched = await owner.patch(`/api/frames/${frameId}`, { html: stored.replace('</body>', '<p>note</p></body>') })
+    const patched = await owner.patch(`/api/frames/${frameId}`, {
+      html: stored.replace('</body>', '<p>note</p></body>'),
+    })
     expect(patched.status).toBe(200)
     const edited = await chip()
     expect(edited.rev).toBe(before.rev)
@@ -370,6 +372,36 @@ describe('the boot repair pass across canvases', () => {
       .toBe(true)
     expect(await loadedCanvases()).toBe(1)
     expect(await stamp(first.canvasId, first.frameId)).toEqual(healedStamp)
+  }, 120_000)
+})
+
+describe('the boot repair pass and another library’s file', () => {
+  it('leaves a pasted layer’s file from another library as written, and heals this library’s own stale file', async () => {
+    const family = 'Pasted Sans'
+    const otherWorkspace = await newWorkspace('Source Co')
+    const foreign = await upload(woff2({ family }), 'source.woff2', otherWorkspace)
+
+    const workspaceId = await newWorkspace('Paste Co')
+    const gone = await upload(woff2({ family }), 'gone.woff2', workspaceId)
+    /* two carried sheets, each naming the family at the library's own weight and style, so only
+       whose library the file belongs to tells them apart */
+    const carried = (scope: string, url: string) =>
+      `<style data-doop-carried="${scope}">${fontFaceRule({ ...gone, url })}</style>`
+    const canvasId = await newCanvas('Paste', workspaceId)
+    const frameId = await newFrame(
+      canvasId,
+      doc(`${carried('own', gone.url)}${carried('pasted', foreign.url)}`, `<p style="font-family:'${family}'">Hi</p>`),
+    )
+    await remove(gone)
+    const current = await upload(ttf({ family }), 'current.ttf', workspaceId)
+
+    await reboot()
+    await expect
+      .poll(async () => (await frameOn(canvasId, frameId)).html.includes(current.url), { timeout: 15_000 })
+      .toBe(true)
+    const html = (await frameOn(canvasId, frameId)).html
+    expect(html).not.toContain(gone.url)
+    expect(html).toContain(carried('pasted', foreign.url))
   }, 120_000)
 })
 

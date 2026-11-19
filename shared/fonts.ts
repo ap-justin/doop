@@ -142,14 +142,20 @@ function uploadPrefix(url: string): string | undefined {
  *  still loads a replaced file reads the same as one already swapped. A family wearing
  *  the suffix a paste renamed it with (a carried rule, also once a component's CSS holds
  *  it) stands for the library family it was renamed from. A rule loading anything else
- *  (a hosted font, a file served elsewhere) is left as written. */
-export function withLibraryFaceRules(css: string, library: readonly CustomFont[]): string {
+ *  (a hosted font, a file served elsewhere) is left as written, and so is a file named in
+ *  `foreign` (the asset ids another library holds), which a layer pasted from that library brought. */
+export function withLibraryFaceRules(
+  css: string,
+  library: readonly CustomFont[],
+  foreign: ReadonlySet<string> = new Set(),
+): string {
   if (!library.length || !css.includes('@font-face')) return css
   const prefixes = new Set(library.flatMap((font) => uploadPrefix(font.url) ?? []))
   const listed = new Set(library.map((font) => font.url))
   return css.replace(FACE_RULE_RE, (rule) => {
     const face = readFaceRule(rule)
     if (!face || listed.has(face.url)) return rule
+    if (foreign.has(/\/a\/([^/?#.]+)\./.exec(face.url)?.[1] ?? '')) return rule
     const prefix = uploadPrefix(face.url)
     if (!prefix || !prefixes.has(prefix)) return rule
     const successor = library.find((font) => fontKey(font) === face.key) ?? carriedSuccessor(face, library)
