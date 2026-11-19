@@ -403,6 +403,50 @@ describe('the boot repair pass and another library’s file', () => {
     expect(html).not.toContain(gone.url)
     expect(html).toContain(carried('pasted', foreign.url))
   }, 120_000)
+
+  it('leaves another library’s file in a component’s stylesheet as written, through a reboot and the main’s next write', async () => {
+    const family = 'Kit Foreign'
+    const otherWorkspace = await newWorkspace('Kit Source Co')
+    const foreign = await upload(woff2({ family }), 'source.woff2', otherWorkspace)
+
+    const workspaceId = await newWorkspace('Kit Paste Co')
+    const own = await upload(woff2({ family }), 'own.woff2', workspaceId)
+    expect(own.url).not.toBe(foreign.url)
+    const canvasId = await newCanvas('Kit Paste', workspaceId)
+    /* a pasted layer's renamed face at the library's own weight and style, loading the other library's file */
+    const carried =
+      `<style data-doop-carried="ab12cd">@font-face{font-family:"${family}-ab12cd";src:url("${foreign.url}") format("woff2");font-weight:400;font-style:normal}\n` +
+      `.chip{font-family:"${family}-ab12cd",sans-serif}</style>`
+    const frameId = await newFrame(canvasId, doc(carried, `<span class="chip" data-doop-id="chipone">Chip</span>`))
+    const made = await owner.post(`/api/canvases/${canvasId}/components`, { name: 'Chip', frameId, element: 'chipone' })
+    expect(made.status, await made.clone().text()).toBe(200)
+    const before = (await componentsOf(canvasId))[0]
+    expect(before?.css).toContain(foreign.url)
+
+    /* a stale canvas healing stands in for the boot pass being over */
+    const signal = await staleFrame('Kit Foreign Signal')
+    await reboot()
+    await expect
+      .poll(async () => (await frameOn(signal.canvasId, signal.frameId)).html.includes(signal.current.url), {
+        timeout: 15_000,
+      })
+      .toBe(true)
+    const rebooted = (await componentsOf(canvasId))[0]
+    expect(rebooted?.css).toContain(foreign.url)
+    expect(rebooted?.css).not.toContain(own.url)
+    expect(rebooted?.rev).toBe(before?.rev)
+
+    const stored = (await frameOn(canvasId, frameId)).html
+    expect(stored).toContain(foreign.url)
+    const patched = await owner.patch(`/api/frames/${frameId}`, {
+      html: stored.replace('</body>', '<p>note</p></body>'),
+    })
+    expect(patched.status).toBe(200)
+    const edited = (await componentsOf(canvasId))[0]
+    expect(edited?.css).toContain(foreign.url)
+    expect(edited?.css).not.toContain(own.url)
+    expect(edited?.rev).toBe(before?.rev)
+  }, 120_000)
 })
 
 describe('a replacing upload', () => {
