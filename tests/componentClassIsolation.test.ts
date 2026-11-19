@@ -283,6 +283,11 @@ describe('a placed component and the classes of its frame', () => {
         expect(again.css).toBe(def.css)
         expect(again.rawCss).toBe(def.rawCss)
         expect(again.rev).toBe(def.rev)
+        /* the main in its frame wears natural names, which the frame's own rule styles */
+        const stored = store.getFrame(frame.id)!.html
+        expect(stored).not.toContain('__in-')
+        expect(stored).toContain('class="sl"')
+        expect(stored).toMatch(/\.sl \{/)
       }
     })
   })

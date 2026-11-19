@@ -45,14 +45,29 @@ function naturalName(name: string, componentId: string): string {
  * wears natural names, which its frame's stylesheet styles. These undo the rename, so markup or CSS
  * copied from get_component reads as the main's own.
  */
-export function withNaturalClasses(root: Element, componentId: string): void {
+export function withNaturalClasses(root: Element, componentId: string): boolean {
+  let changed = false
   const stack: Element[] = [root]
   for (let el = stack.pop(); el; el = stack.pop()) {
     const classes = classesOf(el)
     const natural = classes.map((name) => naturalName(name, componentId))
-    if (natural.some((name, index) => name !== classes[index])) setAttr(el, 'class', natural.join(' '))
+    if (natural.some((name, index) => name !== classes[index])) {
+      setAttr(el, 'class', natural.join(' '))
+      changed = true
+    }
     stack.push(...el.childNodes.filter(isElement))
   }
+  return changed
+}
+
+/** The frame's own `<style>` blocks (not Doop's: those carry a `data-doop-` mark) with this component's
+ *  renamed classes put back, so the frame's rules match the natural names its main wears. */
+export function withNaturalFrameStyles(html: string, componentId: string): string {
+  if (!html.includes(isolatedName('', componentId))) return html
+  return html.replace(
+    /(<style(?![^>]*\bdata-doop-)[^>]*>)([\s\S]*?)(<\/style>)/gi,
+    (_, open, css, close) => `${open}${naturalCss(css, componentId)}${close}`,
+  )
 }
 
 export function naturalCss(css: string, componentId: string): string {

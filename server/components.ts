@@ -16,7 +16,7 @@ import {
   type ComponentIssue,
   type ComponentProp,
 } from '../shared/components.ts'
-import { isolateClasses, naturalCss, withNaturalClasses } from './componentClasses.ts'
+import { isolateClasses, naturalCss, withNaturalClasses, withNaturalFrameStyles } from './componentClasses.ts'
 import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
 import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withLibraryFaceRules } from '../shared/fonts.ts'
@@ -256,11 +256,12 @@ function prepareMains(
       continue
     }
     claimed.add(id)
-    const stamped = stampParts(found.el)
-    if (stamped) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
     /* derived from natural names whichever the main and its sheet wear (names copied from
-       get_component are renamed), so either derives the same definition */
-    withNaturalClasses(found.el, id)
+       get_component are renamed), so either derives the same definition; the frame is written
+       back with them too, since its own rules style the natural names */
+    const renamed = withNaturalClasses(found.el, id)
+    const stamped = stampParts(found.el)
+    if (stamped || renamed) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
     const drawn = templateFromMain(found.el, ctx)
     if (wouldCycle(canvas.id, id, drawn)) {
       ctx.issues.push({
@@ -299,7 +300,9 @@ function prepareMains(
     store.saveComponent(canvas.id, saved)
     moved.push(saved)
   }
-  return { html: edits.length ? splice(html, edits) : html, changed, moved }
+  const written = edits.length ? splice(html, edits) : html
+  const natural = [...claimed].reduce((text, id) => withNaturalFrameStyles(text, id), written)
+  return { html: natural, changed, moved }
 }
 
 /**
