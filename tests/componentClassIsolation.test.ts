@@ -618,7 +618,7 @@ describe('a placed component and the classes of its frame', () => {
   })
 
   it('carries a nested rule that ends at a nested root into the main frame, as the instances have it', () => {
-    const { button, plan, planFrame } = planWithButton('\n.plan { & .btn { height: 5px } }')
+    const { button, plan, planFrame } = planWithButton('\n.plan { color: rgb(1, 2, 3); & .btn { height: 5px } }')
     const btn = `.btn__in-${button.id}`
     /* the instances read the nested rule with the renamed class */
     const def = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
@@ -626,19 +626,20 @@ describe('a placed component and the classes of its frame', () => {
     /* and the main frame must too: its nested Button wears the renamed class there as well */
     const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
     expect(block).toMatch(new RegExp(`& ${btn.replace('.', '\\.')}\\s*\\{\\s*height: 5px`))
-    /* scoped to the main, and the Plan's own declarations are not repeated */
-    expect(block).toContain(`:where([${COMPONENT_ATTR}="${plan.id}"]) .plan`)
+    /* kept alone under its scoped parent: the parent's own declarations are not copied, the nested one once */
+    expect(block).toContain(
+      `:where([${COMPONENT_ATTR}="${plan.id}"]) .plan, .plan:where([${COMPONENT_ATTR}="${plan.id}"]) {\n& ${btn} {`,
+    )
+    expect(block).not.toContain('rgb(1, 2, 3)')
     expect(block).not.toContain('padding')
+    expect(block.match(/height:\s*5px/g)).toHaveLength(1)
   })
 
   it('declares a copied @layer after the frame’s own layer order, so the cascade is the author’s', () => {
-    const { planFrame } = planWithButton(
-      '\n@layer base { .plan .btn { width: 50% } }\n@layer reset { * { margin: 0 } }',
-    )
     /* the author's order statement comes before both blocks in the sheet */
-    const own = store.getFrame(planFrame.id)!.html.replace(/\.plan \.btn \{ width: 100% \}/, '')
-    const withOrder = own.replace('<style>', '<style>@layer reset, base;\n')
-    actions.updateFrame(planFrame.id, { html: withOrder }, actor)
+    const { planFrame } = planWithButton(
+      '\n@layer reset, base;\n@layer base { .plan .btn { width: 50% } }\n@layer reset { * { margin: 0 } }',
+    )
     const html = store.getFrame(planFrame.id)!.html
     const order: string[] = []
     for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g))
@@ -646,6 +647,20 @@ describe('a placed component and the classes of its frame', () => {
         for (const name of layer[1]!.split(',')) if (!order.includes(name.trim())) order.push(name.trim())
     expect(order).toEqual(['reset', 'base'])
     expect(html).toContain('data-doop-main-css')
+  })
+
+  it('restates no layer order when the sheet has no @layer', () => {
+    const { plan, planFrame } = planWithButton()
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    expect(block).toContain('width: 100%')
+    expect(block).not.toContain('@layer')
+  })
+
+  it('restates no layer order when the carried rules sit outside every layer', () => {
+    const { plan, planFrame } = planWithButton('\n@layer base, reset;')
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    expect(block).toContain('width: 100%')
+    expect(block).not.toContain('@layer')
   })
 
   it('restates sublayers declared inside a layer block in the author’s order', () => {
