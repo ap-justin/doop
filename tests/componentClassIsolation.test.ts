@@ -780,9 +780,7 @@ describe('a placed component and the classes of its frame', () => {
       const note = staleSelect({ mixed: true }).save()
       expect(note).toBeDefined()
       expect(note!.message).toContain('“Landing” (.select)')
-      expect(note!.message).toContain(
-        '“Mixed” (.select, which its rule still styles on that frame’s own elements; only the placed instance needs a class)',
-      )
+      expect(note!.message).toContain('“Mixed” (.select, which its rule still styles on that frame’s own elements)')
       expectKeepAdvice(note!.message)
     })
 
@@ -790,7 +788,7 @@ describe('a placed component and the classes of its frame', () => {
     /** Moving a rule the frame's own elements match would unstyle them: the closing advice keeps it there. */
     function expectKeepAdvice(message: string) {
       expect(message).not.toContain('Move each such rule')
-      expect(message).toContain("keep the rule for them and give the instance's class the same styles")
+      expect(message).toContain("Keep a rule the frame's own elements still use and give the instance's class the same styles")
     }
 
     it('lists a plain class when the only element wearing it is the placed instance', () => {
@@ -803,7 +801,7 @@ describe('a placed component and the classes of its frame', () => {
     it('uses the long wording when the frame also has its own element wearing the class', () => {
       const note = staleSelect({ old: '<p class="a select">own</p>' }).save()
       expect(note).toBeDefined()
-      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING})`)
       expectKeepAdvice(note!.message)
     })
 
@@ -814,7 +812,7 @@ describe('a placed component and the classes of its frame', () => {
     it('counts an element the frame put in another instance’s slot as its own', () => {
       const note = staleSelect({ old: section('<p class="select">own</p>') }).save()
       expect(note).toBeDefined()
-      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING})`)
     })
 
     it('does not count an instance placed in a slot, nor another instance’s own markup', () => {

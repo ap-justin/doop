@@ -460,8 +460,8 @@ export function frameStylesheets(html: string): string {
 
 /**
  * The classes a frame's own elements wear: every placed instance, root included, is its component's,
- * except the content of its slots, which the frame wrote; an instance placed in a slot is its own
- * component's again.
+ * except the content of its slots, which the frame wrote (a slot showing its default content counts
+ * the same); an instance placed in a slot is its own component's again.
  */
 export function frameOwnClasses(html: string): Set<string> {
   const classes = new Set<string>()

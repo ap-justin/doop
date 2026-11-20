@@ -339,7 +339,8 @@ function prepareMains(
 /**
  * A main's root class is renamed now: a frame's own rule for it (`.card { grid-column: span 2 }`,
  * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
- * save that renames it, naming the frames and where the rule belongs now.
+ * save that renames it, naming the frames and what each rule needs now: moved to a class on the
+ * placed instance, or kept where the frame's own elements still use it.
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
@@ -354,7 +355,7 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
     const listed = used.map((name) => {
       if (!worn.has(name)) return `.${name}`
       alsoOwn = true
-      return `.${name}, which its rule still styles on that frame’s own elements; only the placed instance needs a class`
+      return `.${name}, which its rule still styles on that frame’s own elements`
     })
     hits.push(`“${frame.name}” (${listed.join('; ')})`)
   }
@@ -362,7 +363,7 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
   const use = `<doop-use component="${def.name}" class="your-class">`
   /* moving a rule the frame's own elements also match would unstyle them */
   const advice = alsoOwn
-    ? `Give the placed instance a class (${use}) and style that class. Where the frame's own elements also wear the class, keep the rule for them and give the instance's class the same styles; move any other such rule to the instance's class.`
+    ? `Give the placed instance a class (${use}) and style that class. Keep a rule the frame's own elements still use and give the instance's class the same styles; move any other such rule to the instance's class.`
     : `Move each such rule to a class on the placed instance (${use}) and style that class.`
   ctx.issues.push({
     code: 'root_class_renamed',
