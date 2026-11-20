@@ -1,7 +1,14 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
 import { parse } from './workBudget.ts'
 import { elementIs } from './parse5Select.ts'
-import { CSS_ATTR, DETACHED_CSS_ATTR, HEAD_ATTR, INSTANCE_ATTR, MAIN_CSS_ATTR, SLOT_ATTR } from '../shared/components.ts'
+import {
+  CSS_ATTR,
+  DETACHED_CSS_ATTR,
+  HEAD_ATTR,
+  INSTANCE_ATTR,
+  MAIN_CSS_ATTR,
+  SLOT_ATTR,
+} from '../shared/components.ts'
 import { TOKEN_BLOCK_ATTR } from '../shared/designTokens.ts'
 import { FONT_BLOCK_ATTR } from '../shared/fonts.ts'
 import { WEB_FONT_LINK_ATTR } from '../shared/webFonts.ts'

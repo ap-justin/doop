@@ -788,7 +788,9 @@ describe('a placed component and the classes of its frame', () => {
     /** Moving a rule the frame's own elements match would unstyle them: the closing advice keeps it there. */
     function expectKeepAdvice(message: string) {
       expect(message).not.toContain('Move each such rule')
-      expect(message).toContain("Keep a rule the frame's own elements still use and give the instance's class the same styles")
+      expect(message).toContain(
+        "Keep a rule the frame's own elements still use and give the instance's class the same styles",
+      )
     }
 
     it('lists a plain class when the only element wearing it is the placed instance', () => {
