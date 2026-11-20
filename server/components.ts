@@ -347,7 +347,19 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
     if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
     const named = classesNamedIn(frameStylesheets(frame.html))
     const used = names.filter((name) => named.has(name))
-    if (used.length) hits.push(`“${frame.name}” (${used.map((name) => `.${name}`).join(', ')})`)
+    if (!used.length) continue
+    /* a rule that also styles the frame's own elements keeps doing that; only the instance lost it */
+    const worn = new Set(
+      [...frame.html.matchAll(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)].flatMap((match) =>
+        (match[1] ?? match[2] ?? '').split(/\s+/),
+      ),
+    )
+    const listed = used.map((name) =>
+      worn.has(name)
+        ? `.${name}, which its rule still styles on that frame’s own elements; only the placed instance needs a class`
+        : `.${name}`,
+    )
+    hits.push(`“${frame.name}” (${listed.join('; ')})`)
   }
   if (!hits.length) return
   ctx.issues.push({

@@ -988,14 +988,17 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   nested root, which wears its renamed class there too: `prepareMains` writes a managed
   `<style data-doop-main-css="<parentId>">` block (`nestedRootRules`, `withMainCssBlock`; in
   `MANAGED_STYLE_ATTRS`, so never read back as the author's CSS) at the head of that frame, holding only
-  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]`. A
+  the rules that end at a nested root, renamed and scoped to `[data-doop-component="<parentId>"]` (a
+  nested rule such as `.plan { & .btn {} }` is kept alone under its scoped parent, and a block that
+  carries an `@layer` first restates the sheet's layer order so the author's order stands). A
   whole-frame write drops the block once the frame no longer holds its main (moved or deleted, turned
   into an instance in a copied frame, a deleted component's removed main; `holdsMain` reads the
   attribute, never the block's scope); `get_frame` leaves it out, and the next write of the main frame
   puts it back. A save that renames a main's root class also returns a
-  `root_class_renamed` note naming the frames whose own rule for that class (old-guide placement,
-  `.card { grid-column: span 2 }`) no longer reaches its instances, and where it belongs now
-  (a class on `<doop-use class>`); nothing is migrated. `update_component`'s find/replace reads the
+  `root_class_renamed` note naming the frames whose own rule for a class the root already wore
+  (old-guide placement, `.card { grid-column: span 2 }`) no longer reaches its instances, and where
+  it belongs now (a class on `<doop-use class>`); a frame whose rule still styles its own elements
+  with the class is told so; nothing is migrated. `update_component`'s find/replace reads the
   template with natural names when the stored text has no match, the lookalike check always reads
   natural names, and `replace_matching` links hand-drawn elements to the
   renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested

@@ -100,34 +100,58 @@ function nestedRootRenamer(main: Element): (css: string) => string {
       : css
 }
 
+/** The names a sheet's `@layer` statements and blocks declare, in the order the cascade first sees them. */
+function layerOrder(nodes: CssNode[], order: string[] = []): string[] {
+  const declare = (list: string) => {
+    for (const name of list.split(',').map((part) => part.trim())) if (name && !order.includes(name)) order.push(name)
+  }
+  for (const node of nodes) {
+    if (node.kind === 'group' && /^@layer\b/i.test(node.prelude)) declare(node.prelude.replace(/^@layer\s*/i, ''))
+    else if (node.kind === 'group') layerOrder(node.nodes, order)
+    else if (node.kind === 'atomic' && node.name === 'layer') declare(node.text.replace(/^@layer\s*|;$/gi, ''))
+  }
+  return order
+}
+
 /**
  * The rules of a main's natural sheet that end at a nested instance's root, as the main's own frame
  * needs them: the nested root wears its renamed class there, so the author's `.plan .btn` matches
  * nothing. Written with the renamed class and scoped to the main, so they reach the nested instance
- * and nothing else (`withNestedRootNames`'s output, narrowed to the rules it changed).
+ * and nothing else (`withNestedRootNames`'s output, narrowed to the rules it changed). A rule nested
+ * in another (`.plan { & .btn {} }`) is kept alone under its scoped parent, without the parent's own
+ * declarations. The block leads the frame's head, so when it carries a layer it first restates the
+ * sheet's layer order: a layer first named here would otherwise rank ahead of the author's own order.
  */
 export function nestedRootRules(sheet: string, main: Element, componentId: string): string {
   const rename = nestedRootRenamer(main)
   const scope = `[${COMPONENT_ATTR}="${componentId}"]`
-  const keep = (nodes: CssNode[]): string[] =>
+  const keep = (nodes: CssNode[], top: boolean): string[] =>
     nodes.flatMap((node) => {
       if (node.kind === 'group') {
-        const inner = keep(node.nodes)
+        const inner = keep(node.nodes, top)
         return inner.length ? [`${node.prelude} {\n${inner.join('\n')}\n}`] : []
       }
       if (node.kind !== 'rule') return []
-      const selectors = splitTopLevel(node.selector, ',')
-        .map((selector) => selector.trim())
-        .flatMap((selector) => {
-          const renamed = rename(selector)
-          return renamed === selector ? [] : [scopeSelector(renamed, scope)]
-        })
-      return selectors.length ? [`${selectors.join(', ')} {${node.body}}`] : []
+      const selectors = splitTopLevel(node.selector, ',').map((selector) => selector.trim())
+      const place = (selector: string) => (top ? scopeSelector(selector, scope) : selector)
+      const renamed = selectors.flatMap((selector) => {
+        const to = rename(selector)
+        return to === selector ? [] : [place(to)]
+      })
+      if (renamed.length) return [`${renamed.join(', ')} {${rename(node.body)}}`]
+      const inner = keep(parseCss(node.body), false)
+      return inner.length ? [`${selectors.map(place).join(', ')} {\n${inner.join('\n')}\n}`] : []
     })
-  return keep(parseCss(sheet)).join('\n')
+  const rules = keep(parseCss(sheet), true).join('\n')
+  const layers = /@layer\b/i.test(rules) ? layerOrder(parseCss(sheet)) : []
+  return layers.length ? `@layer ${layers.join(', ')};\n${rules}` : rules
 }
 
-/** The root classes `after` wears renamed that `before` did not (natural names): what a frame's own rule stops reaching. */
+/**
+ * The root classes this save renames: on the main's root before it, in their natural spelling, and
+ * worn renamed after. A class that was only just put on the root never reached an instance, so a
+ * frame's rule for it loses nothing.
+ */
 export function newlyRenamedRootClasses(before: string, after: string, componentId: string): string[] {
   const rootClasses = (template: string) => {
     const root = template ? parseTemplateRoot(template) : undefined
@@ -136,7 +160,7 @@ export function newlyRenamedRootClasses(before: string, after: string, component
   const had = new Set(rootClasses(before))
   const suffix = isolatedName('', componentId)
   return rootClasses(after)
-    .filter((name) => name.endsWith(suffix) && !had.has(name))
+    .filter((name) => name.endsWith(suffix) && !had.has(name) && had.has(naturalName(name, componentId)))
     .map((name) => naturalName(name, componentId))
 }
 
