@@ -281,14 +281,23 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     await seedFrames([source])
     const front = await visibleDrawing('Stacked', '#front')
     await drag([front.x + 30, front.y + 30], [front.x + 70, front.y + 50])
-    await page.waitForFunction((before) => window.drawingHarness.state().frames[0]!.html !== before, {}, source.html)
-    const positions = await page.evaluate(() => {
+    const readPositions = () => {
       const doc = new DOMParser().parseFromString(window.drawingHarness.state().frames[0]!.html, 'text/html')
       return ['front', 'back'].map((id) => {
         const el = doc.getElementById(id)!
         return [el.style.left, el.style.top]
       })
-    })
+    }
+    // The html changes on the first intermediate move too; wait for the drop's own position.
+    await page.waitForFunction(
+      (read) => {
+        const [front] = new Function(`return (${read})()`)()
+        return front[0] === '80px' && front[1] === '70px'
+      },
+      {},
+      readPositions.toString(),
+    )
+    const positions = await page.evaluate(readPositions)
     expect(positions).toEqual([
       ['80px', '70px'],
       ['60px', '60px'],
