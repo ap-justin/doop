@@ -343,6 +343,7 @@ function prepareMains(
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
+  let alsoOwn = false
   for (const frame of canvas.frames) {
     if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
     const named = classesNamedIn(frameStylesheets(frame.html))
@@ -350,17 +351,22 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
     if (!used.length) continue
     /* a rule that also styles the frame's own elements keeps doing that; only the instance lost it */
     const worn = frameOwnClasses(frame.html)
-    const listed = used.map((name) =>
-      worn.has(name)
-        ? `.${name}, which its rule still styles on that frame’s own elements; only the placed instance needs a class`
-        : `.${name}`,
-    )
+    const listed = used.map((name) => {
+      if (!worn.has(name)) return `.${name}`
+      alsoOwn = true
+      return `.${name}, which its rule still styles on that frame’s own elements; only the placed instance needs a class`
+    })
     hits.push(`“${frame.name}” (${listed.join('; ')})`)
   }
   if (!hits.length) return
+  const use = `<doop-use component="${def.name}" class="your-class">`
+  /* moving a rule the frame's own elements also match would unstyle them */
+  const advice = alsoOwn
+    ? `Give the placed instance a class (${use}) and style that class. Where the frame's own elements also wear the class, keep the rule for them and give the instance's class the same styles; move any other such rule to the instance's class.`
+    : `Move each such rule to a class on the placed instance (${use}) and style that class.`
   ctx.issues.push({
     code: 'root_class_renamed',
-    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. Move each such rule to a class on the placed instance (<doop-use component="${def.name}" class="your-class">) and style that class.`,
+    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. ${advice}`,
   })
 }
 

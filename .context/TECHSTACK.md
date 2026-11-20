@@ -998,9 +998,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `root_class_renamed` note naming the frames whose own rule for a class the root already wore
   (old-guide placement, `.card { grid-column: span 2 }`) no longer reaches its instances, and where
   it belongs now (a class on `<doop-use class>`); a frame whose rule still styles its own elements
-  with the class is told so; nothing is migrated. `update_component`'s find/replace reads the
-  template with natural names when the stored text has no match, the lookalike check always reads
-  natural names, and `replace_matching` links hand-drawn elements to the
+  with the class is told so, and to keep the rule and style the instance's class too; nothing is
+  migrated. `update_component`'s find/replace reads the template with natural names when the stored
+  text has no match, the lookalike check always reads natural names, and `replace_matching` links hand-drawn elements to the
   renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested
   `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own

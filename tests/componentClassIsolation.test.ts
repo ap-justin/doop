@@ -757,9 +757,15 @@ describe('a placed component and the classes of its frame', () => {
       expect(note!.message).toContain(
         '“Mixed” (.select, which its rule still styles on that frame’s own elements; only the placed instance needs a class)',
       )
+      expectKeepAdvice(note!.message)
     })
 
     const OWN_WORDING = 'which its rule still styles on that frame’s own elements'
+    /** Moving a rule the frame's own elements match would unstyle them: the closing advice keeps it there. */
+    function expectKeepAdvice(message: string) {
+      expect(message).not.toContain('Move each such rule')
+      expect(message).toContain("keep the rule for them and give the instance's class the same styles")
+    }
 
     it('lists a plain class when the only element wearing it is the placed instance', () => {
       const note = staleSelect({ old: '<p class="other">x</p>' }).save()
@@ -772,6 +778,7 @@ describe('a placed component and the classes of its frame', () => {
       const note = staleSelect({ old: '<p class="a select">own</p>' }).save()
       expect(note).toBeDefined()
       expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
+      expectKeepAdvice(note!.message)
     })
 
     it('counts an own element whose class attribute is unquoted', () => {
