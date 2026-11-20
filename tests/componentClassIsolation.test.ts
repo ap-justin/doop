@@ -24,8 +24,8 @@ import {
   restoreComponentVersion,
   updateComponent,
 } from '../server/componentActions.ts'
-import { isolateClasses, withNaturalFrameStyles } from '../server/componentClasses.ts'
-import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
+import { isolateClasses, withMainCssBlock, withNaturalFrameStyles } from '../server/componentClasses.ts'
+import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR, SLOT_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
@@ -415,7 +415,7 @@ describe('a placed component and the classes of its frame', () => {
   const selectorsOf = (css: string) =>
     [...css.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(',').map((selector) => selector.trim()))
 
-  it('writes the parent’s nested-root rules into its own main frame, where they match the nested instance', () => {
+  it('writes the parent’s nested-root rules into its own main frame, where they match the nested instance', async () => {
     const { button, plan, planFrame } = planWithButton()
     const html = store.getFrame(planFrame.id)!.html
     const block = mainCssBlock(html, plan.id)
@@ -424,15 +424,19 @@ describe('a placed component and the classes of its frame', () => {
     expect(html.indexOf('data-doop-main-css')).toBeLessThan(html.indexOf('<style>'))
     expect(html).toContain('.plan .btn { width: 100% }')
     const window = new Window()
-    window.document.write(html)
-    const nested = window.document.querySelector(`[${INSTANCE_ATTR}="${button.id}"]`)!
-    const plain = window.document.querySelector('i.btn')!
-    const selectors = [...block![1]!.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(','))
-    expect(selectors.length).toBeGreaterThan(0)
-    /* a rule that reaches the Button inside the Plan, and none that reaches a plain `.btn` */
-    const matches = (selector: string) => [...window.document.querySelectorAll(selector.trim())]
-    expect(selectors.some((selector) => matches(selector).includes(nested))).toBe(true)
-    for (const selector of selectors) expect(matches(selector)).not.toContain(plain)
+    try {
+      window.document.write(html)
+      const nested = window.document.querySelector(`[${INSTANCE_ATTR}="${button.id}"]`)!
+      const plain = window.document.querySelector('i.btn')!
+      const selectors = [...block![1]!.matchAll(/([^{}]+)\{/g)].flatMap((rule) => rule[1]!.split(','))
+      expect(selectors.length).toBeGreaterThan(0)
+      /* a rule that reaches the Button inside the Plan, and none that reaches a plain `.btn` */
+      const matches = (selector: string) => [...window.document.querySelectorAll(selector.trim())]
+      expect(selectors.some((selector) => matches(selector).includes(nested))).toBe(true)
+      for (const selector of selectors) expect(matches(selector)).not.toContain(plain)
+    } finally {
+      await window.happyDOM.close()
+    }
   })
 
   it('files no new revision when that main is saved again, and never reads the block back as the author’s CSS', () => {
@@ -453,7 +457,7 @@ describe('a placed component and the classes of its frame', () => {
     expect(store.getFrame(planFrame.id)!.html).toBe(saved)
   })
 
-  it('scopes the block to its main, so the Button in a Plan outside the main gets none of its rules', () => {
+  it('scopes the block to its main, so the Button in a Plan outside the main gets none of its rules', async () => {
     const { button, plan, planFrame } = planWithButton(
       '',
       (buttonId) => `<div class="plan"><doop-use component="${buttonId}"></doop-use></div>`,
@@ -468,14 +472,18 @@ describe('a placed component and the classes of its frame', () => {
     expect(block).not.toContain('padding')
 
     const window = new Window()
-    window.document.write(html)
-    const all = [...window.document.querySelectorAll(`[${INSTANCE_ATTR}="${button.id}"]`)]
-    expect(all).toHaveLength(2)
-    const inside = window.document.querySelector(`[${COMPONENT_ATTR}] [${INSTANCE_ATTR}="${button.id}"]`)!
-    const outside = all.find((el) => el !== inside)!
-    const matches = (selector: string) => [...window.document.querySelectorAll(selector)]
-    expect(selectors.some((selector) => matches(selector).includes(inside))).toBe(true)
-    for (const selector of selectors) expect(matches(selector)).not.toContain(outside)
+    try {
+      window.document.write(html)
+      const all = [...window.document.querySelectorAll(`[${INSTANCE_ATTR}="${button.id}"]`)]
+      expect(all).toHaveLength(2)
+      const inside = window.document.querySelector(`[${COMPONENT_ATTR}] [${INSTANCE_ATTR}="${button.id}"]`)!
+      const outside = all.find((el) => el !== inside)!
+      const matches = (selector: string) => [...window.document.querySelectorAll(selector)]
+      expect(selectors.some((selector) => matches(selector).includes(inside))).toBe(true)
+      for (const selector of selectors) expect(matches(selector)).not.toContain(outside)
+    } finally {
+      await window.happyDOM.close()
+    }
   })
 
   it('removes the block when the last nested instance leaves the main and the frame is saved', () => {
@@ -609,6 +617,79 @@ describe('a placed component and the classes of its frame', () => {
     expect(mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)).not.toBeNull()
   })
 
+  it('carries a nested rule that ends at a nested root into the main frame, as the instances have it', () => {
+    const { button, plan, planFrame } = planWithButton('\n.plan { color: rgb(1, 2, 3); & .btn { height: 5px } }')
+    const btn = `.btn__in-${button.id}`
+    /* the instances read the nested rule with the renamed class */
+    const def = store.getComponents(canvasId).find((candidate) => candidate.id === plan.id)!
+    expect(def.rawCss).toMatch(new RegExp(`& ${btn.replace('.', '\\.')}\\s*\\{\\s*height: 5px`))
+    /* and the main frame must too: its nested Button wears the renamed class there as well */
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    expect(block).toMatch(new RegExp(`& ${btn.replace('.', '\\.')}\\s*\\{\\s*height: 5px`))
+    /* kept alone under its scoped parent: the parent's own declarations are not copied, the nested one once */
+    expect(block).toContain(
+      `:where([${COMPONENT_ATTR}="${plan.id}"]) .plan, .plan:where([${COMPONENT_ATTR}="${plan.id}"]) {\n& ${btn} {`,
+    )
+    expect(block).not.toContain('rgb(1, 2, 3)')
+    expect(block).not.toContain('padding')
+    expect(block.match(/height:\s*5px/g)).toHaveLength(1)
+  })
+
+  it('declares a copied @layer after the frame’s own layer order, so the cascade is the author’s', () => {
+    /* the author's order statement comes before both blocks in the sheet */
+    const { planFrame } = planWithButton(
+      '\n@layer reset, base;\n@layer base { .plan .btn { width: 50% } }\n@layer reset { * { margin: 0 } }',
+    )
+    const html = store.getFrame(planFrame.id)!.html
+    const order: string[] = []
+    for (const style of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g))
+      for (const layer of style[1]!.matchAll(/@layer\s+([^{;]+)[{;]/g))
+        for (const name of layer[1]!.split(',')) if (!order.includes(name.trim())) order.push(name.trim())
+    expect(order).toEqual(['reset', 'base'])
+    expect(html).toContain('data-doop-main-css')
+  })
+
+  it('restates no layer order when the sheet has no @layer', () => {
+    const { plan, planFrame } = planWithButton()
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    expect(block).toContain('width: 100%')
+    expect(block).not.toContain('@layer')
+  })
+
+  it('restates no layer order when the carried rules sit outside every layer', () => {
+    const { plan, planFrame } = planWithButton('\n@layer base, reset;')
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    expect(block).toContain('width: 100%')
+    expect(block).not.toContain('@layer')
+  })
+
+  it('restates sublayers declared inside a layer block in the author’s order', () => {
+    const { plan, planFrame } = planWithButton(
+      '\n@layer ui { @layer reset { * { margin: 0 } } @layer comp { .plan .btn { margin: 8px } } }',
+    )
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    /* the block carries `ui.comp` ahead of the author's sheet: `ui.reset` must be declared before it */
+    const statement = /^@layer ([^{;]+);/.exec(block)
+    expect(statement, block).not.toBeNull()
+    expect(statement![1]!.split(',').map((name) => name.trim())).toEqual(['ui', 'ui.reset', 'ui.comp'])
+  })
+
+  describe('a frame with no <head>', () => {
+    const style = '<style data-doop-main-css="abc">\n.a { color: red }\n</style>'
+
+    it('gets the block ahead of a bare fragment', () => {
+      expect(withMainCssBlock('<div class="plan">x</div>', 'abc', '.a { color: red }')).toBe(
+        `${style}\n<div class="plan">x</div>`,
+      )
+    })
+
+    it('gets the block in a head made before its body, and loses it again when the css is empty', () => {
+      const written = withMainCssBlock('<body><div>x</div></body>', 'abc', '.a { color: red }')
+      expect(written).toBe(`<head>\n${style}\n</head><body><div>x</div></body>`)
+      expect(withMainCssBlock(written, 'abc', '')).toBe('<head>\n</head><body><div>x</div></body>')
+    })
+  })
+
   it('says which frames’ own rules stop reaching a main whose root class is renamed', () => {
     const plan = makeSelect()
     const page = actions.createFrame(canvasId, { name: 'Landing', html: '' }, actor)!
@@ -630,7 +711,7 @@ describe('a placed component and the classes of its frame', () => {
 
   describe('the note for a renamed root class', () => {
     /** A Select whose stored definition predates the rename, and frames around it; the note is read after saving its main. */
-    function staleSelect() {
+    function staleSelect({ rootBefore = 'select', mixed = false, old = '' } = {}) {
       const select = makeSelect()
       const frame = (name: string, html: string) => {
         const created = actions.createFrame(canvasId, { name, html: '' }, actor)!
@@ -644,6 +725,24 @@ describe('a placed component and the classes of its frame', () => {
         { html: doc(`<doop-use component="${select.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
         actor,
       )
+      if (mixed) {
+        const own = actions.createFrame(canvasId, { name: 'Mixed', html: '' }, actor)!
+        actions.updateFrame(
+          own.id,
+          {
+            html: doc(
+              `<doop-use component="${select.id}" label="Pick"></doop-use><p class="select">own</p>`,
+              '.select { margin: 1px }',
+            ),
+          },
+          actor,
+        )
+      }
+      /* `old`: body markup of a frame whose instance was placed from the old definition, so it wears the natural root class */
+      if (old) {
+        const placed = `<div class="select" ${INSTANCE_ATTR}="${select.id}">x</div>`
+        frame('Old', doc(`${placed}${old}`, '.select { grid-column: span 2 }'))
+      }
       frame('No rule', doc(instance, '.other { color: red }'))
       frame('Rule only', doc('<p class="select">x</p>', '.select { margin: 1px }'))
       frame(
@@ -652,7 +751,7 @@ describe('a placed component and the classes of its frame', () => {
       )
       store.saveComponent(canvasId, {
         ...select,
-        template: select.template.replace(`select__in-${select.id}`, 'select'),
+        template: select.template.replace(`select__in-${select.id}`, rootBefore),
       })
       const main = store.getFrame(select.mainFrameId!)!
       actions.takeComponentIssues(main.id)
@@ -670,6 +769,66 @@ describe('a placed component and the classes of its frame', () => {
       expect(note!.message).toContain(
         "these frames' own rules for it no longer reach its instances: “Landing” (.select). Move each",
       )
+    })
+
+    it('says nothing about a class that was not on the root before this save', () => {
+      /* the root wore `other`; `select` was only just put on it, so no rule of the frame ever reached an instance by it */
+      expect(staleSelect({ rootBefore: 'other' }).save()).toBeUndefined()
+    })
+
+    it('says plainly that a frame’s rule still styles its own elements with the class', () => {
+      const note = staleSelect({ mixed: true }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain('“Landing” (.select)')
+      expect(note!.message).toContain('“Mixed” (.select, which its rule still styles on that frame’s own elements)')
+      expectKeepAdvice(note!.message)
+    })
+
+    const OWN_WORDING = 'which its rule still styles on that frame’s own elements'
+    /** Moving a rule the frame's own elements match would unstyle them: the closing advice keeps it there. */
+    function expectKeepAdvice(message: string) {
+      expect(message).not.toContain('Move each such rule')
+      expect(message).toContain(
+        "Keep a rule the frame's own elements still use and give the instance's class the same styles",
+      )
+    }
+
+    it('lists a plain class when the only element wearing it is the placed instance', () => {
+      const note = staleSelect({ old: '<p class="other">x</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain('“Old” (.select)')
+      expect(note!.message).not.toContain(OWN_WORDING)
+    })
+
+    it('uses the long wording when the frame also has its own element wearing the class', () => {
+      const note = staleSelect({ old: '<p class="a select">own</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING})`)
+      expectKeepAdvice(note!.message)
+    })
+
+    /** Another component's instance, holding `slot` in its slot. */
+    const section = (slot: string) =>
+      `<section class="sec" ${INSTANCE_ATTR}="section"><h2 class="select">title</h2><div ${SLOT_ATTR}="body">${slot}</div></section>`
+
+    it('counts an element the frame put in another instance’s slot as its own', () => {
+      const note = staleSelect({ old: section('<p class="select">own</p>') }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING})`)
+    })
+
+    it('does not count an instance placed in a slot, nor another instance’s own markup', () => {
+      const badge = `<span class="select" ${INSTANCE_ATTR}="badge"><b class="select">x</b></span>`
+      const note = staleSelect({ old: section(badge) }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain('“Old” (.select)')
+      expect(note!.message).not.toContain(OWN_WORDING)
+    })
+
+    it('counts an own element whose class attribute is unquoted', () => {
+      const note = staleSelect({ old: '<p class=select>own</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}`)
     })
 
     it('is not repeated by a second save of the main', () => {

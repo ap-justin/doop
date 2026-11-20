@@ -1,7 +1,14 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
 import { parse } from './workBudget.ts'
 import { elementIs } from './parse5Select.ts'
-import { CSS_ATTR, DETACHED_CSS_ATTR, HEAD_ATTR, INSTANCE_ATTR, MAIN_CSS_ATTR } from '../shared/components.ts'
+import {
+  CSS_ATTR,
+  DETACHED_CSS_ATTR,
+  HEAD_ATTR,
+  INSTANCE_ATTR,
+  MAIN_CSS_ATTR,
+  SLOT_ATTR,
+} from '../shared/components.ts'
 import { TOKEN_BLOCK_ATTR } from '../shared/designTokens.ts'
 import { FONT_BLOCK_ATTR } from '../shared/fonts.ts'
 import { WEB_FONT_LINK_ATTR } from '../shared/webFonts.ts'
@@ -456,6 +463,29 @@ export function frameStylesheets(html: string): string {
   })
   /* the walk runs last-to-first: put the sheets back in cascade order */
   return parts.reverse().join('\n')
+}
+
+/**
+ * The classes a frame's own elements wear: every placed instance, root included, is its component's,
+ * except the content of its slots, which the frame wrote (a slot showing its default content counts
+ * the same); an instance placed in a slot is its own component's again.
+ */
+export function frameOwnClasses(html: string): Set<string> {
+  const classes = new Set<string>()
+  const stack = parse(html).childNodes.map((node) => ({ node, own: true }))
+  for (let next = stack.pop(); next; next = stack.pop()) {
+    const { node } = next
+    if (!('tagName' in node)) continue
+    const instance = isInstanceRoot(node)
+    const own = next.own && !instance
+    if (own) {
+      const value = node.attrs.find((attr) => attr.name === 'class')?.value ?? ''
+      for (const name of value.split(/\s+/)) if (name) classes.add(name)
+    }
+    const ownChildren = !instance && (own || node.attrs.some((attr) => attr.name === SLOT_ATTR))
+    stack.push(...node.childNodes.map((child) => ({ node: child, own: ownChildren })))
+  }
+  return classes
 }
 
 /** Font and framework tags from a frame's head: a design can rely on them without any rule saying so.

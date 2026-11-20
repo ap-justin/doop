@@ -27,7 +27,7 @@ import {
   withNaturalFrameStyles,
   withNestedRootNames,
 } from './componentClasses.ts'
-import { extractComponentCss, frameHeadTags, frameStylesheets } from './componentCss.ts'
+import { extractComponentCss, frameHeadTags, frameOwnClasses, frameStylesheets } from './componentCss.ts'
 import { fontsForCanvas, foreignFontAssetIds } from './fonts.ts'
 import { withLibraryFaceRules } from '../shared/fonts.ts'
 import {
@@ -339,20 +339,36 @@ function prepareMains(
 /**
  * A main's root class is renamed now: a frame's own rule for it (`.card { grid-column: span 2 }`,
  * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
- * save that renames it, naming the frames and where the rule belongs now.
+ * save that renames it, naming the frames and what each rule needs now: moved to a class on the
+ * placed instance, or, where the frame's own elements still use it, kept and its styles given to that
+ * class too.
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
+  let alsoOwn = false
   for (const frame of canvas.frames) {
     if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
     const named = classesNamedIn(frameStylesheets(frame.html))
     const used = names.filter((name) => named.has(name))
-    if (used.length) hits.push(`“${frame.name}” (${used.map((name) => `.${name}`).join(', ')})`)
+    if (!used.length) continue
+    /* a rule that also styles the frame's own elements keeps doing that; only the instance lost it */
+    const worn = frameOwnClasses(frame.html)
+    const listed = used.map((name) => {
+      if (!worn.has(name)) return `.${name}`
+      alsoOwn = true
+      return `.${name}, which its rule still styles on that frame’s own elements`
+    })
+    hits.push(`“${frame.name}” (${listed.join('; ')})`)
   }
   if (!hits.length) return
+  const use = `<doop-use component="${def.name}" class="your-class">`
+  /* moving a rule the frame's own elements also match would unstyle them */
+  const advice = alsoOwn
+    ? `Give the placed instance a class (${use}) and style that class. Keep a rule the frame's own elements still use and give the instance's class the same styles; move any other such rule to the instance's class.`
+    : `Move each such rule to a class on the placed instance (${use}) and style that class.`
   ctx.issues.push({
     code: 'root_class_renamed',
-    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. Move each such rule to a class on the placed instance (<doop-use component="${def.name}" class="your-class">) and style that class.`,
+    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. ${advice}`,
   })
 }
 
