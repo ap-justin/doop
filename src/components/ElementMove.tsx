@@ -349,12 +349,16 @@ export function useElementMove(frame: Frame, layoutZoom: number) {
           // Drain a preview before restoring styles or saving. A slow hit-test
           // must never repaint after Escape, or commit the previous pointer slot.
           await layerWork
+          // Put the layer where it was let go before asking where it lands: a
+          // box that places its layers by hand reads the drop's spot from the
+          // live document, where the last preview may be a pointer step behind.
+          const landing = commit && final && sourceUnchanged() ? final : null
+          if (landing) {
+            updateLayer(await editElementGeometry(frame.id, selector, { kind: 'move', x: landing.x, y: landing.y }))
+          }
           const result =
-            commit && final && sourceUnchanged()
-              ? await moveTarget(selector, final.pointerX, final.pointerY)
-              : undefined
-          if (commit && final && sourceUnchanged() && result?.free) {
-            updateLayer(await editElementGeometry(frame.id, selector, { kind: 'move', x: final.x, y: final.y }))
+            landing && sourceUnchanged() ? await moveTarget(selector, landing.pointerX, landing.pointerY) : undefined
+          if (result?.free) {
             const saves = sourceUnchanged()
             const done = await styleGesture(frame.id, selector, saves ? 'commit' : 'cancel')
             /* the runtime's save carries the copy along; the copy is the pick */

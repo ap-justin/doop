@@ -262,34 +262,69 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     expect(maxError).toBeLessThan(1)
   })
 
-  it('grabs the visibly top drawing through stacking contexts instead of reverse DOM order', async () => {
-    const source: Frame = {
-      id: 'stacked',
-      updatedBy: 'User',
-      canvasId: 'c',
-      pageId: 'first',
-      name: 'Stacked',
-      x: 20,
-      y: 20,
-      width: 400,
-      height: 300,
-      createdAt: 0,
-      updatedAt: 0,
-      html: `<div style="position:relative;z-index:10"><div id="front" data-doop-drawing="rectangle" style="position:fixed;left:60px;top:60px;width:100px;height:100px;background:red"></div></div>
+  /* #front sits inside a box, so it moves as a layer; let go over #back (a
+     drawing, which holds no layers), it lands in the body, placed by hand */
+  const stacked: Frame = {
+    id: 'stacked',
+    updatedBy: 'User',
+    canvasId: 'c',
+    pageId: 'first',
+    name: 'Stacked',
+    x: 20,
+    y: 20,
+    width: 400,
+    height: 300,
+    createdAt: 0,
+    updatedAt: 0,
+    html: `<div style="position:relative;z-index:10"><div id="front" data-doop-drawing="rectangle" style="position:fixed;left:60px;top:60px;width:100px;height:100px;background:red"></div></div>
       <div id="back" data-doop-drawing="rectangle" style="position:fixed;left:60px;top:60px;width:100px;height:100px;background:blue;z-index:5"></div>`,
-    }
-    await seedFrames([source])
-    const front = await visibleDrawing('Stacked', '#front')
-    await drag([front.x + 30, front.y + 30], [front.x + 70, front.y + 50])
-    await page.waitForFunction((before) => window.drawingHarness.state().frames[0]!.html !== before, {}, source.html)
-    const positions = await page.evaluate(() => {
+  }
+  const stackedPositions = () =>
+    page.evaluate(() => {
       const doc = new DOMParser().parseFromString(window.drawingHarness.state().frames[0]!.html, 'text/html')
       return ['front', 'back'].map((id) => {
         const el = doc.getElementById(id)!
         return [el.style.left, el.style.top]
       })
     })
-    expect(positions).toEqual([
+
+  it('grabs the visibly top drawing through stacking contexts instead of reverse DOM order', async () => {
+    await seedFrames([stacked])
+    const front = await visibleDrawing('Stacked', '#front')
+    await drag([front.x + 30, front.y + 30], [front.x + 70, front.y + 50])
+    await page.waitForFunction((before) => window.drawingHarness.state().frames[0]!.html !== before, {}, stacked.html)
+    expect(await stackedPositions()).toEqual([
+      ['80px', '70px'],
+      ['60px', '60px'],
+    ])
+  })
+
+  it('drops a layer where it is let go while its drag preview is still a step behind', async () => {
+    await seedFrames([stacked])
+    const front = await visibleDrawing('Stacked', '#front')
+    /* the frame moves the layer to the first spot asked, but its answer is
+       swallowed, so the drag's preview waits there until the bridge's 2s reply
+       timeout, past the moment the pointer lets go */
+    await page.evaluate(() =>
+      window.addEventListener(
+        'message',
+        (event) => {
+          if (event.data?.type !== 'doop:geometry-result' || document.documentElement.dataset.heldGeometry) return
+          document.documentElement.dataset.heldGeometry = 'true'
+          event.stopImmediatePropagation()
+        },
+        true,
+      ),
+    )
+    await page.mouse.move(front.x + 30, front.y + 30)
+    await page.mouse.down()
+    await page.mouse.move(front.x + 38, front.y + 34)
+    await page.waitForFunction(() => document.documentElement.dataset.heldGeometry === 'true')
+    await page.mouse.move(front.x + 70, front.y + 50, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForFunction((before) => window.drawingHarness.state().frames[0]!.html !== before, {}, stacked.html)
+    // where the pointer let go (20, 10 design px on), not the held preview's 64px / 62px
+    expect(await stackedPositions()).toEqual([
       ['80px', '70px'],
       ['60px', '60px'],
     ])
