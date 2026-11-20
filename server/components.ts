@@ -340,7 +340,8 @@ function prepareMains(
  * A main's root class is renamed now: a frame's own rule for it (`.card { grid-column: span 2 }`,
  * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
  * save that renames it, naming the frames and what each rule needs now: moved to a class on the
- * placed instance, or kept where the frame's own elements still use it.
+ * placed instance, or, where the frame's own elements still use it, kept and its styles given to that
+ * class too.
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
