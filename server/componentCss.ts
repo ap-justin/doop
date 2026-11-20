@@ -458,6 +458,19 @@ export function frameStylesheets(html: string): string {
   return parts.reverse().join('\n')
 }
 
+/** The classes a frame's own elements wear: every placed instance, root included, is its component's. */
+export function frameOwnClasses(html: string): Set<string> {
+  const classes = new Set<string>()
+  const stack = [...parse(html).childNodes]
+  for (let next = stack.pop(); next; next = stack.pop()) {
+    if (!('tagName' in next) || isInstanceRoot(next)) continue
+    const value = next.attrs.find((attr) => attr.name === 'class')?.value ?? ''
+    for (const name of value.split(/\s+/)) if (name) classes.add(name)
+    stack.push(...next.childNodes)
+  }
+  return classes
+}
+
 /** Font and framework tags from a frame's head: a design can rely on them without any rule saying so.
  *  What another component brought, and the hosted-font link the server keeps, are not the design's own. */
 export function frameHeadTags(html: string): string[] {

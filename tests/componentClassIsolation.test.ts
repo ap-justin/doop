@@ -685,7 +685,7 @@ describe('a placed component and the classes of its frame', () => {
 
   describe('the note for a renamed root class', () => {
     /** A Select whose stored definition predates the rename, and frames around it; the note is read after saving its main. */
-    function staleSelect({ rootBefore = 'select', mixed = false } = {}) {
+    function staleSelect({ rootBefore = 'select', mixed = false, old = '' } = {}) {
       const select = makeSelect()
       const frame = (name: string, html: string) => {
         const created = actions.createFrame(canvasId, { name, html: '' }, actor)!
@@ -711,6 +711,11 @@ describe('a placed component and the classes of its frame', () => {
           },
           actor,
         )
+      }
+      /* `old`: body markup of a frame whose instance was placed from the old definition, so it wears the natural root class */
+      if (old) {
+        const placed = `<div class="select" ${INSTANCE_ATTR}="${select.id}">x</div>`
+        frame('Old', doc(`${placed}${old}`, '.select { grid-column: span 2 }'))
       }
       frame('No rule', doc(instance, '.other { color: red }'))
       frame('Rule only', doc('<p class="select">x</p>', '.select { margin: 1px }'))
@@ -752,6 +757,27 @@ describe('a placed component and the classes of its frame', () => {
       expect(note!.message).toContain(
         '“Mixed” (.select, which its rule still styles on that frame’s own elements; only the placed instance needs a class)',
       )
+    })
+
+    const OWN_WORDING = 'which its rule still styles on that frame’s own elements'
+
+    it('lists a plain class when the only element wearing it is the placed instance', () => {
+      const note = staleSelect({ old: '<p class="other">x</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain('“Old” (.select)')
+      expect(note!.message).not.toContain(OWN_WORDING)
+    })
+
+    it('uses the long wording when the frame also has its own element wearing the class', () => {
+      const note = staleSelect({ old: '<p class="a select">own</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
+    })
+
+    it('counts an own element whose class attribute is unquoted', () => {
+      const note = staleSelect({ old: '<p class=select>own</p>' }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}`)
     })
 
     it('is not repeated by a second save of the main', () => {
