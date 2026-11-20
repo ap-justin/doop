@@ -25,7 +25,7 @@ import {
   updateComponent,
 } from '../server/componentActions.ts'
 import { isolateClasses, withMainCssBlock, withNaturalFrameStyles } from '../server/componentClasses.ts'
-import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
+import { COMPONENT_ATTR, CSS_ATTR, INSTANCE_ATTR, SLOT_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
@@ -779,6 +779,24 @@ describe('a placed component and the classes of its frame', () => {
       expect(note).toBeDefined()
       expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
       expectKeepAdvice(note!.message)
+    })
+
+    /** Another component's instance, holding `slot` in its slot. */
+    const section = (slot: string) =>
+      `<section class="sec" ${INSTANCE_ATTR}="section"><h2 class="select">title</h2><div ${SLOT_ATTR}="body">${slot}</div></section>`
+
+    it('counts an element the frame put in another instance’s slot as its own', () => {
+      const note = staleSelect({ old: section('<p class="select">own</p>') }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain(`“Old” (.select, ${OWN_WORDING}; only the placed instance needs a class)`)
+    })
+
+    it('does not count an instance placed in a slot, nor another instance’s own markup', () => {
+      const badge = `<span class="select" ${INSTANCE_ATTR}="badge"><b class="select">x</b></span>`
+      const note = staleSelect({ old: section(badge) }).save()
+      expect(note).toBeDefined()
+      expect(note!.message).toContain('“Old” (.select)')
+      expect(note!.message).not.toContain(OWN_WORDING)
     })
 
     it('counts an own element whose class attribute is unquoted', () => {
