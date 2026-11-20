@@ -100,14 +100,26 @@ function nestedRootRenamer(main: Element): (css: string) => string {
       : css
 }
 
-/** The names a sheet's `@layer` statements and blocks declare, in the order the cascade first sees them. */
-function layerOrder(nodes: CssNode[], order: string[] = []): string[] {
+/**
+ * The names a sheet's `@layer` statements and blocks declare, in the order the cascade first sees them,
+ * a sublayer by its full name (`ui.reset` for `@layer reset` inside `@layer ui {}`). An anonymous
+ * layer's sublayers cannot be named, so they are left out.
+ */
+function layerOrder(nodes: CssNode[], order: string[] = [], parent = ''): string[] {
   const declare = (list: string) => {
-    for (const name of list.split(',').map((part) => part.trim())) if (name && !order.includes(name)) order.push(name)
+    const names = list
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((name) => `${parent}${name}`)
+    for (const name of names) if (!order.includes(name)) order.push(name)
+    return names
   }
   for (const node of nodes) {
-    if (node.kind === 'group' && /^@layer\b/i.test(node.prelude)) declare(node.prelude.replace(/^@layer\s*/i, ''))
-    else if (node.kind === 'group') layerOrder(node.nodes, order)
+    if (node.kind === 'group' && /^@layer\b/i.test(node.prelude)) {
+      const [name] = declare(node.prelude.replace(/^@layer\s*/i, ''))
+      if (name) layerOrder(node.nodes, order, `${name}.`)
+    } else if (node.kind === 'group') layerOrder(node.nodes, order, parent)
     else if (node.kind === 'atomic' && node.name === 'layer') declare(node.text.replace(/^@layer\s*|;$/gi, ''))
   }
   return order

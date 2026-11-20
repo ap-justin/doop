@@ -648,6 +648,17 @@ describe('a placed component and the classes of its frame', () => {
     expect(html).toContain('data-doop-main-css')
   })
 
+  it('restates sublayers declared inside a layer block in the author’s order', () => {
+    const { plan, planFrame } = planWithButton(
+      '\n@layer ui { @layer reset { * { margin: 0 } } @layer comp { .plan .btn { margin: 8px } } }',
+    )
+    const block = mainCssBlock(store.getFrame(planFrame.id)!.html, plan.id)![1]!
+    /* the block carries `ui.comp` ahead of the author's sheet: `ui.reset` must be declared before it */
+    const statement = /^@layer ([^{;]+);/.exec(block)
+    expect(statement, block).not.toBeNull()
+    expect(statement![1]!.split(',').map((name) => name.trim())).toEqual(['ui', 'ui.reset', 'ui.comp'])
+  })
+
   describe('a frame with no <head>', () => {
     const style = '<style data-doop-main-css="abc">\n.a { color: red }\n</style>'
 
