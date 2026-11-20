@@ -302,8 +302,9 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
   it('drops a layer where it is let go while its drag preview is still a step behind', async () => {
     await seedFrames([stacked])
     const front = await visibleDrawing('Stacked', '#front')
-    /* the frame moves the layer to the first spot asked, but its answer never
-       arrives, so the drag's preview is stuck there when the pointer lets go */
+    /* the frame moves the layer to the first spot asked, but its answer is
+       swallowed, so the drag's preview waits there until the bridge's 2s reply
+       timeout, past the moment the pointer lets go */
     await page.evaluate(() =>
       window.addEventListener(
         'message',
