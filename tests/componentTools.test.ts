@@ -65,8 +65,7 @@ async function button(canvasId: string) {
   return data
 }
 
-/** The placed instance's root tag. The frame's component CSS names the variants too, so a variant
- *  attribute is read here rather than in the whole frame. */
+/* the placed instance's root tag: the frame's component CSS names the variants too, so a variant is read here */
 function instanceRoot(html: string) {
   const root = /<[a-z][^>]*\bdata-doop-instance="[^"]*"[^>]*>/.exec(html)?.[0]
   expect(root, 'the frame holds an instance root').toBeDefined()
