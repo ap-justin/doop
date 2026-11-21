@@ -179,7 +179,7 @@ describe('a declared boolean with no default that a condition names', () => {
     const main = `<span class="badge" ${COMPONENT_ATTR}="${def.id}"><b ${BIND_ATTR}="label">New</b><i data-doop-if="icon">★</i></span>`
     actions.updateFrame(mainFrame.id, { html: doc(main) }, actor)
     const before = current(canvas.id, def.id)
-    /* in the order the template names them, as before booleans showed on the root */
+    /* in the order the template names them */
     expect(before.props.map((prop) => prop.name)).toEqual(['label', 'icon'])
     actions.updateFrame(mainFrame.id, { html: framed(mainFrame.id) }, actor)
     const after = current(canvas.id, def.id)

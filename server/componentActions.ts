@@ -979,8 +979,8 @@ function insertAt(html: string, markup: string, target: string | undefined, posi
 
 export interface InstanceChange {
   instanceId: string
-  /** merged over current props; null clears one back to the component's value, and so does "" on any
-   *  prop but a boolean, where "" is true, as a bare attribute on <doop-use> is */
+  /** merged over current props; null clears one back to the component's value, and so does "" except
+   *  on a boolean, where "" is true, as a bare attribute on <doop-use> is */
   props?: Record<string, string | null>
   /** merged per part: { "<part key>": { style: { color: "red" }, text: "…", hidden: true } } */
   overrides?: Record<string, PartOverride>

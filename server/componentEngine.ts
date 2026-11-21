@@ -384,7 +384,7 @@ function renderUseElement(
 }
 
 /** Props whose value shows on the instance root as `data-<name>`: an enum as `data-<name>="<option>"`,
- *  a boolean as a bare `data-<name>` while it is true. */
+ *  a boolean as a bare `data-<name>` while it is true, unless the root binds that attribute itself. */
 const isRootAttrProp = (prop: ComponentProp) => prop.type === 'enum' || prop.type === 'boolean'
 
 /** The root attributes a component's own CSS may select on, for `extractComponentCss`. */
@@ -394,8 +394,8 @@ export const variantAttrs = (props: ComponentProp[]) => props.filter(isRootAttrP
 const boundAttrs = (el: Element) =>
   new Set(parseBindings(attrOf(el, BIND_ATTR) ?? '', el.tagName).flatMap(({ target }) => (target ? [target] : [])))
 
-/** A boolean whose `data-<name>` the root binds itself (`data-doop-prop="data-<name>:<name>"`) keeps
- *  that binding in charge: it renders `"true"` / `"false"` as before, and rules on those values still match. */
+/** A boolean whose `data-<name>` the root binds itself (`data-doop-prop="data-<name>:<name>"`) leaves
+ *  that binding in charge, so the root keeps its `"true"` / `"false"` and the rules written for them. */
 const marksBoolean = (prop: ComponentProp, bound: Set<string>) =>
   prop.type === 'boolean' && !bound.has(`data-${prop.name}`)
 
@@ -1635,7 +1635,8 @@ function alignWith(next: Element, previous: Element | undefined, written: Set<st
 const declaredOf = (declared: ComponentProp[], name: string) => declared.find((prop) => prop.name === name)
 
 /** The props a template actually uses, with what was declared about them.
- *  Enum and boolean props live in the declaration too: their effect is `data-<name>` on the root. */
+ *  An enum or boolean prop the template does not bind is kept from the declaration: its effect is
+ *  `data-<name>` on the root. */
 export function derivePropsAndSlots(
   template: string,
   declared: ComponentProp[],

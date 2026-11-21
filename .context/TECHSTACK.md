@@ -1031,7 +1031,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   records the override (presence is true, absence false), except that a root wearing none of its
   booleans' attributes (rendered before they were marked) records no false from the absence. A root
   that binds `data-<name>` itself (`data-doop-prop="data-<name>:<name>"`) keeps that binding in charge:
-  it renders `"true"` / `"false"` as before and an edit there is read as the value. A boolean is true
+  the root wears the bound `"true"` / `"false"`, and an edit there is read as the value. A boolean is true
   unless `"false"`, so `""` is true on `<doop-use>`, on insert and in `update_instances`, where `null`
   clears a prop back to the main. Tests: `booleanPropAttr.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
