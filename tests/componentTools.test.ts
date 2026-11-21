@@ -65,6 +65,14 @@ async function button(canvasId: string) {
   return data
 }
 
+/** The placed instance's root tag. The frame's component CSS names the variants too, so a variant
+ *  attribute is read here rather than in the whole frame. */
+function instanceRoot(html: string) {
+  const root = /<[a-z][^>]*\bdata-doop-instance="[^"]*"[^>]*>/.exec(html)?.[0]
+  expect(root, 'the frame holds an instance root').toBeDefined()
+  return root ?? ''
+}
+
 async function framed(canvasId: string, body: string, name = 'Screen') {
   const { data } = await call('create_frame', {
     canvas_id: canvasId,
@@ -353,7 +361,7 @@ describe('an agent working with components', () => {
       ],
     })
     expect(changed.data.not_found).toEqual(['nosuch'])
-    expect(store.getFrame(frameId)!.html).toContain('data-tone="ghost"')
+    expect(instanceRoot(store.getFrame(frameId)!.html)).toContain('data-tone="ghost"')
     const detached = await call('update_instances', {
       canvas_id: canvas.id,
       frame_id: frameId,
@@ -374,7 +382,7 @@ describe('an agent working with components', () => {
         '<doop-use component="Button" id="abc123" tone="ghost" label="Hello"></doop-use>',
       )
       expect(store.getFrame(frameId)!.html).toContain('Hello')
-      expect(store.getFrame(frameId)!.html).toContain('data-tone="ghost"')
+      expect(instanceRoot(store.getFrame(frameId)!.html)).toContain('data-tone="ghost"')
       return { canvas, frameId }
     }
     const clear = (canvasId: string, frameId: string, props: Record<string, string | null>) =>
@@ -391,7 +399,7 @@ describe('an agent working with components', () => {
       const html = store.getFrame(frameId)!.html
       expect(html).not.toContain('Hello')
       expect(html).toContain('Start')
-      expect(html).toContain('data-tone="ghost"')
+      expect(instanceRoot(html)).toContain('data-tone="ghost"')
     })
 
     it('takes null for an enum prop without rejecting it as an unknown option', async () => {
@@ -399,8 +407,7 @@ describe('an agent working with components', () => {
       const result = await clear(canvas.id, frameId, { tone: null })
       expect(result.isError).toBe(false)
       const html = store.getFrame(frameId)!.html
-      /* the component's CSS still holds its own [data-tone="ghost"] rule, so read the root tag alone */
-      const root = /<button\b[^>]*>/.exec(html)![0]
+      const root = instanceRoot(html)
       expect(root).not.toContain('data-tone="ghost"')
       expect(root).toContain('data-tone="solid"')
       expect(root).not.toMatch(/data-doop-props="[^"]*tone/)
