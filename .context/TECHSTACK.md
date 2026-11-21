@@ -1040,7 +1040,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   strips it again, so it is never part of the template or a revision). A boolean made up from a
   `data-doop-if` condition is stored with `derived: true` and goes once no condition names it; one
   declared through `create_component` / `update_component` stays (`update_component` keeps `derived` on
-  a boolean handed back with the same type and default, so an unchanged list is no change). A boolean override that reads the
+  a boolean handed back with the same type and default, so an unchanged list files no revision). A boolean override that reads the
   same as its default (`""` and `"true"` alike, no default counts as false) is pruned. Known gap:
   an edit that removes the only true boolean from an instance root reads as markup written before
   booleans were marked, so it records no false override. Tests: `booleanPropAttr.test.ts`, `booleanPropConsistency.test.ts`.
