@@ -113,7 +113,8 @@ function InstanceControls({
           prop={prop}
           disabled={locked}
           value={context.props[prop.name]}
-          fallback={prop.default ?? (prop.type === 'boolean' ? 'true' : templateValue(def, prop.name))}
+          /* a boolean with no default renders off; derivePropsAndSlots defaults one a data-doop-if names to 'true' */
+          fallback={prop.default ?? (prop.type === 'boolean' ? 'false' : templateValue(def, prop.name))}
           onChange={(value) => {
             /* the frame as it is now: an image pick waits on an upload, and undo's baseline
                and the lock check must not be the design from before it */

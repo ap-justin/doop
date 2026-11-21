@@ -65,6 +65,13 @@ async function button(canvasId: string) {
   return data
 }
 
+/* the placed instance's root tag: the frame's component CSS names the variants too, so a variant is read here */
+function instanceRoot(html: string) {
+  const root = /<[a-z][^>]*\bdata-doop-instance="[^"]*"[^>]*>/.exec(html)?.[0]
+  expect(root, 'the frame holds an instance root').toBeDefined()
+  return root ?? ''
+}
+
 async function framed(canvasId: string, body: string, name = 'Screen') {
   const { data } = await call('create_frame', {
     canvas_id: canvasId,
@@ -353,7 +360,7 @@ describe('an agent working with components', () => {
       ],
     })
     expect(changed.data.not_found).toEqual(['nosuch'])
-    expect(store.getFrame(frameId)!.html).toContain('data-tone="ghost"')
+    expect(instanceRoot(store.getFrame(frameId)!.html)).toContain('data-tone="ghost"')
     const detached = await call('update_instances', {
       canvas_id: canvas.id,
       frame_id: frameId,
@@ -363,6 +370,57 @@ describe('an agent working with components', () => {
     const html = store.getFrame(frameId)!.html
     expect(html).not.toContain('data-doop-instance')
     expect(html).toContain('Placed')
+  })
+
+  describe('clearing a prop with update_instances', () => {
+    const open = async () => {
+      const canvas = newCanvas()
+      await button(canvas.id)
+      const frameId = await framed(
+        canvas.id,
+        '<doop-use component="Button" id="abc123" tone="ghost" label="Hello"></doop-use>',
+      )
+      expect(store.getFrame(frameId)!.html).toContain('Hello')
+      expect(instanceRoot(store.getFrame(frameId)!.html)).toContain('data-tone="ghost"')
+      return { canvas, frameId }
+    }
+    const clear = (canvasId: string, frameId: string, props: Record<string, string | null>) =>
+      call('update_instances', {
+        canvas_id: canvasId,
+        frame_id: frameId,
+        instances: [{ instance_id: 'abc123', props }],
+      })
+
+    it('takes null for a text prop, which falls back to the main', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { label: null })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      expect(html).not.toContain('Hello')
+      expect(html).toContain('Start')
+      expect(instanceRoot(html)).toContain('data-tone="ghost"')
+    })
+
+    it('takes null for an enum prop without rejecting it as an unknown option', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { tone: null })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      const root = instanceRoot(html)
+      expect(root).not.toContain('data-tone="ghost"')
+      expect(root).toContain('data-tone="solid"')
+      expect(root).not.toMatch(/data-doop-props="[^"]*tone/)
+      expect(html).toContain('Hello')
+    })
+
+    it('still clears a text prop given "", back to the main', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { label: '' })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      expect(html).not.toContain('Hello')
+      expect(html).toContain('Start')
+    })
   })
 
   it('keeps what is built from a component working when it is renamed', async () => {

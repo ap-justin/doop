@@ -47,7 +47,12 @@ import { transaction } from './journal.ts'
 
 export const propSchema = z.object({
   name: z.string().describe('Lowercase, it becomes an attribute: "label", "tone", "show-icon"'),
-  type: z.enum(PROP_TYPES).optional().describe('text (default), image, link, boolean, or enum with options'),
+  type: z
+    .enum(PROP_TYPES)
+    .optional()
+    .describe(
+      'text (default), image, link, boolean, or enum with options. An enum shows on the root as data-<name>="<option>", a boolean as data-<name> while true; style them in the component CSS',
+    ),
   default: z.string().optional().describe('enum and boolean only; text-like defaults are the template content'),
   options: z
     .array(z.string())
@@ -232,7 +237,7 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
       css: z.string().optional().describe('With html: the rules it needs, unscoped; they get scoped for you'),
       width: z.number().optional().describe('With html: the main frame width, default 480'),
       height: z.number().optional().describe('With html: the main frame height, default 240'),
-      props: z.array(propSchema).optional().describe('Enum props, and metadata for bound ones'),
+      props: z.array(propSchema).optional().describe('Enum and boolean props, and metadata for bound ones'),
       auto_props: z.boolean().optional().describe('false = do not infer props'),
       code: codeSchema.optional(),
     },
@@ -323,7 +328,7 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
             css: z.string().optional().describe('The rules it needs, unscoped; they get scoped for you'),
             width: z.number().optional().describe('The main frame width, default 480'),
             height: z.number().optional().describe('The main frame height, default 240'),
-            props: z.array(propSchema).optional().describe('Enum props, and metadata for bound ones'),
+            props: z.array(propSchema).optional().describe('Enum and boolean props, and metadata for bound ones'),
             auto_props: z.boolean().optional().describe('false = do not infer props'),
             code: codeSchema.optional(),
           }),
@@ -517,7 +522,12 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
         .array(
           z.object({
             instance_id: z.string(),
-            props: z.record(z.string()).optional().describe('Merged over current props; "" clears one'),
+            props: z
+              .record(z.string().nullable())
+              .optional()
+              .describe(
+                'Merged over current props; null clears one back to the main. A boolean is true unless "false" ("" is true, as on <doop-use>); "" clears any other prop',
+              ),
             overrides: z
               .record(z.any())
               .optional()
@@ -534,7 +544,7 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
     run(input, { canvas, actor }) {
       const list = input.instances as {
         instance_id: string
-        props?: Record<string, string>
+        props?: Record<string, string | null>
         overrides?: Record<string, never>
         reset?: boolean | string[]
         detach?: boolean

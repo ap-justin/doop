@@ -98,6 +98,13 @@ it('shows an instance of a component in use with its props', () => {
   expect(container.textContent).toContain('label')
 })
 
+it('shows a boolean with no default as off, the way the instance renders it', () => {
+  mocks.components = [def({ props: [{ name: 'stretch', type: 'boolean' }] })]
+  render()
+  const toggle = container.querySelector('[role="switch"][aria-label="stretch"]')
+  expect(toggle?.getAttribute('aria-checked')).toBe('false')
+})
+
 it('says the main component was deleted, and offers Restore and Detach instead of props', async () => {
   mocks.components = [def({ status: 'deleted', deletedAt: 5, deletedBy: 'Tester' })]
   mocks.undeleteComponent.mockResolvedValue({ component: def(), main: 'kept' })

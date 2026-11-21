@@ -273,8 +273,11 @@ function applyBindings(el: Element, def: Revision, overrides: InstanceOverrides)
   if (raw === undefined) return
   setAttr(el, BIND_ATTR, null)
   for (const { target, prop } of parseBindings(raw, el.tagName)) {
-    const value = overrides.props?.[prop]
-    if (value === undefined) continue
+    const given = overrides.props?.[prop]
+    if (given === undefined) continue
+    /* `<doop-use x>` and insert keep a boolean's bare `""` in props; it renders as the "true" it means */
+    const isBoolean = def.props.some((entry) => entry.name === prop && entry.type === 'boolean')
+    const value = isBoolean && given === '' ? 'true' : given
     if (target === null) setText(el, value)
     else if (target.startsWith('style.') || target.startsWith('--')) {
       const styles = parseStyle(attrOf(el, 'style'))
@@ -282,7 +285,6 @@ function applyBindings(el: Element, def: Revision, overrides: InstanceOverrides)
       setAttr(el, 'style', serializeStyle(styles))
     } else setAttr(el, target, value)
   }
-  void def
 }
 
 const TAG_NAME = /^[a-z][a-z0-9-]*$/
@@ -383,14 +385,31 @@ function renderUseElement(
   return rendered
 }
 
-function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides) {
+/** Props whose `data-<name>` a component's CSS may select on: an enum's option, a boolean's presence,
+ *  or the value a root binding gives it. */
+const isRootAttrProp = (prop: ComponentProp) => prop.type === 'enum' || prop.type === 'boolean'
+
+/** The root attributes a component's own CSS may select on, for `extractComponentCss`. */
+export const variantAttrs = (props: ComponentProp[]) => props.filter(isRootAttrProp).map((prop) => `data-${prop.name}`)
+
+/** The attribute, `style.` and `--` targets an element's own `data-doop-prop` fills. */
+const boundAttrs = (el: Element) =>
+  new Set(parseBindings(attrOf(el, BIND_ATTR) ?? '', el.tagName).flatMap(({ target }) => (target ? [target] : [])))
+
+/** A boolean whose `data-<name>` the root binds itself (`data-doop-prop="data-<name>:<name>"`) leaves
+ *  that binding in charge, so the root keeps its `"true"` / `"false"` and the rules written for them. */
+const marksBoolean = (prop: ComponentProp, bound: Set<string>) =>
+  prop.type === 'boolean' && !bound.has(`data-${prop.name}`)
+
+function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides, bound: Set<string>) {
   setAttr(root, INSTANCE_ATTR, def.id)
   setAttr(root, REV_ATTR, String(def.rev))
   setAttr(root, ELEMENT_ID_ATTR, instanceId)
   for (const prop of def.props) {
-    if (prop.type !== 'enum') continue
     const value = propValue(def, overrides, prop.name)
-    if (value !== undefined) setAttr(root, `data-${prop.name}`, value)
+    if (marksBoolean(prop, bound))
+      setAttr(root, `data-${prop.name}`, value !== undefined && value !== 'false' ? '' : null)
+    else if (prop.type === 'enum' && value !== undefined) setAttr(root, `data-${prop.name}`, value)
   }
   const props = overrides.props ?? {}
   setAttr(root, PROPS_ATTR, Object.keys(props).length ? stableJson(props) : null)
@@ -442,8 +461,10 @@ export function renderInstance(
   const id = instanceId || newElementId()
   const inner: RenderOptions = { ...options, stack: [...options.stack, revision.id], depth: depth + 1, ownerId: id }
   const key = attrOf(root, PART_ATTR)
+  /* read before rendering, which strips the bindings */
+  const bound = boundAttrs(root)
   renderPart(root, revision, overrides, key ? overrides.parts?.[key] : undefined, inner)
-  markRoot(root, revision, id, overrides)
+  markRoot(root, revision, id, overrides, bound)
   return root
 }
 
@@ -620,17 +641,25 @@ function diffAttrs(
   into: PartOverride,
 ) {
   const names = new Set([...base.attrs, ...incoming.attrs].map((attr) => attr.name))
+  const bound = new Set(info?.attrProps.keys())
+  /* a root rendered before booleans were marked wears none of their data-<name>: a missing one there is no edit */
+  const booleanAttrs = isRoot
+    ? def.props.filter((prop) => marksBoolean(prop, bound)).map((prop) => `data-${prop.name}`)
+    : []
+  const unmarked = booleanAttrs.length > 0 && booleanAttrs.every((name) => attrOf(incoming, name) === undefined)
   for (const name of names) {
     if (!isTracked(name) || name === 'style') continue
     if (isRoot && name === ELEMENT_ID_ATTR) continue
     const before = attrOf(base, name)
     const after = attrOf(incoming, name)
     if (before === after) continue
-    const enumProp =
+    const rootProp =
       isRoot && name.startsWith('data-')
-        ? def.props.find((prop) => prop.type === 'enum' && `data-${prop.name}` === name)
+        ? def.props.find((prop) => (prop.type === 'enum' || marksBoolean(prop, bound)) && `data-${prop.name}` === name)
         : undefined
-    if (enumProp && after !== undefined) (state.props ??= {})[enumProp.name] = after
+    if (rootProp?.type === 'boolean') {
+      if (after !== undefined || !unmarked) (state.props ??= {})[rootProp.name] = after === undefined ? 'false' : 'true'
+    } else if (rootProp && after !== undefined) (state.props ??= {})[rootProp.name] = after
     else if (info?.attrProps.has(name) && after !== undefined) (state.props ??= {})[info.attrProps.get(name)!] = after
     else (into.attrs ??= {})[name] = after ?? null
   }
@@ -1608,7 +1637,8 @@ function alignWith(next: Element, previous: Element | undefined, written: Set<st
 const declaredOf = (declared: ComponentProp[], name: string) => declared.find((prop) => prop.name === name)
 
 /** The props a template actually uses, with what was declared about them.
- *  Enum props live only in the declaration: their effect is `data-<name>` on the root. */
+ *  An enum or boolean prop the template does not bind is kept from the declaration: its effect is
+ *  `data-<name>` on the root. */
 export function derivePropsAndSlots(
   template: string,
   declared: ComponentProp[],
@@ -1616,8 +1646,14 @@ export function derivePropsAndSlots(
   const root = parseTemplateRoot(template)
   const props = new Map<string, ComponentProp>()
   for (const prop of declared) if (prop.type === 'enum' && isPropName(prop.name)) props.set(prop.name, prop)
+  /* after the template is read, so a condition still gives a default-less boolean its 'true' */
+  const withUnboundBooleans = () => {
+    for (const prop of declared)
+      if (prop.type === 'boolean' && isPropName(prop.name) && !props.has(prop.name)) props.set(prop.name, prop)
+    return [...props.values()]
+  }
   const slots: ComponentSlot[] = []
-  if (!root) return { props: [...props.values()], slots }
+  if (!root) return { props: withUnboundBooleans(), slots }
   const stack: Element[] = [root]
   const order: Element[] = []
   for (let el = stack.pop(); el; el = stack.pop()) {
@@ -1659,7 +1695,7 @@ export function derivePropsAndSlots(
       })
     }
   }
-  return { props: [...props.values()], slots }
+  return { props: withUnboundBooleans(), slots }
 }
 
 const descriptionOf = (prop: ComponentProp | undefined) => (prop?.description ? { description: prop.description } : {})
