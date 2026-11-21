@@ -390,16 +390,24 @@ const isRootAttrProp = (prop: ComponentProp) => prop.type === 'enum' || prop.typ
 /** The root attributes a component's own CSS may select on, for `extractComponentCss`. */
 export const variantAttrs = (props: ComponentProp[]) => props.filter(isRootAttrProp).map((prop) => `data-${prop.name}`)
 
-function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides) {
+/** The attributes an element's own `data-doop-prop` fills. */
+const boundAttrs = (el: Element) =>
+  new Set(parseBindings(attrOf(el, BIND_ATTR) ?? '', el.tagName).flatMap(({ target }) => (target ? [target] : [])))
+
+/** A boolean whose `data-<name>` the root binds itself (`data-doop-prop="data-<name>:<name>"`) keeps
+ *  that binding in charge: it renders `"true"` / `"false"` as before, and rules on those values still match. */
+const marksBoolean = (prop: ComponentProp, bound: Set<string>) =>
+  prop.type === 'boolean' && !bound.has(`data-${prop.name}`)
+
+function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides, bound: Set<string>) {
   setAttr(root, INSTANCE_ATTR, def.id)
   setAttr(root, REV_ATTR, String(def.rev))
   setAttr(root, ELEMENT_ID_ATTR, instanceId)
   for (const prop of def.props) {
-    if (!isRootAttrProp(prop)) continue
     const value = propValue(def, overrides, prop.name)
-    if (prop.type === 'boolean')
+    if (marksBoolean(prop, bound))
       setAttr(root, `data-${prop.name}`, value !== undefined && value !== 'false' ? '' : null)
-    else if (value !== undefined) setAttr(root, `data-${prop.name}`, value)
+    else if (prop.type === 'enum' && value !== undefined) setAttr(root, `data-${prop.name}`, value)
   }
   const props = overrides.props ?? {}
   setAttr(root, PROPS_ATTR, Object.keys(props).length ? stableJson(props) : null)
@@ -451,8 +459,10 @@ export function renderInstance(
   const id = instanceId || newElementId()
   const inner: RenderOptions = { ...options, stack: [...options.stack, revision.id], depth: depth + 1, ownerId: id }
   const key = attrOf(root, PART_ATTR)
+  /* read before rendering, which strips the bindings */
+  const bound = boundAttrs(root)
   renderPart(root, revision, overrides, key ? overrides.parts?.[key] : undefined, inner)
-  markRoot(root, revision, id, overrides)
+  markRoot(root, revision, id, overrides, bound)
   return root
 }
 
@@ -630,8 +640,9 @@ function diffAttrs(
 ) {
   const names = new Set([...base.attrs, ...incoming.attrs].map((attr) => attr.name))
   /* a root rendered before booleans were marked wears none of their data-<name>: a missing one there is no edit */
+  const bound = new Set(info?.attrProps.keys())
   const booleanAttrs = isRoot
-    ? def.props.filter((prop) => prop.type === 'boolean').map((prop) => `data-${prop.name}`)
+    ? def.props.filter((prop) => marksBoolean(prop, bound)).map((prop) => `data-${prop.name}`)
     : []
   const unmarked = booleanAttrs.length > 0 && booleanAttrs.every((name) => attrOf(incoming, name) === undefined)
   for (const name of names) {
@@ -642,7 +653,7 @@ function diffAttrs(
     if (before === after) continue
     const rootProp =
       isRoot && name.startsWith('data-')
-        ? def.props.find((prop) => isRootAttrProp(prop) && `data-${prop.name}` === name)
+        ? def.props.find((prop) => (prop.type === 'enum' || marksBoolean(prop, bound)) && `data-${prop.name}` === name)
         : undefined
     if (rootProp?.type === 'boolean') {
       if (after !== undefined || !unmarked) (state.props ??= {})[rootProp.name] = after === undefined ? 'false' : 'true'

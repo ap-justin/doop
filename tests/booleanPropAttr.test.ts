@@ -13,7 +13,8 @@ vi.mock('../server/db/persist.ts', () => ({
 import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
 import { blankComponent } from '../server/components.ts'
-import { COMPONENT_ATTR, INSTANCE_ATTR, PROPS_ATTR, REV_ATTR } from '../shared/components.ts'
+import { changeInstances } from '../server/componentActions.ts'
+import { BIND_ATTR, COMPONENT_ATTR, INSTANCE_ATTR, PROPS_ATTR, REV_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
@@ -46,7 +47,14 @@ function setup() {
 
 const current = (canvasId: string, id: string) => store.getComponents(canvasId).find((d) => d.id === id)!
 const framed = (id: string) => store.getFrame(id)!.html
-const instances = (html: string) => [...html.matchAll(/<nav\b[^>]*>/g)].map((match) => match[0])
+const instances = (html: string, tag = 'nav') =>
+  [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))].map((match) => match[0])
+/** The props an instance root's marker records. */
+const markerProps = (root: string): Record<string, string> => {
+  const raw = root.match(new RegExp(`${PROPS_ATTR}="([^"]*)"`))?.[1]
+  return raw ? (JSON.parse(raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&')) as Record<string, string>) : {}
+}
+const instanceIdOf = (root: string) => root.match(/ data-doop-id="([^"]+)"/)?.[1] ?? ''
 
 describe('a boolean prop on the instance root', () => {
   it('is kept in the definition although the template binds nothing to it', () => {
@@ -161,5 +169,103 @@ describe('a declared boolean with no default that a condition names', () => {
     const html = framed(page.id)
     expect(html).toContain('★')
     expect(html.match(/<span\b[^>]*>/)?.[0]).toMatch(/ data-icon(?=[\s>=])/)
+  })
+
+  it('keeps the order its props were derived in, so re-saving an unchanged main files no new revision', () => {
+    const canvas = store.createCanvas('derived prop order')
+    const def = blankComponent({ name: 'Badge', by: 'Tester' })
+    store.saveComponent(canvas.id, def)
+    const mainFrame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    const main = `<span class="badge" ${COMPONENT_ATTR}="${def.id}"><b ${BIND_ATTR}="label">New</b><i data-doop-if="icon">★</i></span>`
+    actions.updateFrame(mainFrame.id, { html: doc(main) }, actor)
+    const before = current(canvas.id, def.id)
+    /* in the order the template names them, as before booleans showed on the root */
+    expect(before.props.map((prop) => prop.name)).toEqual(['label', 'icon'])
+    actions.updateFrame(mainFrame.id, { html: framed(mainFrame.id) }, actor)
+    const after = current(canvas.id, def.id)
+    expect(after.rev).toBe(before.rev)
+    expect(after.props).toEqual(before.props)
+  })
+})
+
+describe('a boolean whose data-<name> the root binds itself', () => {
+  /** A Card whose root binds `data-x` to its boolean x, rendering "true" / "false", plus an unbound boolean y. */
+  function setupBound() {
+    const canvas = store.createCanvas('bound boolean attribute')
+    const def = blankComponent({
+      name: 'Card',
+      by: 'Tester',
+      props: [
+        { name: 'x', type: 'boolean', default: 'false' },
+        { name: 'y', type: 'boolean', default: 'true' },
+      ],
+    })
+    store.saveComponent(canvas.id, def)
+    const mainFrame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    const main = `<section class="card" ${COMPONENT_ATTR}="${def.id}" data-x="false" ${BIND_ATTR}="data-x:x">Card</section>`
+    actions.updateFrame(mainFrame.id, { html: doc(main, '.card[data-x="true"] { color: red }') }, actor)
+    const page = actions.createFrame(canvas.id, { name: 'Page', html: '' }, actor)!
+    return { canvas, def, page }
+  }
+
+  it('keeps rendering "true" and "false" through the binding, so rules on those values still match', () => {
+    const { canvas, def, page } = setupBound()
+    expect(current(canvas.id, def.id).css).toContain('[data-x="true"]')
+    actions.updateFrame(
+      page.id,
+      {
+        html: doc(
+          `<doop-use component="Card" x="true"></doop-use>` +
+            `<doop-use component="Card" x="false"></doop-use>` +
+            `<doop-use component="Card"></doop-use>`,
+        ),
+      },
+      actor,
+    )
+    const [on, off, plain] = instances(framed(page.id), 'section')
+    expect(on).toContain('data-x="true"')
+    expect(off).toContain('data-x="false"')
+    expect(plain).toContain('data-x="false"')
+  })
+
+  it('reads an edit to the bound attribute as its value, not as presence', () => {
+    const { page } = setupBound()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Card" x="true"></doop-use>`) }, actor)
+    actions.updateFrame(page.id, { html: framed(page.id).replace('data-x="true"', 'data-x="false"') }, actor)
+    const [root] = instances(framed(page.id), 'section')
+    /* "false" is the default, so no override is left */
+    expect(markerProps(root!).x).toBeUndefined()
+    expect(root).toContain('data-x="false"')
+  })
+
+  it('does not count the bound attribute when reading an instance rendered before booleans were marked', () => {
+    const { page } = setupBound()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Card"></doop-use>`) }, actor)
+    /* such an instance wears the bound data-x="false" and no data-y */
+    const legacy = framed(page.id).replace(/ data-y(="")?(?=[\s>])/, '')
+    expect(instances(legacy, 'section')[0]).not.toMatch(/ data-y(?=[\s>=])/)
+    actions.updateFrame(page.id, { html: legacy }, actor)
+    const [root] = instances(framed(page.id), 'section')
+    expect(root).not.toContain(PROPS_ATTR)
+    expect(root).toMatch(/ data-y(?=[\s>=])/)
+  })
+})
+
+describe('update_instances on a boolean prop', () => {
+  it('reads "" as true, as a bare attribute on <doop-use> is, and null as back to the default', () => {
+    const { canvas, page } = setup()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Tabs"></doop-use>`) }, actor)
+    const instanceId = instanceIdOf(instances(framed(page.id))[0]!)
+    expect(instanceId).not.toBe('')
+
+    changeInstances(canvas.id, page.id, [{ instanceId, props: { stretch: '' } }], actor)
+    const [stretched] = instances(framed(page.id))
+    expect(stretched).toMatch(/ data-stretch(?=[\s>=])/)
+    expect(markerProps(stretched!).stretch).toBe('true')
+
+    changeInstances(canvas.id, page.id, [{ instanceId, props: { stretch: null } }], actor)
+    const [plain] = instances(framed(page.id))
+    expect(plain).not.toContain('data-stretch')
+    expect(plain).not.toContain(PROPS_ATTR)
   })
 })

@@ -979,8 +979,9 @@ function insertAt(html: string, markup: string, target: string | undefined, posi
 
 export interface InstanceChange {
   instanceId: string
-  /** merged over current props; "" clears one back to the component's value */
-  props?: Record<string, string>
+  /** merged over current props; null clears one back to the component's value, and so does "" on any
+   *  prop but a boolean, where "" is true, as a bare attribute on <doop-use> is */
+  props?: Record<string, string | null>
   /** merged per part: { "<part key>": { style: { color: "red" }, text: "…", hidden: true } } */
   overrides?: Record<string, PartOverride>
   /** true clears everything; a list clears those parts */
@@ -988,7 +989,7 @@ export interface InstanceChange {
   detach?: boolean
 }
 
-function applyChange(state: InstanceOverrides, change: InstanceChange): InstanceOverrides {
+function applyChange(state: InstanceOverrides, change: InstanceChange, def: ComponentDef): InstanceOverrides {
   let parts = { ...state.parts }
   let props = { ...state.props }
   if (change.reset === true) {
@@ -996,8 +997,9 @@ function applyChange(state: InstanceOverrides, change: InstanceChange): Instance
     props = {}
   } else if (Array.isArray(change.reset)) for (const key of change.reset) delete parts[key]
   for (const [name, value] of Object.entries(change.props ?? {})) {
-    if (value === '') delete props[name]
-    else props[name] = value
+    const isBoolean = def.props.find((prop) => prop.name === name)?.type === 'boolean'
+    if (value === null || (value === '' && !isBoolean)) delete props[name]
+    else props[name] = isBoolean && value === '' ? 'true' : value
   }
   for (const [key, part] of Object.entries(change.overrides ?? {})) parts[key] = { ...parts[key], ...part }
   return {
@@ -1043,7 +1045,7 @@ export const changeInstances = atomic(function changeInstances(
       const state = readInstance(located.el, ctx.atRev(def.id, Number(attrOf(located.el, REV_ATTR))) ?? def, ctx)
       if (!state) continue
       validateProps(def, change.props)
-      const rendered = renderInstance(def, def, applyChange(state.overrides, change), id, { ctx, stack: [] })
+      const rendered = renderInstance(def, def, applyChange(state.overrides, change, def), id, { ctx, stack: [] })
       if (!rendered) continue
       /* below another instance, this root is that instance's part */
       const part = attrOf(located.el, PART_ATTR)
@@ -1073,12 +1075,12 @@ function detachAll(html: string, def: ComponentDef): { html: string; count: numb
   }
 }
 
-function validateProps(def: ComponentDef, props: Record<string, string> | undefined) {
+function validateProps(def: ComponentDef, props: Record<string, string | null> | undefined) {
   for (const [name, value] of Object.entries(props ?? {})) {
     const prop = def.props.find((candidate) => candidate.name === name)
     if (!prop)
       fail(`${def.name} has no prop “${name}” — it has ${def.props.map((p) => p.name).join(', ') || 'no props'}`)
-    if (value !== '' && prop.type === 'enum' && prop.options?.length && !prop.options.includes(value))
+    if (value !== null && value !== '' && prop.type === 'enum' && prop.options?.length && !prop.options.includes(value))
       fail(`${def.name}: "${value}" is not a value of ${name} — use ${prop.options.join(' | ')}`)
   }
 }

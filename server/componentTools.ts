@@ -522,7 +522,12 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
         .array(
           z.object({
             instance_id: z.string(),
-            props: z.record(z.string()).optional().describe('Merged over current props; "" clears one'),
+            props: z
+              .record(z.string().nullable())
+              .optional()
+              .describe(
+                'Merged over current props; null clears one back to the main. A boolean is true unless "false" ("" is true, as on <doop-use>); "" clears any other prop',
+              ),
             overrides: z
               .record(z.any())
               .optional()
@@ -539,7 +544,7 @@ export const COMPONENT_TOOLS: ComponentTool[] = [
     run(input, { canvas, actor }) {
       const list = input.instances as {
         instance_id: string
-        props?: Record<string, string>
+        props?: Record<string, string | null>
         overrides?: Record<string, never>
         reset?: boolean | string[]
         detach?: boolean

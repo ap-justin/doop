@@ -1029,8 +1029,11 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Both kinds are kept by `derivePropsAndSlots` when the template binds nothing to them, and their
   `data-<name>` selectors pass `extractComponentCss`. Editing an instance root's `data-<name>`
   records the override (presence is true, absence false), except that a root wearing none of its
-  booleans' attributes (rendered before they were marked) records no false from the absence. Tests:
-  `booleanPropAttr.test.ts`.
+  booleans' attributes (rendered before they were marked) records no false from the absence. A root
+  that binds `data-<name>` itself (`data-doop-prop="data-<name>:<name>"`) keeps that binding in charge:
+  it renders `"true"` / `"false"` as before and an edit there is read as the value. A boolean is true
+  unless `"false"`, so `""` is true on `<doop-use>`, on insert and in `update_instances`, where `null`
+  clears a prop back to the main. Tests: `booleanPropAttr.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
   gets `componentWriteNotes(frame, { review: true })`, which adds what the frame should have reused:

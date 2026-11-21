@@ -510,7 +510,8 @@ export interface ExtractedCss {
   rawCss: string
 }
 
-/** `variantAttrs` are attributes instances wear and the main need not: `data-<enum prop>` on the root. */
+/** `variantAttrs` are attributes instances wear and the main need not: an enum or boolean prop's
+ *  `data-<name>` on the root. */
 export function extractComponentCss(
   sheet: string,
   root: Element,
