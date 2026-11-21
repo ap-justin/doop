@@ -14,7 +14,14 @@ import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
 import * as propagation from '../server/propagation.ts'
 import { blankComponent } from '../server/components.ts'
-import { changeInstances, compactFrameHtml, updateComponent } from '../server/componentActions.ts'
+import {
+  changeInstances,
+  compactFrameHtml,
+  importComponent,
+  restoreComponentVersion,
+  syncComponent,
+  updateComponent,
+} from '../server/componentActions.ts'
 import {
   BIND_ATTR,
   COMPONENT_ATTR,
@@ -211,17 +218,34 @@ describe('props handed back to update_component as get_component returned them',
     return { canvas, def, frame, page }
   }
 
-  it('files no revision and leaves the instances alone', async () => {
+  /** The same props with their keys in another order, as a jsonb column hands them back. */
+  const reloaded = (props: ComponentProp[]) => props.map((prop) => Object.fromEntries(Object.entries(prop).reverse()))
+
+  it('files no revision, queues nothing and leaves the instances alone', async () => {
     const { canvas, def, page } = badge()
     await propagation.whenIdle()
     const before = current(canvas.id, def.id)
     const placed = framed(page.id)
-    updateComponent(canvas.id, def.id, { props: structuredClone(before.props) }, actor)
+    expect(placed).toContain(INSTANCE_ATTR)
+    const result = updateComponent(canvas.id, def.id, { props: structuredClone(before.props) }, actor)
+    expect(result.propagation?.status).toBe('none')
+    expect(actions.propagationPending(canvas.id, def.id)).toBe(false)
     await propagation.whenIdle()
     const after = current(canvas.id, def.id)
     expect(after.rev).toBe(before.rev)
     expect(after.props).toEqual(before.props)
     expect(framed(page.id)).toBe(placed)
+  })
+
+  it('files no revision after a save and reload, whatever order the store returns the keys in', () => {
+    const { canvas, def } = badge()
+    const stored = current(canvas.id, def.id)
+    store.saveComponent(canvas.id, { ...stored, props: reloaded(stored.props) as ComponentProp[] })
+    const before = current(canvas.id, def.id)
+    expect(Object.keys(before.props[0]!)).not.toEqual(Object.keys(stored.props[0]!))
+    updateComponent(canvas.id, def.id, { props: reloaded(before.props) as ComponentProp[] }, actor)
+    expect(current(canvas.id, def.id).rev).toBe(before.rev)
+    expect(current(canvas.id, def.id).props[0]?.derived).toBe(true)
   })
 
   it('still drops the boolean once its condition goes', () => {
@@ -233,13 +257,77 @@ describe('props handed back to update_component as get_component returned them',
     expect(current(canvas.id, def.id).props).toEqual([])
   })
 
-  it('declares the boolean when its default is changed', () => {
+  /** Guard against keeping the flag too eagerly: it holds with or without the round-trip fix. */
+  it('guard: declares the boolean when its default is changed, and that change is a revision', async () => {
     const { canvas, def, frame } = badge()
-    updateComponent(canvas.id, def.id, { props: [{ name: 'icon', type: 'boolean', default: 'false' }] }, actor)
+    const before = current(canvas.id, def.id)
+    const result = updateComponent(
+      canvas.id,
+      def.id,
+      { props: [{ name: 'icon', type: 'boolean', default: 'false' }] },
+      actor,
+    )
+    expect(result.propagation?.status).toBe('queued')
+    await propagation.whenIdle()
+    expect(current(canvas.id, def.id).rev).toBe(before.rev + 1)
     expect(current(canvas.id, def.id).props).toEqual([{ name: 'icon', type: 'boolean', default: 'false' }])
 
     actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
     expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['icon'])
+  })
+
+  it('declares the boolean when it is handed back as another type', () => {
+    const { canvas, def } = badge()
+    updateComponent(canvas.id, def.id, { props: [{ name: 'icon', type: 'text', default: 'true' }] }, actor)
+    const [icon] = current(canvas.id, def.id).props
+    expect(icon?.type).toBe('text')
+    expect(icon?.derived).toBeUndefined()
+  })
+
+  it('declares the boolean when it is handed back with a description or options of its own', () => {
+    const { canvas, def, frame } = badge()
+    updateComponent(
+      canvas.id,
+      def.id,
+      { props: [{ name: 'icon', type: 'boolean', default: 'true', description: 'Shows the star' }] },
+      actor,
+    )
+    actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([
+      { name: 'icon', type: 'boolean', default: 'true', description: 'Shows the star' },
+    ])
+  })
+
+  it('declares the boolean when it is handed back without its default', () => {
+    const { canvas, def, frame } = badge()
+    updateComponent(canvas.id, def.id, { props: [{ name: 'icon', type: 'boolean' }] }, actor)
+    expect(current(canvas.id, def.id).props[0]?.derived).toBeUndefined()
+    actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
+    expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['icon'])
+  })
+
+  it('keeps the flag a restored revision carried, though the component has no such prop now', () => {
+    const { canvas, def } = badge()
+    updateComponent(canvas.id, def.id, { html: BADGE('New', def.id) }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([])
+    restoreComponentVersion(canvas.id, def.id, 1, actor)
+    expect(current(canvas.id, def.id).props.map((prop) => prop.derived)).toEqual([true])
+  })
+
+  it('keeps the flag a pulled original carried on a boolean the local copy lacks', () => {
+    const { canvas: source, def } = badge()
+    const target = store.createCanvas('pull target')
+    importComponent(target.id, source.id, 'Badge', actor)
+    expect(current(target.id, def.id).props.map((prop) => prop.derived)).toEqual([true])
+
+    const named = current(source.id, def.id)
+    updateComponent(source.id, named.id, { html: BADGE(`${WITH_ICON}<b data-doop-if="bold">!</b>`, def.id) }, actor)
+    expect(current(source.id, def.id).props.map((prop) => prop.name)).toEqual(['icon', 'bold'])
+    syncComponent(target.id, 'Badge', actor, () => true)
+    expect(current(target.id, def.id).props.map((prop) => [prop.name, prop.derived])).toEqual([
+      ['icon', true],
+      ['bold', true],
+    ])
   })
 })
 
