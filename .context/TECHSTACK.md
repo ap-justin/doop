@@ -1036,13 +1036,13 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   value. A boolean is true unless `"false"`: `update_instances` stores `""` as `"true"`, while
   `<doop-use>` and insert keep the `""` and read it as true; `null` in `update_instances` clears a
   prop back to the main. A main stands for a default instance: `prepareMains` writes `data-<name>`
-  on its root for each boolean that defaults to on (`markMainBooleans`; `templateFromMain` strips
-  it again, so it is never part of the template or a revision). A boolean made up from a
+  on its root for each unbound boolean that defaults to on (`markMainBooleans`; `templateFromMain`
+  strips it again, so it is never part of the template or a revision). A boolean made up from a
   `data-doop-if` condition is stored with `derived: true` and goes once no condition names it; one
-  declared through `create_component` / `update_component` stays. An override equal to the prop's
-  default (no default counts as false) is pruned. Known gap: an edit that removes the only true
-  boolean from an instance root reads as markup written before booleans were marked, so it records
-  no false override. Tests: `booleanPropAttr.test.ts`, `booleanPropConsistency.test.ts`.
+  declared through `create_component` / `update_component` stays. A boolean override that reads the
+  same as its default (`""` and `"true"` alike, no default counts as false) is pruned. Known gap:
+  an edit that removes the only true boolean from an instance root reads as markup written before
+  booleans were marked, so it records no false override. Tests: `booleanPropAttr.test.ts`, `booleanPropConsistency.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
   gets `componentWriteNotes(frame, { review: true })`, which adds what the frame should have reused:

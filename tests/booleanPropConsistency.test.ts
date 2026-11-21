@@ -41,7 +41,7 @@ const TABS_PROPS: ComponentProp[] = [
 
 /** A canvas with a Tabs main (two booleans) and an empty page to place instances on. */
 function setup(props: ComponentProp[] = TABS_PROPS, name = 'Tabs') {
-  const canvas = store.createCanvas(`boolean follow-ups ${name}`)
+  const canvas = store.createCanvas(`boolean props ${name}`)
   const def = blankComponent({ name, by: 'Tester', props })
   store.saveComponent(canvas.id, def)
   const mainFrame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
@@ -164,7 +164,7 @@ describe('a boolean a condition made up', () => {
     expect(current(canvas.id, def.id).props).toEqual([])
   })
 
-  it('takes its mark off the main root once the condition goes, though the root is saved as it stands', () => {
+  it('takes its mark off the main root once the condition goes, though the save still carries it', () => {
     const canvas = store.createCanvas('derived boolean mark')
     const def = blankComponent({ name: 'Badge', by: 'Tester' })
     store.saveComponent(canvas.id, def)

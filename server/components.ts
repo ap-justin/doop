@@ -285,7 +285,7 @@ function prepareMains(
     const renamed = withNaturalClasses(found.el, id)
     const stamped = stampParts(found.el)
     let rewritten = stamped || renamed
-    /* the frame takes the main as it stands once everything below has been applied to it */
+    /* the main goes back into the frame once: after its boolean marks, or as it stands on a cycle */
     const settle = () => {
       if (rewritten) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
     }

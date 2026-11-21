@@ -401,10 +401,10 @@ const boundAttrs = (el: Element) =>
 const marksBoolean = (prop: ComponentProp, bound: Set<string>) =>
   prop.type === 'boolean' && !bound.has(`data-${prop.name}`)
 
-/** Whether a boolean is on when nothing sets it: any default but `'false'`, and off without one. */
+/** Whether a boolean's value or default reads as on: anything but `'false'`, and off when unset. */
 const booleanOn = (value: string | undefined) => value !== undefined && value !== 'false'
 
-/** The `data-<name>` of each boolean the main's root marks the way an instance root does. */
+/** The booleans a root marks as `data-<name>` the way an instance root does: those it does not bind itself. */
 const markedBooleans = (root: Element, props: ComponentProp[]) => {
   const bound = boundAttrs(root)
   return props.filter((prop) => marksBoolean(prop, bound))
@@ -1589,8 +1589,8 @@ export function stampParts(root: Element): boolean {
   return changed
 }
 
-/** The main's markup as a template: no main marker, no element ids (each instance
- *  gets its own), nested instances compact. */
+/** The main's markup as a template: no main marker, no boolean marks on the root, no
+ *  element ids (each instance gets its own), nested instances compact. */
 export function templateFromMain(main: Element, ctx: EngineContext, props: ComponentProp[] = []): string {
   const clone = elementKids(rootFragment(serializeOuter(main)))[0]
   if (!clone) return ''
