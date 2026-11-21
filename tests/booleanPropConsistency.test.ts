@@ -257,8 +257,8 @@ describe('props handed back to update_component as get_component returned them',
     expect(current(canvas.id, def.id).props).toEqual([])
   })
 
-  /** Guard against keeping the flag too eagerly: it holds with or without the round-trip fix. */
-  it('guard: declares the boolean when its default is changed, and that change is a revision', async () => {
+  /** The flag is kept only for a boolean handed back unchanged: a changed default declares it. */
+  it('declares the boolean when its default is changed, and that change is a revision', async () => {
     const { canvas, def, frame } = badge()
     const before = current(canvas.id, def.id)
     const result = updateComponent(
@@ -284,7 +284,7 @@ describe('props handed back to update_component as get_component returned them',
     expect(icon?.derived).toBeUndefined()
   })
 
-  it('declares the boolean when it is handed back with a description or options of its own', () => {
+  it('declares the boolean when it is handed back with a description of its own', () => {
     const { canvas, def, frame } = badge()
     updateComponent(
       canvas.id,

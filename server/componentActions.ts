@@ -263,7 +263,7 @@ const propsKey = (props: ComponentProp[]) =>
   JSON.stringify(props.map((prop) => [propParts(prop), prop.derived ?? null]))
 
 /** Props handed back as read: a boolean a condition made up (`derived` in `source`) that comes back
- *  with the same name, type, default, options and description is still that boolean, not one
+ *  with the same type, default, options and description is still that boolean, not one
  *  declared, so it goes with its condition and an unchanged list is no change. Any difference in
  *  those declares it. */
 function keepDerived(next: ComponentProp[], source: ComponentProp[]): ComponentProp[] {
