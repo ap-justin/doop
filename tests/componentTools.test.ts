@@ -399,7 +399,11 @@ describe('an agent working with components', () => {
       const result = await clear(canvas.id, frameId, { tone: null })
       expect(result.isError).toBe(false)
       const html = store.getFrame(frameId)!.html
-      expect(html).not.toContain('data-tone="ghost"')
+      /* the component's CSS still holds its own [data-tone="ghost"] rule, so read the root tag alone */
+      const root = /<button\b[^>]*>/.exec(html)![0]
+      expect(root).not.toContain('data-tone="ghost"')
+      expect(root).toContain('data-tone="solid"')
+      expect(root).not.toMatch(/data-doop-props="[^"]*tone/)
       expect(html).toContain('Hello')
     })
 
