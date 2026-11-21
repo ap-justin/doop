@@ -1,5 +1,7 @@
 # CODESTYLE - doop
 
+**Browser Support:** Baseline Widely available
+
 ## Formatting (Prettier, `.prettierrc.json`)
 
 - No semicolons (`semi: false`).

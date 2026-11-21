@@ -16,6 +16,7 @@ desktop/src-tauri-chromium/gen
 # files are ignored.
 .claude/settings.local.json
 .claude/.current-tool
+.claude/agent-memory-local/
 chatgpt-plugin/dist/
 
 # the built component catalogue
