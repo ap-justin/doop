@@ -365,6 +365,54 @@ describe('an agent working with components', () => {
     expect(html).toContain('Placed')
   })
 
+  describe('clearing a prop with update_instances', () => {
+    const open = async () => {
+      const canvas = newCanvas()
+      await button(canvas.id)
+      const frameId = await framed(
+        canvas.id,
+        '<doop-use component="Button" id="abc123" tone="ghost" label="Hello"></doop-use>',
+      )
+      expect(store.getFrame(frameId)!.html).toContain('Hello')
+      expect(store.getFrame(frameId)!.html).toContain('data-tone="ghost"')
+      return { canvas, frameId }
+    }
+    const clear = (canvasId: string, frameId: string, props: Record<string, string | null>) =>
+      call('update_instances', {
+        canvas_id: canvasId,
+        frame_id: frameId,
+        instances: [{ instance_id: 'abc123', props }],
+      })
+
+    it('takes null for a text prop, which falls back to the main', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { label: null })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      expect(html).not.toContain('Hello')
+      expect(html).toContain('Start')
+      expect(html).toContain('data-tone="ghost"')
+    })
+
+    it('takes null for an enum prop without rejecting it as an unknown option', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { tone: null })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      expect(html).not.toContain('data-tone="ghost"')
+      expect(html).toContain('Hello')
+    })
+
+    it('still clears a text prop given "", back to the main', async () => {
+      const { canvas, frameId } = await open()
+      const result = await clear(canvas.id, frameId, { label: '' })
+      expect(result.isError).toBe(false)
+      const html = store.getFrame(frameId)!.html
+      expect(html).not.toContain('Hello')
+      expect(html).toContain('Start')
+    })
+  })
+
   it('keeps what is built from a component working when it is renamed', async () => {
     const canvas = newCanvas()
     await button(canvas.id)

@@ -249,9 +249,16 @@ describe('a boolean whose data-<name> the root binds itself', () => {
   it('does not count the bound attribute when reading an instance rendered before booleans were marked', () => {
     const { page } = setupBound()
     actions.updateFrame(page.id, { html: doc(`<doop-use component="Card"></doop-use>`) }, actor)
-    /* such an instance wears the bound data-x="false" and no data-y */
-    const legacy = framed(page.id).replace(/ data-y(="")?(?=[\s>])/, '')
-    expect(instances(legacy, 'section')[0]).not.toMatch(/ data-y(?=[\s>=])/)
+    /* hand-built from the rendered root: the binding's data-x="false" and no data-y, whatever the engine now writes */
+    const rendered = instances(framed(page.id), 'section')[0]!
+    const legacyRoot = rendered
+      .replace(/ data-y(="")?(?=[\s>])/, '')
+      .replace(/ data-x(="[^"]*")?(?=[\s>])/, '')
+      .replace(/>$/, ' data-x="false">')
+    const legacy = framed(page.id).replace(rendered, legacyRoot)
+    expect(legacyRoot).toContain(' data-x="false"')
+    expect(legacyRoot).not.toMatch(/ data-y(?=[\s>=])/)
+    expect(legacyRoot).not.toContain(PROPS_ATTR)
     actions.updateFrame(page.id, { html: legacy }, actor)
     const [root] = instances(framed(page.id), 'section')
     expect(root).not.toContain(PROPS_ATTR)
@@ -260,7 +267,7 @@ describe('a boolean whose data-<name> the root binds itself', () => {
 })
 
 describe('update_instances on a boolean prop', () => {
-  it('reads "" as true, as a bare attribute on <doop-use> is, and null as back to the default', () => {
+  it('reads "" as true, as a bare attribute on <doop-use> is', () => {
     const { canvas, page } = setup()
     actions.updateFrame(page.id, { html: doc(`<doop-use component="Tabs"></doop-use>`) }, actor)
     const instanceId = instanceIdOf(instances(framed(page.id))[0]!)
@@ -270,10 +277,21 @@ describe('update_instances on a boolean prop', () => {
     const [stretched] = instances(framed(page.id))
     expect(stretched).toMatch(/ data-stretch(?=[\s>=])/)
     expect(markerProps(stretched!).stretch).toBe('true')
+  })
 
-    changeInstances(canvas.id, page.id, [{ instanceId, props: { stretch: null } }], actor)
-    const [plain] = instances(framed(page.id))
-    expect(plain).not.toContain('data-stretch')
-    expect(plain).not.toContain(PROPS_ATTR)
+  it('reads null as back to the default, which a default-true boolean shows again', () => {
+    const { canvas, page } = setup()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Tabs"></doop-use>`) }, actor)
+    const instanceId = instanceIdOf(instances(framed(page.id))[0]!)
+
+    changeInstances(canvas.id, page.id, [{ instanceId, props: { scroll: 'false' } }], actor)
+    const [off] = instances(framed(page.id))
+    expect(off).not.toContain('data-scroll')
+    expect(markerProps(off!).scroll).toBe('false')
+
+    changeInstances(canvas.id, page.id, [{ instanceId, props: { scroll: null } }], actor)
+    const [back] = instances(framed(page.id))
+    expect(back).toMatch(/ data-scroll(?=[\s>=])/)
+    expect(back).not.toContain(PROPS_ATTR)
   })
 })
