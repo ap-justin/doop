@@ -13,7 +13,7 @@ vi.mock('../server/db/persist.ts', () => ({
 import { store } from '../server/store.ts'
 import * as actions from '../server/actions.ts'
 import { blankComponent } from '../server/components.ts'
-import { COMPONENT_ATTR, INSTANCE_ATTR } from '../shared/components.ts'
+import { COMPONENT_ATTR, INSTANCE_ATTR, PROPS_ATTR, REV_ATTR } from '../shared/components.ts'
 import type { Actor } from '../shared/types.ts'
 
 const actor = { name: 'Tester', kind: 'user', color: '#000', clientId: 'x' } as unknown as Actor
@@ -119,6 +119,21 @@ describe('a boolean prop on the instance root', () => {
     expect(second).not.toContain('data-stretch')
   })
 
+  it('keeps the default of an instance rendered before booleans were marked, recording no override', () => {
+    const { page } = setup()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Tabs"></doop-use>`) }, actor)
+    /* what such an instance wears: its marker and revision, and none of the booleans' data-<name> */
+    const legacy = framed(page.id).replace(/ data-scroll(="")?(?=[\s>])/, '')
+    const [root] = instances(legacy)
+    expect(root).toContain(`${INSTANCE_ATTR}=`)
+    expect(root).toContain(`${REV_ATTR}=`)
+    expect(root).not.toMatch(/ data-(scroll|stretch)(?=[\s>=])/)
+
+    actions.updateFrame(page.id, { html: legacy }, actor)
+    expect(framed(page.id)).not.toContain(PROPS_ATTR)
+    expect(instances(framed(page.id))[0]).toMatch(/ data-scroll(?=[\s>=])/)
+  })
+
   it('files no new revision when an unchanged main is saved again', () => {
     const { canvas, def, mainFrame } = setup()
     const before = current(canvas.id, def.id)
@@ -128,5 +143,23 @@ describe('a boolean prop on the instance root', () => {
     expect(after.rev).toBe(before.rev)
     expect(after.props).toEqual(before.props)
     expect(after.template).toBe(before.template)
+  })
+})
+
+describe('a declared boolean with no default that a condition names', () => {
+  it('defaults to true, so a default instance shows its content and wears data-<name>', () => {
+    const canvas = store.createCanvas('default-less boolean')
+    const def = blankComponent({ name: 'Badge', by: 'Tester', props: [{ name: 'icon', type: 'boolean' }] })
+    store.saveComponent(canvas.id, def)
+    const mainFrame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    const main = `<span class="badge" ${COMPONENT_ATTR}="${def.id}"><i data-doop-if="icon">★</i>New</span>`
+    actions.updateFrame(mainFrame.id, { html: doc(main) }, actor)
+    expect(current(canvas.id, def.id).props.find((prop) => prop.name === 'icon')?.default).toBe('true')
+
+    const page = actions.createFrame(canvas.id, { name: 'Page', html: '' }, actor)!
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Badge"></doop-use>`) }, actor)
+    const html = framed(page.id)
+    expect(html).toContain('★')
+    expect(html.match(/<span\b[^>]*>/)?.[0]).toMatch(/ data-icon(?=[\s>=])/)
   })
 })

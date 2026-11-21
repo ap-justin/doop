@@ -629,6 +629,11 @@ function diffAttrs(
   into: PartOverride,
 ) {
   const names = new Set([...base.attrs, ...incoming.attrs].map((attr) => attr.name))
+  /* a root rendered before booleans were marked wears none of their data-<name>: a missing one there is no edit */
+  const booleanAttrs = isRoot
+    ? def.props.filter((prop) => prop.type === 'boolean').map((prop) => `data-${prop.name}`)
+    : []
+  const unmarked = booleanAttrs.length > 0 && booleanAttrs.every((name) => attrOf(incoming, name) === undefined)
   for (const name of names) {
     if (!isTracked(name) || name === 'style') continue
     if (isRoot && name === ELEMENT_ID_ATTR) continue
@@ -639,8 +644,9 @@ function diffAttrs(
       isRoot && name.startsWith('data-')
         ? def.props.find((prop) => isRootAttrProp(prop) && `data-${prop.name}` === name)
         : undefined
-    if (rootProp?.type === 'boolean') (state.props ??= {})[rootProp.name] = after === undefined ? 'false' : 'true'
-    else if (rootProp && after !== undefined) (state.props ??= {})[rootProp.name] = after
+    if (rootProp?.type === 'boolean') {
+      if (after !== undefined || !unmarked) (state.props ??= {})[rootProp.name] = after === undefined ? 'false' : 'true'
+    } else if (rootProp && after !== undefined) (state.props ??= {})[rootProp.name] = after
     else if (info?.attrProps.has(name) && after !== undefined) (state.props ??= {})[info.attrProps.get(name)!] = after
     else (into.attrs ??= {})[name] = after ?? null
   }
@@ -1625,9 +1631,15 @@ export function derivePropsAndSlots(
 ): { props: ComponentProp[]; slots: ComponentSlot[] } {
   const root = parseTemplateRoot(template)
   const props = new Map<string, ComponentProp>()
-  for (const prop of declared) if (isRootAttrProp(prop) && isPropName(prop.name)) props.set(prop.name, prop)
+  for (const prop of declared) if (prop.type === 'enum' && isPropName(prop.name)) props.set(prop.name, prop)
+  /* after the template is read, so a condition still gives a default-less boolean its 'true' */
+  const withUnboundBooleans = () => {
+    for (const prop of declared)
+      if (prop.type === 'boolean' && isPropName(prop.name) && !props.has(prop.name)) props.set(prop.name, prop)
+    return [...props.values()]
+  }
   const slots: ComponentSlot[] = []
-  if (!root) return { props: [...props.values()], slots }
+  if (!root) return { props: withUnboundBooleans(), slots }
   const stack: Element[] = [root]
   const order: Element[] = []
   for (let el = stack.pop(); el; el = stack.pop()) {
@@ -1669,7 +1681,7 @@ export function derivePropsAndSlots(
       })
     }
   }
-  return { props: [...props.values()], slots }
+  return { props: withUnboundBooleans(), slots }
 }
 
 const descriptionOf = (prop: ComponentProp | undefined) => (prop?.description ? { description: prop.description } : {})

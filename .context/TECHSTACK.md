@@ -1023,10 +1023,13 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `componentClassIsolation.test.ts`.
 - Props on the instance root (`markRoot`, `variantAttrs` in `server/componentEngine.ts`): an enum
   prop shows as `data-<name>="<option>"` and a boolean prop as a bare `data-<name>` while it is true
-  (the prop's default when the instance does not override it; absent when false), so a component's
-  CSS styles variants with `[data-<name>]`. Both are kept by `derivePropsAndSlots` when the template
-  binds nothing to them, and their `data-<name>` selectors pass `extractComponentCss`. Editing an
-  instance root's `data-<name>` records the override (presence is true, absence false). Tests:
+  (absent when false), so a component's CSS styles variants with `[data-<name>]`. An instance that
+  does not override a boolean takes its default: a boolean a `data-doop-if` names defaults to true
+  unless declared otherwise, and a declared boolean with no default and no condition renders absent.
+  Both kinds are kept by `derivePropsAndSlots` when the template binds nothing to them, and their
+  `data-<name>` selectors pass `extractComponentCss`. Editing an instance root's `data-<name>`
+  records the override (presence is true, absence false), except that a root wearing none of its
+  booleans' attributes (rendered before they were marked) records no false from the absence. Tests:
   `booleanPropAttr.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
