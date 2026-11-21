@@ -255,6 +255,24 @@ export function validProps(props: unknown): ComponentProp[] {
   })
 }
 
+/** A prop as a list of its parts, so equal props compare equal whatever order a store gave the keys. */
+const propParts = (prop: ComponentProp) =>
+  JSON.stringify([prop.name, prop.type, prop.default ?? null, prop.options ?? null, prop.description ?? null])
+
+const propsKey = (props: ComponentProp[]) =>
+  JSON.stringify(props.map((prop) => [propParts(prop), prop.derived ?? null]))
+
+/** Props handed back as read: a boolean a condition made up (`derived` in `source`) that comes back
+ *  with the same type, default, options and description is still that boolean, not one
+ *  declared, so it goes with its condition and an unchanged list is no change. Any difference in
+ *  those declares it. */
+function keepDerived(next: ComponentProp[], source: ComponentProp[]): ComponentProp[] {
+  return next.map((prop) => {
+    const was = source.find((candidate) => candidate.name === prop.name)
+    return was?.derived && propParts(was) === propParts(prop) ? { ...prop, derived: true } : prop
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /* Reading                                                             */
 /* ------------------------------------------------------------------ */
@@ -649,6 +667,9 @@ export interface UpdateInput {
   name?: string
   description?: string
   props?: ComponentProp[]
+  /** internal, never from an agent or a request: the props `derived` is read from when `props` come
+   *  from a trusted source (a restored revision, an imported original); the component's own by default */
+  derivedFrom?: ComponentProp[]
   code?: ComponentCode | null
   html?: string
   css?: string
@@ -787,8 +808,9 @@ export const updateComponent = atomic(function updateComponent(
   }
   if (input.dryRun) return { component: def, dry_run: true, impact }
 
-  const nextProps = input.props !== undefined ? validProps(input.props) : undefined
-  const propsChanged = nextProps !== undefined && JSON.stringify(nextProps) !== JSON.stringify(def.props)
+  const nextProps =
+    input.props !== undefined ? keepDerived(validProps(input.props), input.derivedFrom ?? def.props) : undefined
+  const propsChanged = nextProps !== undefined && propsKey(nextProps) !== propsKey(def.props)
   /* this function is one unit (server/journal.ts): a refusal anywhere in it, the work budget
      included, undoes the name, props and revision saved below along with the main's write */
   const writesMain = nextRoot !== undefined || css !== undefined || input.props !== undefined
@@ -902,7 +924,13 @@ export function restoreComponentVersion(canvasId: string, ref: string, rev: numb
   return updateComponent(
     canvasId,
     def.id,
-    { html: snapshot.template, css: snapshot.rawCss, head: snapshot.head, props: snapshot.props },
+    {
+      html: snapshot.template,
+      css: snapshot.rawCss,
+      head: snapshot.head,
+      props: snapshot.props,
+      derivedFrom: snapshot.props,
+    },
     actor,
   )
 }
@@ -1651,6 +1679,7 @@ function pullFrom(
       css: importedCss(targetCanvasId, sourceCanvasId, origin),
       head: origin.head,
       props: origin.props,
+      derivedFrom: origin.props,
       description: origin.description,
     },
     actor,

@@ -43,6 +43,7 @@ import {
   splice,
   stampParts,
   syncComponentHead,
+  markMainBooleans,
   templateFromMain,
   usedComponentIds,
   variantAttrs,
@@ -283,9 +284,14 @@ function prepareMains(
        back with them too, since its own rules style the natural names */
     const renamed = withNaturalClasses(found.el, id)
     const stamped = stampParts(found.el)
-    if (stamped || renamed) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
-    const drawn = templateFromMain(found.el, ctx)
+    let rewritten = stamped || renamed
+    /* the main goes back into the frame once: after its boolean marks, or as it stands on a cycle */
+    const settle = () => {
+      if (rewritten) edits.push({ start: found.start, end: found.end, text: serializeOuter(found.el) })
+    }
+    const drawn = templateFromMain(found.el, ctx, def.props)
     if (wouldCycle(canvas.id, id, drawn)) {
+      settle()
       ctx.issues.push({
         code: 'nesting_cycle',
         message: `component “${def.name}” cannot contain itself; its change was not applied to other instances`,
@@ -299,6 +305,8 @@ function prepareMains(
     mainCss.set(id, nestedRootRules(naturalSheet, found.el, id))
     const head = headTags()
     const { props, slots } = derivePropsAndSlots(template, def.props)
+    if (markMainBooleans(found.el, props, def.props)) rewritten = true
+    settle()
     const lost = newlyRenamedRootClasses(def.template, template, id)
     if (lost.length) warnOwnRootRules(canvas, frameId, def, lost, ctx)
     const same =
