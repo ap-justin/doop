@@ -47,7 +47,12 @@ import { transaction } from './journal.ts'
 
 export const propSchema = z.object({
   name: z.string().describe('Lowercase, it becomes an attribute: "label", "tone", "show-icon"'),
-  type: z.enum(PROP_TYPES).optional().describe('text (default), image, link, boolean, or enum with options'),
+  type: z
+    .enum(PROP_TYPES)
+    .optional()
+    .describe(
+      'text (default), image, link, boolean, or enum with options. An enum shows on the root as data-<name>="<option>", a boolean as data-<name> while true; style them in the component CSS',
+    ),
   default: z.string().optional().describe('enum and boolean only; text-like defaults are the template content'),
   options: z
     .array(z.string())

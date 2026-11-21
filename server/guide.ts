@@ -286,7 +286,8 @@ needs a reusable piece the system lacks, add it, then use it.
 - Write a description saying when to use it. Set code (file and export name) when the component
   exists in the human's repo: that is what makes the design implementable with their real code.
 - Vary with props, not copies. An enum prop sets data-<name> on the root, so a variant is plain
-  CSS: .btn[data-tone="ghost"] { … }. Hover and focus are ordinary CSS too. You do not need a
+  CSS: .btn[data-tone="ghost"] { … }. A boolean prop shows on the root as a bare data-<name> while
+  it is true (absent when false), so CSS can use .tabs[data-stretch] { … }. Hover and focus are ordinary CSS too. You do not need a
   component per state, or per size.
 - For one instance that must differ: use update_instances, or just edit it; edits inside an instance
   are captured as overrides on that element alone and survive every later change to the main. Do

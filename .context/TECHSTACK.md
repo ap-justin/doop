@@ -1021,6 +1021,13 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   library's consumers keep the old fields until the main is written, `publish_library` runs and
   each consumer pulls (`sync_component` or `update_library_everywhere`). Tests:
   `componentClassIsolation.test.ts`.
+- Props on the instance root (`markRoot`, `variantAttrs` in `server/componentEngine.ts`): an enum
+  prop shows as `data-<name>="<option>"` and a boolean prop as a bare `data-<name>` while it is true
+  (the prop's default when the instance does not override it; absent when false), so a component's
+  CSS styles variants with `[data-<name>]`. Both are kept by `derivePropsAndSlots` when the template
+  binds nothing to them, and their `data-<name>` selectors pass `extractComponentCss`. Editing an
+  instance root's `data-<name>` records the override (presence is true, absence false). Tests:
+  `booleanPropAttr.test.ts`.
 - Reuse notes (`server/reuseNotes.ts`): a whole-frame write (MCP `create_frame`, `set_frame_html`, the
   `done` chunk of a stream; the resident's `create_frame`, `set_frame_html`, `commit_frame_rewrite`)
   gets `componentWriteNotes(frame, { review: true })`, which adds what the frame should have reused:

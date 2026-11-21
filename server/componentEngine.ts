@@ -383,14 +383,23 @@ function renderUseElement(
   return rendered
 }
 
+/** Props whose value shows on the instance root as `data-<name>`: an enum as `data-<name>="<option>"`,
+ *  a boolean as a bare `data-<name>` while it is true. */
+const isRootAttrProp = (prop: ComponentProp) => prop.type === 'enum' || prop.type === 'boolean'
+
+/** The root attributes a component's own CSS may select on, for `extractComponentCss`. */
+export const variantAttrs = (props: ComponentProp[]) => props.filter(isRootAttrProp).map((prop) => `data-${prop.name}`)
+
 function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides) {
   setAttr(root, INSTANCE_ATTR, def.id)
   setAttr(root, REV_ATTR, String(def.rev))
   setAttr(root, ELEMENT_ID_ATTR, instanceId)
   for (const prop of def.props) {
-    if (prop.type !== 'enum') continue
+    if (!isRootAttrProp(prop)) continue
     const value = propValue(def, overrides, prop.name)
-    if (value !== undefined) setAttr(root, `data-${prop.name}`, value)
+    if (prop.type === 'boolean')
+      setAttr(root, `data-${prop.name}`, value !== undefined && value !== 'false' ? '' : null)
+    else if (value !== undefined) setAttr(root, `data-${prop.name}`, value)
   }
   const props = overrides.props ?? {}
   setAttr(root, PROPS_ATTR, Object.keys(props).length ? stableJson(props) : null)
@@ -626,11 +635,12 @@ function diffAttrs(
     const before = attrOf(base, name)
     const after = attrOf(incoming, name)
     if (before === after) continue
-    const enumProp =
+    const rootProp =
       isRoot && name.startsWith('data-')
-        ? def.props.find((prop) => prop.type === 'enum' && `data-${prop.name}` === name)
+        ? def.props.find((prop) => isRootAttrProp(prop) && `data-${prop.name}` === name)
         : undefined
-    if (enumProp && after !== undefined) (state.props ??= {})[enumProp.name] = after
+    if (rootProp?.type === 'boolean') (state.props ??= {})[rootProp.name] = after === undefined ? 'false' : 'true'
+    else if (rootProp && after !== undefined) (state.props ??= {})[rootProp.name] = after
     else if (info?.attrProps.has(name) && after !== undefined) (state.props ??= {})[info.attrProps.get(name)!] = after
     else (into.attrs ??= {})[name] = after ?? null
   }
@@ -1608,14 +1618,14 @@ function alignWith(next: Element, previous: Element | undefined, written: Set<st
 const declaredOf = (declared: ComponentProp[], name: string) => declared.find((prop) => prop.name === name)
 
 /** The props a template actually uses, with what was declared about them.
- *  Enum props live only in the declaration: their effect is `data-<name>` on the root. */
+ *  Enum and boolean props live in the declaration too: their effect is `data-<name>` on the root. */
 export function derivePropsAndSlots(
   template: string,
   declared: ComponentProp[],
 ): { props: ComponentProp[]; slots: ComponentSlot[] } {
   const root = parseTemplateRoot(template)
   const props = new Map<string, ComponentProp>()
-  for (const prop of declared) if (prop.type === 'enum' && isPropName(prop.name)) props.set(prop.name, prop)
+  for (const prop of declared) if (isRootAttrProp(prop) && isPropName(prop.name)) props.set(prop.name, prop)
   const slots: ComponentSlot[] = []
   if (!root) return { props: [...props.values()], slots }
   const stack: Element[] = [root]

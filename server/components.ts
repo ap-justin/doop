@@ -45,6 +45,7 @@ import {
   syncComponentHead,
   templateFromMain,
   usedComponentIds,
+  variantAttrs,
   type EngineContext,
 } from './componentEngine.ts'
 import { adoptFromLibrary, findInLibraries, LibraryAdoptError } from './componentLibrary.ts'
@@ -291,7 +292,7 @@ function prepareMains(
       })
       continue
     }
-    const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
+    const variants = variantAttrs(def.props)
     const naturalSheet = naturalCss(sheet(), id)
     const extracted = extractComponentCss(withNestedRootNames(naturalSheet, found.el), found.el, id, variants)
     const { template, css, rawCss } = isolateClasses({ template: drawn, ...extracted }, id)

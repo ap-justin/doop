@@ -73,6 +73,7 @@ import {
   splice,
   stampParts,
   useMarkup,
+  variantAttrs,
   withDetachedCss,
 } from './componentEngine.ts'
 import {
@@ -606,7 +607,7 @@ function reportCssNotKept(def: ComponentDef, css: string) {
     ? findMarked(frame.html, COMPONENT_ATTR).find((found) => attrOf(found.el, COMPONENT_ATTR) === def.id)
     : undefined
   if (!frame || !main) return
-  const variants = def.props.filter((prop) => prop.type === 'enum').map((prop) => `data-${prop.name}`)
+  const variants = variantAttrs(def.props)
   /* named as the author wrote them: the renamed nested root is read back as its natural class */
   const selectors = unmatchedSelectors(withNestedRootNames(css, main.el), main.el, variants).map((selector) =>
     selector.replace(/\.([\w-]+?)__in-\w+/g, '.$1'),
