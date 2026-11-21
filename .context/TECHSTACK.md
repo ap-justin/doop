@@ -1041,7 +1041,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `data-doop-if` condition is stored with `derived: true` and goes once no condition names it; one
   declared through `create_component` / `update_component` stays (`update_component` keeps `derived` on
   a boolean handed back unchanged in every field, so an unchanged list files no revision; restoring a
-  revision and pulling a library original read the flag from that revision or original, through the
+  revision and pulling an imported original read the flag from that revision or original, through the
   internal `derivedFrom`). A boolean override that reads the
   same as its default (`""` and `"true"` alike, no default counts as false) is pruned. Known gap:
   an edit that removes the only true boolean from an instance root reads as markup written before

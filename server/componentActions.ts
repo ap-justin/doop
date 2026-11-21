@@ -668,7 +668,7 @@ export interface UpdateInput {
   description?: string
   props?: ComponentProp[]
   /** internal, never from an agent or a request: the props `derived` is read from when `props` come
-   *  from a trusted source (a restored revision, a library original); the component's own by default */
+   *  from a trusted source (a restored revision, an imported original); the component's own by default */
   derivedFrom?: ComponentProp[]
   code?: ComponentCode | null
   html?: string
