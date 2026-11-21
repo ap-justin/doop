@@ -282,7 +282,7 @@ describe('boolean overrides on instances', () => {
     store.saveComponent(consumer.id, {
       ...library,
       mainFrameId: null,
-      source: { canvasId: canvas.id, rev: library.rev, library: true },
+      source: { canvasId: canvas.id, componentId: library.id, rev: library.rev, library: true },
     })
     const page = actions.createFrame(consumer.id, { name: 'Page', html: '' }, actor)!
     place(page.id)
