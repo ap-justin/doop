@@ -114,6 +114,22 @@ describe('the main of a component with boolean props', () => {
     expect(mainRoot(framed(frame.id), 'section')).toContain('data-x="true"')
     expect(current(canvas.id, def.id).template).toContain('data-x="true"')
   })
+
+  it('leaves a bound boolean that defaults to off wearing the value it was written with', () => {
+    const canvas = store.createCanvas('bound main, default off')
+    const def = blankComponent({
+      name: 'Card',
+      by: 'Tester',
+      props: [{ name: 'x', type: 'boolean', default: 'false' }],
+    })
+    store.saveComponent(canvas.id, def)
+    const frame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    const main = `<section class="card" ${COMPONENT_ATTR}="${def.id}" data-x="true" ${BIND_ATTR}="data-x:x">Card</section>`
+    actions.updateFrame(frame.id, { html: doc(main) }, actor)
+    /* an unbound off boolean would lose its attribute here; the binding keeps it in charge */
+    expect(mainRoot(framed(frame.id), 'section')).toContain('data-x="true"')
+    expect(current(canvas.id, def.id).template).toContain('data-x="true"')
+  })
 })
 
 describe('a boolean a condition made up', () => {
@@ -128,6 +144,37 @@ describe('a boolean a condition made up', () => {
     expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['icon'])
 
     actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([])
+    expect(wears(mainRoot(framed(frame.id), 'span'), 'icon')).toBe(false)
+  })
+
+  it('stays made up for as long as a condition names it, however often the main is saved', () => {
+    const canvas = store.createCanvas('derived boolean kept')
+    const def = blankComponent({ name: 'Badge', by: 'Tester' })
+    store.saveComponent(canvas.id, def)
+    const frame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    actions.updateFrame(frame.id, { html: doc(BADGE('<i data-doop-if="icon">★</i>New', def.id)) }, actor)
+    actions.updateFrame(frame.id, { html: framed(frame.id).replace('New</span>', 'Newer</span>') }, actor)
+    expect(current(canvas.id, def.id).template).toContain('Newer')
+    expect(current(canvas.id, def.id).props.map((prop) => prop.derived)).toEqual([true])
+
+    const withoutCondition = framed(frame.id).replace(/<i\b[^>]*data-doop-if="icon"[^>]*>★<\/i>/, '')
+    expect(withoutCondition).not.toContain('data-doop-if')
+    actions.updateFrame(frame.id, { html: withoutCondition }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([])
+  })
+
+  it('takes its mark off the main root once the condition goes, though the root is saved as it stands', () => {
+    const canvas = store.createCanvas('derived boolean mark')
+    const def = blankComponent({ name: 'Badge', by: 'Tester' })
+    store.saveComponent(canvas.id, def)
+    const frame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    actions.updateFrame(frame.id, { html: doc(BADGE('<i data-doop-if="icon">★</i>New', def.id)) }, actor)
+    expect(wears(mainRoot(framed(frame.id), 'span'), 'icon')).toBe(true)
+
+    const withoutCondition = framed(frame.id).replace(/<i\b[^>]*data-doop-if="icon"[^>]*>★<\/i>/, '')
+    expect(withoutCondition).not.toContain('data-doop-if')
+    actions.updateFrame(frame.id, { html: withoutCondition }, actor)
     expect(current(canvas.id, def.id).props).toEqual([])
     expect(wears(mainRoot(framed(frame.id), 'span'), 'icon')).toBe(false)
   })
@@ -174,6 +221,20 @@ describe('an override equal to the default', () => {
     place(page.id, '<doop-use component="Tabs" icon="true"></doop-use>')
     actions.updateFrame(page.id, { html: framed(page.id) }, actor)
     expect(instanceRoots(framed(page.id))[0]).not.toContain(PROPS_ATTR)
+  })
+
+  it('is dropped when a boolean that defaults to on is set to the empty string, which reads as on', () => {
+    const { page } = setup()
+    place(page.id, '<doop-use component="Tabs" scroll=""></doop-use>')
+    actions.updateFrame(page.id, { html: framed(page.id) }, actor)
+    expect(instanceRoots(framed(page.id))[0]).not.toContain(PROPS_ATTR)
+  })
+
+  it('stays when a boolean that defaults to on is set to false', () => {
+    const { page } = setup()
+    place(page.id, '<doop-use component="Tabs" scroll="false"></doop-use>')
+    actions.updateFrame(page.id, { html: framed(page.id) }, actor)
+    expect(markerProps(instanceRoots(framed(page.id))[0]!)).toEqual({ scroll: 'false' })
   })
 
   it('stays when it differs from the default', () => {
