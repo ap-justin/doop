@@ -273,8 +273,11 @@ function applyBindings(el: Element, def: Revision, overrides: InstanceOverrides)
   if (raw === undefined) return
   setAttr(el, BIND_ATTR, null)
   for (const { target, prop } of parseBindings(raw, el.tagName)) {
-    const value = overrides.props?.[prop]
-    if (value === undefined) continue
+    const given = overrides.props?.[prop]
+    if (given === undefined) continue
+    /* `<doop-use x>` and insert keep a boolean's bare `""` in props; it renders as the "true" it means */
+    const isBoolean = def.props.some((entry) => entry.name === prop && entry.type === 'boolean')
+    const value = isBoolean && given === '' ? 'true' : given
     if (target === null) setText(el, value)
     else if (target.startsWith('style.') || target.startsWith('--')) {
       const styles = parseStyle(attrOf(el, 'style'))
@@ -282,7 +285,6 @@ function applyBindings(el: Element, def: Revision, overrides: InstanceOverrides)
       setAttr(el, 'style', serializeStyle(styles))
     } else setAttr(el, target, value)
   }
-  void def
 }
 
 const TAG_NAME = /^[a-z][a-z0-9-]*$/
@@ -383,14 +385,14 @@ function renderUseElement(
   return rendered
 }
 
-/** Props whose value shows on the instance root as `data-<name>`: an enum as `data-<name>="<option>"`,
- *  a boolean as a bare `data-<name>` while it is true, unless the root binds that attribute itself. */
+/** Props whose `data-<name>` a component's CSS may select on: an enum's option, a boolean's presence,
+ *  or the value a root binding gives it. */
 const isRootAttrProp = (prop: ComponentProp) => prop.type === 'enum' || prop.type === 'boolean'
 
 /** The root attributes a component's own CSS may select on, for `extractComponentCss`. */
 export const variantAttrs = (props: ComponentProp[]) => props.filter(isRootAttrProp).map((prop) => `data-${prop.name}`)
 
-/** The attributes an element's own `data-doop-prop` fills. */
+/** The attribute, `style.` and `--` targets an element's own `data-doop-prop` fills. */
 const boundAttrs = (el: Element) =>
   new Set(parseBindings(attrOf(el, BIND_ATTR) ?? '', el.tagName).flatMap(({ target }) => (target ? [target] : [])))
 
@@ -639,8 +641,8 @@ function diffAttrs(
   into: PartOverride,
 ) {
   const names = new Set([...base.attrs, ...incoming.attrs].map((attr) => attr.name))
-  /* a root rendered before booleans were marked wears none of their data-<name>: a missing one there is no edit */
   const bound = new Set(info?.attrProps.keys())
+  /* a root rendered before booleans were marked wears none of their data-<name>: a missing one there is no edit */
   const booleanAttrs = isRoot
     ? def.props.filter((prop) => marksBoolean(prop, bound)).map((prop) => `data-${prop.name}`)
     : []

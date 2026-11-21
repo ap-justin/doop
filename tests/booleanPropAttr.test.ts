@@ -228,6 +228,14 @@ describe('a boolean whose data-<name> the root binds itself', () => {
     expect(plain).toContain('data-x="false"')
   })
 
+  it('renders a bare boolean on <doop-use> as "true" through the binding, keeping the short form as written', () => {
+    const { page } = setupBound()
+    actions.updateFrame(page.id, { html: doc(`<doop-use component="Card" x></doop-use>`) }, actor)
+    const [root] = instances(framed(page.id), 'section')
+    expect(root).toContain('data-x="true"')
+    expect(markerProps(root!).x).toBe('')
+  })
+
   it('reads an edit to the bound attribute as its value, not as presence', () => {
     const { page } = setupBound()
     actions.updateFrame(page.id, { html: doc(`<doop-use component="Card" x="true"></doop-use>`) }, actor)
