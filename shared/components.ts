@@ -57,6 +57,8 @@ export interface ComponentProp {
   /** enum only */
   options?: string[]
   description?: string
+  /** boolean only: made up from a `data-doop-if` condition rather than declared, dropped once none names it */
+  derived?: true
 }
 
 export interface ComponentSlot {

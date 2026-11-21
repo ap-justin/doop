@@ -72,6 +72,16 @@ function instanceRoot(html: string) {
   return root ?? ''
 }
 
+/* the root of the instance whose content holds `text`: the last root tag that opens before it */
+function instanceRootAround(html: string, text: string) {
+  const at = html.indexOf(text)
+  expect(at, `the frame holds “${text}”`).toBeGreaterThan(-1)
+  const roots = [...html.matchAll(/<[a-z][^>]*\bdata-doop-instance="[^"]*"[^>]*>/g)].filter((m) => m.index < at)
+  const root = roots.at(-1)?.[0]
+  expect(root, `an instance root opens before “${text}”`).toBeDefined()
+  return root ?? ''
+}
+
 async function framed(canvasId: string, body: string, name = 'Screen') {
   const { data } = await call('create_frame', {
     canvas_id: canvasId,
@@ -124,8 +134,8 @@ describe('an agent working with components', () => {
     const card = previewDocument(canvas.id, def, 'default')
     expect(card.variants).toBe(1)
     expect(card.html).not.toContain('<figcaption>')
-    expect(card.html).toContain('data-tone="ghost"')
-    expect(card.html).not.toContain('data-tone="solid"')
+    expect(instanceRoot(card.html)).toContain('data-tone="ghost"')
+    expect(instanceRoot(card.html)).not.toContain('data-tone="solid"')
   })
 
   it('reads a screen back in short form, at a fraction of the size, and can edit it', async () => {
@@ -148,7 +158,7 @@ describe('an agent working with components', () => {
     expect(edit.isError).toBe(false)
     const html = store.getFrame(frameId)!.html
     expect(html).toContain('Renamed')
-    expect(html).toContain('data-tone="ghost"')
+    expect(instanceRootAround(html, 'Renamed')).toContain('data-tone="ghost"')
     expect(html.match(/ data-doop-instance=/g)).toHaveLength(20)
     /* the other nineteen did not change, down to their ids */
     expect(html).toContain(/data-doop-id="[a-z0-9]{6}"/.exec(full)![0])
@@ -503,7 +513,7 @@ describe('an agent working with components', () => {
     const html = store.getFrame(frameId)!.html
     expect(html).toContain('lib2')
     expect(html).toContain('Mine')
-    expect(html).toContain('data-tone="ghost"')
+    expect(instanceRoot(html)).toContain('data-tone="ghost"')
     expect(
       (await call('list_components', { canvas_id: canvas.id })).data.components[0].library_update_available,
     ).toBeUndefined()
@@ -666,7 +676,7 @@ describe('an agent working with components', () => {
     expect(html).toMatch(/btn__in-\w+ wide/)
     expect(html).toContain('data-doop-rev="2"')
     /* an instance that set nothing follows the new default */
-    expect(html).toContain('data-tone="ghost"')
+    expect(instanceRoot(html)).toContain('data-tone="ghost"')
 
     const propsOnly = await call('update_component', {
       canvas_id: canvas.id,

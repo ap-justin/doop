@@ -401,14 +401,45 @@ const boundAttrs = (el: Element) =>
 const marksBoolean = (prop: ComponentProp, bound: Set<string>) =>
   prop.type === 'boolean' && !bound.has(`data-${prop.name}`)
 
+/** Whether a boolean is on when nothing sets it: any default but `'false'`, and off without one. */
+const booleanOn = (value: string | undefined) => value !== undefined && value !== 'false'
+
+/** The `data-<name>` of each boolean the main's root marks the way an instance root does. */
+const markedBooleans = (root: Element, props: ComponentProp[]) => {
+  const bound = boundAttrs(root)
+  return props.filter((prop) => marksBoolean(prop, bound))
+}
+
+/** A main stands for a default instance: its root wears `data-<name>` for each boolean that defaults
+ *  to on, so a component's `[data-<name>]` rules show on it as on its instances. `previous` are the
+ *  props the main was last read with; one no longer a boolean loses its attribute. Returns whether
+ *  the markup changed. */
+export function markMainBooleans(main: Element, props: ComponentProp[], previous: ComponentProp[] = []): boolean {
+  let changed = false
+  const set = (name: string, on: boolean) => {
+    if ((attrOf(main, name) !== undefined) === on) return
+    setAttr(main, name, on ? '' : null)
+    changed = true
+  }
+  for (const prop of previous)
+    if (prop.type === 'boolean' && !props.some((kept) => kept.type === 'boolean' && kept.name === prop.name))
+      set(`data-${prop.name}`, false)
+  for (const prop of markedBooleans(main, props)) set(`data-${prop.name}`, booleanOn(prop.default))
+  return changed
+}
+
+/** The main's own marks are not part of its template: an instance root writes them from its props. */
+function withoutMainBooleans(root: Element, props: ComponentProp[]) {
+  for (const prop of markedBooleans(root, props)) setAttr(root, `data-${prop.name}`, null)
+}
+
 function markRoot(root: Element, def: Revision, instanceId: string, overrides: InstanceOverrides, bound: Set<string>) {
   setAttr(root, INSTANCE_ATTR, def.id)
   setAttr(root, REV_ATTR, String(def.rev))
   setAttr(root, ELEMENT_ID_ATTR, instanceId)
   for (const prop of def.props) {
     const value = propValue(def, overrides, prop.name)
-    if (marksBoolean(prop, bound))
-      setAttr(root, `data-${prop.name}`, value !== undefined && value !== 'false' ? '' : null)
+    if (marksBoolean(prop, bound)) setAttr(root, `data-${prop.name}`, booleanOn(value) ? '' : null)
     else if (prop.type === 'enum' && value !== undefined) setAttr(root, `data-${prop.name}`, value)
   }
   const props = overrides.props ?? {}
@@ -810,6 +841,8 @@ function pruneOverrides(overrides: InstanceOverrides, parts: Map<string, PartInf
   for (const [name, value] of Object.entries(overrides.props ?? {})) {
     const prop = def.props.find((candidate) => candidate.name === name)
     if (prop?.default !== undefined && prop.default === value) continue
+    /* a boolean is on unless 'false', so '' and 'true' are one value, and no default is off */
+    if (prop?.type === 'boolean' && booleanOn(value) === booleanOn(prop.default)) continue
     if (prop && (prop.type === 'text' || prop.type === 'image' || prop.type === 'link')) {
       if (templateValueOf(name, parts) === value) continue
     }
@@ -1558,10 +1591,11 @@ export function stampParts(root: Element): boolean {
 
 /** The main's markup as a template: no main marker, no element ids (each instance
  *  gets its own), nested instances compact. */
-export function templateFromMain(main: Element, ctx: EngineContext): string {
+export function templateFromMain(main: Element, ctx: EngineContext, props: ComponentProp[] = []): string {
   const clone = elementKids(rootFragment(serializeOuter(main)))[0]
   if (!clone) return ''
   setAttr(clone, COMPONENT_ATTR, null)
+  withoutMainBooleans(clone, props)
   const walk = (node: Element) => {
     setAttr(node, ELEMENT_ID_ATTR, null)
     compactKeepingParts(node, ctx)
@@ -1638,7 +1672,7 @@ const declaredOf = (declared: ComponentProp[], name: string) => declared.find((p
 
 /** The props a template actually uses, with what was declared about them.
  *  An enum or boolean prop the template does not bind is kept from the declaration: its effect is
- *  `data-<name>` on the root. */
+ *  `data-<name>` on the root. A boolean a condition made up (`derived`) is kept only while one still names it. */
 export function derivePropsAndSlots(
   template: string,
   declared: ComponentProp[],
@@ -1649,7 +1683,8 @@ export function derivePropsAndSlots(
   /* after the template is read, so a condition still gives a default-less boolean its 'true' */
   const withUnboundBooleans = () => {
     for (const prop of declared)
-      if (prop.type === 'boolean' && isPropName(prop.name) && !props.has(prop.name)) props.set(prop.name, prop)
+      if (prop.type === 'boolean' && isPropName(prop.name) && !prop.derived && !props.has(prop.name))
+        props.set(prop.name, prop)
     return [...props.values()]
   }
   const slots: ComponentSlot[] = []
@@ -1682,6 +1717,8 @@ export function derivePropsAndSlots(
         default: known?.default ?? 'true',
         ...(known?.options ? { options: known.options } : {}),
         ...descriptionOf(known),
+        /* a condition made this boolean up; it goes when the condition does */
+        ...(!known || known.derived ? { derived: true as const } : {}),
       })
     }
     const slot = attrOf(el, SLOT_ATTR)
