@@ -239,7 +239,13 @@ describe('a boolean whose data-<name> the root binds itself', () => {
   it('reads an edit to the bound attribute as its value, not as presence', () => {
     const { page } = setupBound()
     actions.updateFrame(page.id, { html: doc(`<doop-use component="Card" x="true"></doop-use>`) }, actor)
-    actions.updateFrame(page.id, { html: framed(page.id).replace('data-x="true"', 'data-x="false"') }, actor)
+    /* the page's head also holds the component's `[data-x="true"]` rule, so edit the root tag only */
+    const [placed] = instances(framed(page.id), 'section')
+    actions.updateFrame(
+      page.id,
+      { html: framed(page.id).replace(placed!, placed!.replace('data-x="true"', 'data-x="false"')) },
+      actor,
+    )
     const [root] = instances(framed(page.id), 'section')
     /* "false" is the default, so no override is left */
     expect(markerProps(root!).x).toBeUndefined()
