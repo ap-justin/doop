@@ -193,11 +193,53 @@ describe('a boolean a condition made up', () => {
     expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['icon'])
     expect(wears(mainRoot(framed(frame.id), 'span'), 'icon')).toBe(true)
   })
+})
 
-  it('keeps an enum prop the template does not use', () => {
-    const { canvas, def, mainFrame } = setup([{ name: 'tone', type: 'enum', options: ['a', 'b'], default: 'a' }])
-    actions.updateFrame(mainFrame.id, { html: framed(mainFrame.id) }, actor)
-    expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['tone'])
+describe('props handed back to update_component as get_component returned them', () => {
+  const BADGE = (inner: string, id: string) => `<span class="badge" ${COMPONENT_ATTR}="${id}">${inner}</span>`
+  const WITH_ICON = '<i data-doop-if="icon">★</i>New'
+
+  /** A Badge whose only prop, `icon`, a condition made up, placed once on a page. */
+  function badge() {
+    const canvas = store.createCanvas('round trip')
+    const def = blankComponent({ name: 'Badge', by: 'Tester' })
+    store.saveComponent(canvas.id, def)
+    const frame = actions.createFrame(canvas.id, { name: 'Main', html: '' }, actor)!
+    actions.updateFrame(frame.id, { html: doc(BADGE(WITH_ICON, def.id)) }, actor)
+    const page = actions.createFrame(canvas.id, { name: 'Page', html: '' }, actor)!
+    actions.updateFrame(page.id, { html: doc('<doop-use component="Badge"></doop-use>') }, actor)
+    return { canvas, def, frame, page }
+  }
+
+  it('files no revision and leaves the instances alone', async () => {
+    const { canvas, def, page } = badge()
+    await propagation.whenIdle()
+    const before = current(canvas.id, def.id)
+    const placed = framed(page.id)
+    updateComponent(canvas.id, def.id, { props: structuredClone(before.props) }, actor)
+    await propagation.whenIdle()
+    const after = current(canvas.id, def.id)
+    expect(after.rev).toBe(before.rev)
+    expect(after.props).toEqual(before.props)
+    expect(framed(page.id)).toBe(placed)
+  })
+
+  it('still drops the boolean once its condition goes', () => {
+    const { canvas, def, frame } = badge()
+    updateComponent(canvas.id, def.id, { props: structuredClone(current(canvas.id, def.id).props) }, actor)
+    expect(current(canvas.id, def.id).props.map((prop) => prop.derived)).toEqual([true])
+
+    actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([])
+  })
+
+  it('declares the boolean when its default is changed', () => {
+    const { canvas, def, frame } = badge()
+    updateComponent(canvas.id, def.id, { props: [{ name: 'icon', type: 'boolean', default: 'false' }] }, actor)
+    expect(current(canvas.id, def.id).props).toEqual([{ name: 'icon', type: 'boolean', default: 'false' }])
+
+    actions.updateFrame(frame.id, { html: doc(BADGE('New', def.id)) }, actor)
+    expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['icon'])
   })
 })
 
@@ -373,6 +415,12 @@ describe('an enum prop beside the booleans', () => {
     { name: 'tone', type: 'enum', options: ['solid', 'ghost'], default: 'solid' },
     { name: 'wide', type: 'boolean', default: 'true' },
   ]
+
+  it('keeps an enum prop the template does not use', () => {
+    const { canvas, def, mainFrame } = setup([{ name: 'tone', type: 'enum', options: ['a', 'b'], default: 'a' }])
+    actions.updateFrame(mainFrame.id, { html: framed(mainFrame.id) }, actor)
+    expect(current(canvas.id, def.id).props.map((prop) => prop.name)).toEqual(['tone'])
+  })
 
   it('still shows its option on the instance root, and not on the main', () => {
     const { mainFrame, page } = setup(TONE)

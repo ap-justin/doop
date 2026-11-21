@@ -255,6 +255,16 @@ export function validProps(props: unknown): ComponentProp[] {
   })
 }
 
+/** Props handed back as read: a boolean a condition made up (`derived`) that comes back with the
+ *  same type and default is still that boolean, not one declared, so it goes with its condition and
+ *  an unchanged list is no change. Anything else about it declares it. */
+function keepDerived(next: ComponentProp[], stored: ComponentProp[]): ComponentProp[] {
+  return next.map((prop) => {
+    const was = stored.find((candidate) => candidate.name === prop.name)
+    return was?.derived && was.type === prop.type && was.default === prop.default ? { ...prop, derived: true } : prop
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /* Reading                                                             */
 /* ------------------------------------------------------------------ */
@@ -787,7 +797,7 @@ export const updateComponent = atomic(function updateComponent(
   }
   if (input.dryRun) return { component: def, dry_run: true, impact }
 
-  const nextProps = input.props !== undefined ? validProps(input.props) : undefined
+  const nextProps = input.props !== undefined ? keepDerived(validProps(input.props), def.props) : undefined
   const propsChanged = nextProps !== undefined && JSON.stringify(nextProps) !== JSON.stringify(def.props)
   /* this function is one unit (server/journal.ts): a refusal anywhere in it, the work budget
      included, undoes the name, props and revision saved below along with the main's write */
