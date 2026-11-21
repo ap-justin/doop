@@ -50,3 +50,5 @@ tests/             - vitest test suite
 TypeScript. Always use the `clean-code:typescript` skill when writing or reviewing TypeScript
 code. Formatter and lint rules are captured in `.context/CODESTYLE.md`, which `.context/INDEX.md`
 links.
+
+**Browser Support:** Baseline Widely available
