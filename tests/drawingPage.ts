@@ -51,11 +51,23 @@ export let patchRequests = 0
 export let commentMoves: Record<string, unknown>[] = []
 /* while set, the frame save responses wait for it, as a slow network would */
 let saveGate: Promise<void> | null = null
+/* how many frame saves have reached the held gate */
+let heldCount = 0
 const errors: string[] = []
+
+/** The number of frame saves waiting on `holdSaves`. */
+export const savesHeld = () => heldCount
+
+async function passSaveGate() {
+  if (!saveGate) return
+  heldCount++
+  await saveGate
+}
 
 /** Holds the answers to frame saves until the returned function is called. */
 export function holdSaves(): () => void {
   let release = () => {}
+  heldCount = 0
   saveGate = new Promise<void>((resolve) => (release = resolve))
   return () => {
     release()
@@ -91,14 +103,14 @@ async function openPage(pages: TestPages): Promise<Page> {
         updatedAt: 0,
       }
       saved.push(frame)
-      await saveGate
+      await passSaveGate()
       await req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(frame) })
     } else if (path.startsWith('/api/frames/') && req.method() === 'PATCH') {
       patchRequests++
       const id = path.split('/').at(-1)
       const frame = { ...saved.find((f) => f.id === id), ...JSON.parse(req.postData()!) }
       saved = saved.map((f) => (f.id === id ? frame : f))
-      await saveGate
+      await passSaveGate()
       await req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(frame) })
     } else if (path.endsWith('/comments') && req.method() === 'POST') {
       await req.respond({ status: 200, contentType: 'application/json', body: req.postData()! })
@@ -122,6 +134,7 @@ export function drawingPage(): void {
     page = await openPage(pages)
     saved = []
     saveGate = null
+    heldCount = 0
     nextId = 0
     patchRequests = 0
     commentMoves = []

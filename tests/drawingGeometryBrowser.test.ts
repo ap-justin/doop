@@ -6,6 +6,7 @@ import {
   drawingPage,
   holdSaves,
   page,
+  savesHeld,
   patchRequests,
   saved,
   seedFrames,
@@ -622,14 +623,21 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     }
     const textFrames = () => saved.filter((f) => f.id !== 'plain')
     /* the text save waits until the thread is open, then lands: what a slow network does */
-    async function pressWhileSaving(press: () => Promise<void>) {
+    async function pressWhileSaving(press: () => Promise<void>, text: string) {
       const release = holdSaves()
       await press()
-      await new Promise((r) => setTimeout(r, 300))
+      await expect.poll(savesHeld).toBe(1)
       release()
-      /* the response is applied and the page has had time to act on it */
+      await landed(text)
+    }
+    /* the store holds the text, then the page has rendered what that change set off */
+    async function landed(text: string) {
+      await page.waitForFunction(
+        (words) => window.drawingHarness.state().frames.some((f) => f.html.includes(words)),
+        {},
+        text,
+      )
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-      await new Promise((r) => setTimeout(r, 300))
     }
 
     it('leaves the pressed thread, the selection and the tool alone when the text goes on bare canvas', async () => {
@@ -641,7 +649,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await pressWhileSaving(async () => {
         await (await settledPin()).click()
         await page.waitForSelector(threadReply)
-      })
+      }, 'on canvas')
       expect(textFrames()).toHaveLength(1)
       expect(textFrames()[0]!.html).toContain('on canvas')
       expect(await page.$(threadReply)).not.toBeNull()
@@ -655,7 +663,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await pressWhileSaving(async () => {
         await (await settledPin()).click()
         await page.waitForSelector(threadReply)
-      })
+      }, 'inside')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/inside/g)).toHaveLength(1)
       expect(textFrames()).toHaveLength(0)
       expect(await page.$(threadReply)).not.toBeNull()
@@ -670,7 +678,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await startText([700, 560], 'new text')
       await pressWhileSaving(async () => {
         await page.click(threadReply)
-      })
+      }, 'new text')
       expect(await page.$eval(threadReply, (el) => el.value)).toBe('half a reply')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
@@ -695,12 +703,11 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       expect(await page.$(composer)).not.toBeNull()
       const release = holdSaves()
       await page.click(composer)
-      await new Promise((r) => setTimeout(r, 300))
+      await expect.poll(savesHeld).toBe(1)
       /* (b) pressed, the save still held */
       expect(await page.$(composer)).not.toBeNull()
       release()
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-      await new Promise((r) => setTimeout(r, 300))
+      await landed('new text')
       /* (c) the save landed */
       expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
@@ -708,8 +715,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
 
     it('keeps the words in the pressed composer and the new text', async () => {
       await seedPlain()
-      /* the Comment tool's own composer closes when the tool changes, so the composer that can sit beside
-         a text draft is the one an element's toolbar opens */
+      /* the composer an element's toolbar opens, as opposed to the Comment tool's frame composer above */
       const handle = await page.waitForSelector('iframe[title="Plain"]')
       await (await handle!.contentFrame())!.waitForSelector('#box')
       await page.evaluate(() => window.drawingHarness.selectFrames(['plain']))
@@ -722,7 +728,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       expect(await page.$(composer)).not.toBeNull()
       await pressWhileSaving(async () => {
         await page.click(composer)
-      })
+      }, 'new text')
       expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
@@ -740,7 +746,8 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       const box = (await button.boundingBox())!
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
       await page.mouse.down()
-      await new Promise((r) => setTimeout(r, 100))
+      /* a layout change the press sets off has rendered by now */
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
       await page.mouse.up()
       await page.waitForSelector('textarea[placeholder="Leave a comment on this element…"]')
       expect(await page.$(typing)).toBeNull()
@@ -756,7 +763,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await pressWhileSaving(async () => {
         await (await settledPin()).click()
         await page.waitForSelector(threadReply)
-      })
+      }, 'keep me')
       expect(textFrames()).toHaveLength(1)
       expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BODY')
       expect((await selection()).selectedIds).toEqual([])
