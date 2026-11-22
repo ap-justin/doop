@@ -431,8 +431,14 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
         },
       ]),
     )
+    /* the pin's entrance animation owns its transform until it ends, so a press aimed at it before then can miss */
+    const clickSettledPin = async () => {
+      const pin = (await page.waitForSelector('[title="Alice: Keep this"]'))!
+      await pin.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+      await pin.click()
+    }
     await page.click('[aria-label="Rectangle"]')
-    await page.click('[title="Alice: Keep this"]')
+    await clickSettledPin()
     const reply = 'textarea[placeholder="Reply… (@doop to ask the agent)"]'
     await page.waitForSelector(reply)
     await page.click(reply)
@@ -443,7 +449,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     await page.click('[aria-label="Vector path"]')
     await page.mouse.click(800, 200)
     await page.mouse.click(900, 220)
-    await page.click('[title="Alice: Keep this"]')
+    await clickSettledPin()
     await page.waitForSelector(reply)
     await page.click(reply)
     await page.keyboard.press('Enter')
