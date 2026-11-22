@@ -449,8 +449,11 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     await page.click('[aria-label="Vector path"]')
     await page.mouse.click(800, 200)
     await page.mouse.click(900, 220)
+    await page.waitForSelector('[data-path-anchor="1"]')
     await clickSettledPin()
     await page.waitForSelector(reply)
+    /* checked before the reply click, which would cancel the draft itself */
+    expect(await page.$('[data-path-preview]')).toBeNull()
     await page.click(reply)
     await page.keyboard.press('Enter')
     expect(await page.$eval('[data-drawing-hint]', (el) => el.textContent)).not.toContain('Finish path')
