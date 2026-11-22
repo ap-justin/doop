@@ -538,7 +538,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     await page.waitForSelector('textarea[data-drawing-input]')
     await pressPin('Alice: On canvas')
     expect(await page.$('textarea[data-drawing-input]')).toBeNull()
-    /* closes the empty press's thread, which covers the spot the next text is clicked */
+    /* closes the thread that press opened, which covers the spot where the next text is placed */
     await page.keyboard.press('Escape')
     /* a press that becomes a drag keeps the text and still moves the pin. Saves are serialized,
        so this one also waits out any late save from the presses before it */
