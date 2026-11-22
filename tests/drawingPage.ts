@@ -55,7 +55,7 @@ let saveGate: Promise<void> | null = null
 let heldCount = 0
 const errors: string[] = []
 
-/** The number of frame saves waiting on `holdSaves`. */
+/** The number of frame saves `holdSaves` has held since its last call, released ones included. */
 export const savesHeld = () => heldCount
 
 async function passSaveGate() {

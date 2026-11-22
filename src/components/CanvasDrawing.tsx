@@ -132,9 +132,9 @@ export function useCanvasDrawing(stage: RefObject<HTMLDivElement>) {
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if ((e.target as Element).closest('[data-comment-ui]')) {
-      // A press on comment UI saves a text draft but, unlike Esc or a blur, leaves the tool and the
-      // selection as they were, so the pressed control neither moves nor loses its open thread or
-      // composer (an empty draft vanishes); a shape or path mid-gesture is dropped.
+      // A press on comment UI saves a text draft (an empty one vanishes) but, unlike Esc or a blur,
+      // leaves the tool and the selection as they were, so the pressed control neither moves nor
+      // loses its open thread or composer; a shape or path mid-gesture is dropped.
       if (draftRef.current?.typing) finish(false, { keepView: true })
       else cancel()
       return

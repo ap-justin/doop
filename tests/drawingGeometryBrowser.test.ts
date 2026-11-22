@@ -622,7 +622,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.keyboard.type(words)
     }
     const textFrames = () => saved.filter((f) => f.id !== 'plain')
-    /* the text save waits until the thread is open, then lands: what a slow network does */
+    /* the text save waits until the press is done, then lands: what a slow network does */
     async function pressWhileSaving(press: () => Promise<void>, text: string) {
       const release = holdSaves()
       await press()
@@ -702,16 +702,15 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.keyboard.type('half a comment')
       await startText([700, 600], 'new text')
       const before = await selection()
-      /* (a) beside the draft, before the press */
+      /* beside the draft, before the press */
       expect(await page.$(composer)).not.toBeNull()
       const release = holdSaves()
       await page.click(composer)
       await expect.poll(savesHeld, { timeout: 10_000 }).toBe(1)
-      /* (b) pressed, the save still held */
+      /* pressed, the save still held */
       expect(await page.$(composer)).not.toBeNull()
       release()
       await landed('new text')
-      /* (c) the save landed */
       expect(await selection()).toEqual(before)
       expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
