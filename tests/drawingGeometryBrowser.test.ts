@@ -675,6 +675,37 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
 
+    it("keeps the words in the Comment tool's frame composer and the new text", async () => {
+      await seedPlain()
+      const handle = await page.waitForSelector('iframe[title="Plain"]')
+      await (await handle!.contentFrame())!.waitForSelector('#box')
+      /* waiting inside the frame can leave the keyboard there; the tool key goes to the page */
+      await page.evaluate(() => {
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        window.focus()
+      })
+      await page.keyboard.press('c')
+      /* bare frame background, below the two layers */
+      await page.mouse.click(700, 450)
+      const composer = 'textarea[placeholder="Leave a comment on this frame…"]'
+      await page.waitForSelector(composer)
+      await page.keyboard.type('half a comment')
+      await startText([700, 600], 'new text')
+      /* (a) beside the draft, before the press */
+      expect(await page.$(composer)).not.toBeNull()
+      const release = holdSaves()
+      await page.click(composer)
+      await new Promise((r) => setTimeout(r, 300))
+      /* (b) pressed, the save still held */
+      expect(await page.$(composer)).not.toBeNull()
+      release()
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      await new Promise((r) => setTimeout(r, 300))
+      /* (c) the save landed */
+      expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
+      expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
+    })
+
     it('keeps the words in the pressed composer and the new text', async () => {
       await seedPlain()
       /* the Comment tool's own composer closes when the tool changes, so the composer that can sit beside
