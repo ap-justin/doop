@@ -482,7 +482,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
           id: 'canvas',
           canvasId: 'c',
           pageId: 'first',
-          x: 600,
+          x: 500,
           y: 160,
           from: 'Alice',
           text: 'On canvas',
@@ -503,12 +503,17 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       ]),
     )
     const reply = 'textarea[placeholder="Reply… (@doop to ask the agent)"]'
-    const pressPin = async (title: string) => {
+    /* a thread renders inside its own pin, so this is the pressed pin's reply field */
+    const threadReply = (title: string) => `[title="${title}"] ${reply}`
+    const settledPin = async (title: string) => {
       const pin = (await page.waitForSelector(`[title="${title}"]`))!
       /* the pin's entrance animation owns its transform until it ends */
       await pin.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
-      await pin.click()
-      await page.waitForSelector(reply)
+      return pin
+    }
+    const pressPin = async (title: string) => {
+      await (await settledPin(title)).click()
+      await page.waitForSelector(threadReply(title))
     }
     const savedTexts = () => saved.filter((f) => f.id !== 'plain').map((f) => f.html)
     let typed = 0
@@ -520,8 +525,11 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.keyboard.type(`typed ${typed}`)
       await pressPin(title)
       expect(await page.$('textarea[data-drawing-input]')).toBeNull()
-      await expect.poll(() => savedTexts().length, { timeout: 10_000 }).toBe(typed)
+      /* the seeded frame plus every text saved so far */
+      await waitForFrames(1 + typed)
+      expect(savedTexts()).toHaveLength(typed)
       expect(savedTexts().at(-1)).toContain(`typed ${typed}`)
+      expect(await page.$(threadReply(title))).not.toBeNull()
       await page.keyboard.press('Escape')
     }
     /* an empty draft still vanishes */
@@ -530,7 +538,28 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     await page.waitForSelector('textarea[data-drawing-input]')
     await pressPin('Alice: On canvas')
     expect(await page.$('textarea[data-drawing-input]')).toBeNull()
-    expect(savedTexts()).toHaveLength(typed)
+    /* closes the empty press's thread, which covers the spot the next text is clicked */
+    await page.keyboard.press('Escape')
+    /* a press that becomes a drag keeps the text and still moves the pin. Saves are serialized,
+       so this one also waits out any late save from the presses before it */
+    typed += 1
+    await page.keyboard.press('t')
+    await page.mouse.click(1000, 500)
+    await page.waitForSelector('textarea[data-drawing-input]')
+    await page.keyboard.type(`typed ${typed}`)
+    const pinBox = (await (await settledPin('Alice: On canvas')).boundingBox())!
+    const from = { x: pinBox.x + pinBox.width / 2, y: pinBox.y + pinBox.height / 2 }
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    /* straight up onto empty canvas, clear of the frame and the saved texts */
+    await page.mouse.move(from.x, from.y - 100, { steps: 6 })
+    await page.waitForSelector('[data-comment-drag]')
+    await page.mouse.up()
+    await page.waitForFunction(() => !document.querySelector('[data-comment-drag]'))
+    expect(commentMoves).toHaveLength(1)
+    expect(commentMoves[0]).toMatchObject({ pageId: 'first' })
+    await waitForFrames(1 + typed)
+    expect(savedTexts().map((html) => /typed \d/.exec(html)?.[0])).toEqual(['typed 1', 'typed 2', 'typed 3'])
   })
 
   it('comments on a frame as a whole where the Comment tool finds no element', async () => {
