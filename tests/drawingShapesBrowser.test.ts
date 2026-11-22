@@ -97,6 +97,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     expect(await page.$('textarea[data-drawing-input]')).toBeNull()
     expect((await waitForFrames(2))[1]!.html).toContain('keep me')
     expect(await page.evaluate(() => window.drawingHarness.state().tool)).toBe('select')
+    expect(await page.evaluate(() => window.drawingHarness.state().selectedIds)).toEqual(['drawn-2'])
     await page.keyboard.press('t')
     await page.mouse.click(800, 600)
     await page.keyboard.press('Escape')

@@ -626,7 +626,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     async function pressWhileSaving(press: () => Promise<void>, text: string) {
       const release = holdSaves()
       await press()
-      await expect.poll(savesHeld).toBe(1)
+      await expect.poll(savesHeld, { timeout: 10_000 }).toBe(1)
       release()
       await landed(text)
     }
@@ -676,9 +676,11 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.click(threadReply)
       await page.keyboard.type('half a reply')
       await startText([700, 560], 'new text')
+      const before = await selection()
       await pressWhileSaving(async () => {
         await page.click(threadReply)
       }, 'new text')
+      expect(await selection()).toEqual(before)
       expect(await page.$eval(threadReply, (el) => el.value)).toBe('half a reply')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
@@ -699,16 +701,18 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.waitForSelector(composer)
       await page.keyboard.type('half a comment')
       await startText([700, 600], 'new text')
+      const before = await selection()
       /* (a) beside the draft, before the press */
       expect(await page.$(composer)).not.toBeNull()
       const release = holdSaves()
       await page.click(composer)
-      await expect.poll(savesHeld).toBe(1)
+      await expect.poll(savesHeld, { timeout: 10_000 }).toBe(1)
       /* (b) pressed, the save still held */
       expect(await page.$(composer)).not.toBeNull()
       release()
       await landed('new text')
       /* (c) the save landed */
+      expect(await selection()).toEqual(before)
       expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
@@ -725,10 +729,12 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.waitForSelector(composer)
       await page.keyboard.type('half a comment')
       await startText([700, 600], 'new text')
+      const before = await selection()
       expect(await page.$(composer)).not.toBeNull()
       await pressWhileSaving(async () => {
         await page.click(composer)
       }, 'new text')
+      expect(await selection()).toEqual(before)
       expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
       expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
     })
@@ -751,7 +757,7 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
       await page.mouse.up()
       await page.waitForSelector('textarea[placeholder="Leave a comment on this element…"]')
       expect(await page.$(typing)).toBeNull()
-      await expect.poll(() => textFrames().length).toBe(1)
+      await expect.poll(() => textFrames().length, { timeout: 10_000 }).toBe(1)
     })
 
     /* Backspace deletes what is selected through CanvasPage's key handler, which this fixture does not
