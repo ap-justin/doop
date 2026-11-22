@@ -49,7 +49,19 @@ let nextId = 0
 export let patchRequests = 0
 /* the anchors sent by PATCH /api/comments/:id/anchor, in order */
 export let commentMoves: Record<string, unknown>[] = []
+/* while set, the frame save responses wait for it, as a slow network would */
+let saveGate: Promise<void> | null = null
 const errors: string[] = []
+
+/** Holds the answers to frame saves until the returned function is called. */
+export function holdSaves(): () => void {
+  let release = () => {}
+  saveGate = new Promise<void>((resolve) => (release = resolve))
+  return () => {
+    release()
+    saveGate = null
+  }
+}
 
 /* every test gets its own page (see pagePerTest) */
 async function openPage(pages: TestPages): Promise<Page> {
@@ -79,12 +91,14 @@ async function openPage(pages: TestPages): Promise<Page> {
         updatedAt: 0,
       }
       saved.push(frame)
+      await saveGate
       await req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(frame) })
     } else if (path.startsWith('/api/frames/') && req.method() === 'PATCH') {
       patchRequests++
       const id = path.split('/').at(-1)
       const frame = { ...saved.find((f) => f.id === id), ...JSON.parse(req.postData()!) }
       saved = saved.map((f) => (f.id === id ? frame : f))
+      await saveGate
       await req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(frame) })
     } else if (path.endsWith('/comments') && req.method() === 'POST') {
       await req.respond({ status: 200, contentType: 'application/json', body: req.postData()! })
@@ -107,6 +121,7 @@ export function drawingPage(): void {
   beforeEach(async () => {
     page = await openPage(pages)
     saved = []
+    saveGate = null
     nextId = 0
     patchRequests = 0
     commentMoves = []

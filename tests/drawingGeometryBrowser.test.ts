@@ -4,6 +4,7 @@ import {
   commentMoves,
   drag,
   drawingPage,
+  holdSaves,
   page,
   patchRequests,
   saved,
@@ -560,6 +561,175 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     expect(commentMoves[0]).toMatchObject({ pageId: 'first' })
     await waitForFrames(1 + typed)
     expect(savedTexts().map((html) => /typed \d/.exec(html)?.[0])).toEqual(['typed 1', 'typed 2', 'typed 3'])
+  })
+
+  describe('a comment press that saves typed text', () => {
+    const FRAME_PIN = 'Alice: On frame'
+    const reply = 'textarea[placeholder="Reply… (@doop to ask the agent)"]'
+    const threadReply = `[title="${FRAME_PIN}"] ${reply}`
+    const typing = 'textarea[data-drawing-input]'
+
+    async function seedPlain() {
+      await seedFrames([
+        {
+          id: 'plain',
+          updatedBy: 'User',
+          canvasId: 'c',
+          pageId: 'first',
+          name: 'Plain',
+          x: 30,
+          y: 30,
+          width: 400,
+          height: 300,
+          createdAt: 0,
+          updatedAt: 0,
+          html: '<p id="a" style="margin:0">Alpha</p><div id="box" style="width:100px;height:60px;margin:40px 0 0 100px;background:#c33"></div>',
+        },
+      ])
+      await page.evaluate(() =>
+        window.drawingHarness.comments([
+          {
+            id: 'frame',
+            canvasId: 'c',
+            frameId: 'plain',
+            snippet: '',
+            x: 300,
+            y: 100,
+            from: 'Alice',
+            text: 'On frame',
+            at: 0,
+          },
+        ]),
+      )
+    }
+    async function settledPin() {
+      const pin = (await page.waitForSelector(`[title="${FRAME_PIN}"]`))!
+      /* the pin's entrance animation owns its transform until it ends */
+      await pin.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+      return pin
+    }
+    const state = () => page.evaluate(() => window.drawingHarness.state())
+    const selection = async () => {
+      const s = await state()
+      return { tool: s.tool, selectedIds: s.selectedIds, selectedElement: s.selectedElement }
+    }
+    /* a text started at a screen point, typed into, and left open */
+    async function startText(at: [number, number], words: string) {
+      await page.click('[aria-label="Text"]')
+      await page.mouse.click(...at)
+      await page.waitForSelector(typing)
+      await page.keyboard.type(words)
+    }
+    const textFrames = () => saved.filter((f) => f.id !== 'plain')
+    /* the text save waits until the thread is open, then lands: what a slow network does */
+    async function pressWhileSaving(press: () => Promise<void>) {
+      const release = holdSaves()
+      await press()
+      await new Promise((r) => setTimeout(r, 300))
+      release()
+      /* the response is applied and the page has had time to act on it */
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      await new Promise((r) => setTimeout(r, 300))
+    }
+
+    it('leaves the pressed thread, the selection and the tool alone when the text goes on bare canvas', async () => {
+      await seedPlain()
+      await page.evaluate(() => window.drawingHarness.selectFrames(['plain']))
+      await startText([1000, 500], 'on canvas')
+      const before = await selection()
+      expect(before.selectedIds).toEqual(['plain'])
+      await pressWhileSaving(async () => {
+        await (await settledPin()).click()
+        await page.waitForSelector(threadReply)
+      })
+      expect(textFrames()).toHaveLength(1)
+      expect(textFrames()[0]!.html).toContain('on canvas')
+      expect(await page.$(threadReply)).not.toBeNull()
+      expect(await selection()).toEqual(before)
+    })
+
+    it('leaves the pressed thread, the selection and the tool alone when the text goes inside the frame', async () => {
+      await seedPlain()
+      await startText([600, 500], 'inside')
+      const before = await selection()
+      await pressWhileSaving(async () => {
+        await (await settledPin()).click()
+        await page.waitForSelector(threadReply)
+      })
+      expect(saved.find((f) => f.id === 'plain')!.html.match(/inside/g)).toHaveLength(1)
+      expect(textFrames()).toHaveLength(0)
+      expect(await page.$(threadReply)).not.toBeNull()
+      expect(await selection()).toEqual(before)
+    })
+
+    it('keeps the words in the pressed reply field and the new text', async () => {
+      await seedPlain()
+      await (await settledPin()).click()
+      await page.click(threadReply)
+      await page.keyboard.type('half a reply')
+      await startText([700, 560], 'new text')
+      await pressWhileSaving(async () => {
+        await page.click(threadReply)
+      })
+      expect(await page.$eval(threadReply, (el) => el.value)).toBe('half a reply')
+      expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
+    })
+
+    it('keeps the words in the pressed composer and the new text', async () => {
+      await seedPlain()
+      /* the Comment tool's own composer closes when the tool changes, so the composer that can sit beside
+         a text draft is the one an element's toolbar opens */
+      const handle = await page.waitForSelector('iframe[title="Plain"]')
+      await (await handle!.contentFrame())!.waitForSelector('#box')
+      await page.evaluate(() => window.drawingHarness.selectFrames(['plain']))
+      await page.evaluate(() => window.drawingHarness.pick({ frameId: 'plain', selector: '#box' }))
+      await (await page.waitForSelector('button::-p-text(Comment)'))!.click()
+      const composer = 'textarea[placeholder="Leave a comment on this element…"]'
+      await page.waitForSelector(composer)
+      await page.keyboard.type('half a comment')
+      await startText([700, 600], 'new text')
+      expect(await page.$(composer)).not.toBeNull()
+      await pressWhileSaving(async () => {
+        await page.click(composer)
+      })
+      expect(await page.$eval(composer, (el) => el.value)).toBe('half a comment')
+      expect(saved.find((f) => f.id === 'plain')!.html.match(/new text/g)).toHaveLength(1)
+    })
+
+    it("opens the composer on the first press of a picked element's Comment button", async () => {
+      await seedPlain()
+      const handle = await page.waitForSelector('iframe[title="Plain"]')
+      await (await handle!.contentFrame())!.waitForSelector('#box')
+      await page.evaluate(() => window.drawingHarness.selectFrames(['plain']))
+      await page.evaluate(() => window.drawingHarness.pick({ frameId: 'plain', selector: '#box' }))
+      await page.waitForSelector('button::-p-text(Comment)')
+      await startText([1000, 500], 'on canvas')
+      /* the toolbar is the control being pressed, so it must stay put between pointer down and up */
+      const button = (await page.waitForSelector('button::-p-text(Comment)'))!
+      const box = (await button.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await new Promise((r) => setTimeout(r, 100))
+      await page.mouse.up()
+      await page.waitForSelector('textarea[placeholder="Leave a comment on this element…"]')
+      expect(await page.$(typing)).toBeNull()
+      await expect.poll(() => textFrames().length).toBe(1)
+    })
+
+    /* Backspace deletes what is selected through CanvasPage's key handler, which this fixture does not
+       mount, so the key itself cannot be pressed here. What it deletes is the selection, and the
+       focus is on the body after the press: the new text must not be selected when the save lands. */
+    it('leaves the new text unselected, so Backspace after the save has nothing of it to delete', async () => {
+      await seedPlain()
+      await startText([1000, 500], 'keep me')
+      await pressWhileSaving(async () => {
+        await (await settledPin()).click()
+        await page.waitForSelector(threadReply)
+      })
+      expect(textFrames()).toHaveLength(1)
+      expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BODY')
+      expect((await selection()).selectedIds).toEqual([])
+    })
   })
 
   it('comments on a frame as a whole where the Comment tool finds no element', async () => {
