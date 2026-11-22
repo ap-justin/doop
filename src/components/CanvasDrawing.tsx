@@ -132,7 +132,10 @@ export function useCanvasDrawing(stage: RefObject<HTMLDivElement>) {
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if ((e.target as Element).closest('[data-comment-ui]')) {
-      cancel()
+      // A press on comment UI ends a text draft the way a blur does (what was typed stays,
+      // an empty draft vanishes); a shape or path mid-gesture is dropped.
+      if (draftRef.current?.typing) finish()
+      else cancel()
       return
     }
     if ((e.target as Element).closest('[data-drawing-input], [data-ruler]')) return

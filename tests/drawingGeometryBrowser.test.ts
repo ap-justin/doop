@@ -460,6 +460,79 @@ describe.skipIf(!findBrowserPath())('drawing on the canvas', { timeout: 30_000 }
     expect(saved).toHaveLength(0)
   })
 
+  it('keeps typed canvas text when a comment pin is pressed, and drops an empty draft', async () => {
+    const frame: Frame = {
+      id: 'plain',
+      updatedBy: 'User',
+      canvasId: 'c',
+      pageId: 'first',
+      name: 'Plain',
+      x: 30,
+      y: 30,
+      width: 400,
+      height: 300,
+      createdAt: 0,
+      updatedAt: 0,
+      html: '<p id="a" style="margin:0">Alpha</p>',
+    }
+    await seedFrames([frame])
+    await page.evaluate(() =>
+      window.drawingHarness.comments([
+        {
+          id: 'canvas',
+          canvasId: 'c',
+          pageId: 'first',
+          x: 600,
+          y: 160,
+          from: 'Alice',
+          text: 'On canvas',
+          snippet: '',
+          at: 0,
+        },
+        {
+          id: 'frame',
+          canvasId: 'c',
+          frameId: 'plain',
+          snippet: '',
+          x: 200,
+          y: 150,
+          from: 'Alice',
+          text: 'On frame',
+          at: 0,
+        },
+      ]),
+    )
+    const reply = 'textarea[placeholder="Reply… (@doop to ask the agent)"]'
+    const pressPin = async (title: string) => {
+      const pin = (await page.waitForSelector(`[title="${title}"]`))!
+      /* the pin's entrance animation owns its transform until it ends */
+      await pin.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+      await pin.click()
+      await page.waitForSelector(reply)
+    }
+    const savedTexts = () => saved.filter((f) => f.id !== 'plain').map((f) => f.html)
+    let typed = 0
+    for (const title of ['Alice: On canvas', 'Alice: On frame']) {
+      typed += 1
+      await page.keyboard.press('t')
+      await page.mouse.click(1000, 500)
+      await page.waitForSelector('textarea[data-drawing-input]')
+      await page.keyboard.type(`typed ${typed}`)
+      await pressPin(title)
+      expect(await page.$('textarea[data-drawing-input]')).toBeNull()
+      await expect.poll(() => savedTexts().length, { timeout: 10_000 }).toBe(typed)
+      expect(savedTexts().at(-1)).toContain(`typed ${typed}`)
+      await page.keyboard.press('Escape')
+    }
+    /* an empty draft still vanishes */
+    await page.keyboard.press('t')
+    await page.mouse.click(1000, 500)
+    await page.waitForSelector('textarea[data-drawing-input]')
+    await pressPin('Alice: On canvas')
+    expect(await page.$('textarea[data-drawing-input]')).toBeNull()
+    expect(savedTexts()).toHaveLength(typed)
+  })
+
   it('comments on a frame as a whole where the Comment tool finds no element', async () => {
     await seedFrames([
       {
