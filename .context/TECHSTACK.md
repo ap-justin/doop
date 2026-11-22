@@ -719,7 +719,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   completed gesture has its own undo entry. The Layers panel shows the drawing's `data-name`.
   Completed saves survive navigation; unfinished drafts are cancelled. Drawing shortcuts leave
   native fields and rich-text editors alone, except for the drawing textarea's keys: ⌘/Ctrl+Enter,
-  Esc and a blur all commit the typed text (an empty draft is dropped).
+  Esc and a blur all commit the typed text (an empty draft is dropped). A press on comment UI
+  commits it too, but leaves the tool and the selection as they were.
 - `ElementMove.tsx` moves a drawing as an unclipped copy under the pointer and highlights the
   destination frame; the original is hidden in its frame (`doop:drawing-moving`) once the copy
   paints, and the copy stays until the frames show the save, so the shape itself follows the drag.

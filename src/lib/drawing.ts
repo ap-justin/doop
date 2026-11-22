@@ -182,7 +182,11 @@ export function drawingDocument(drawing: Drawing, ink = DRAWING_INK): string {
 
 /** Read the current document when committing, so edits received during the
  *  gesture survive. Use the normal API for collaboration and tracked history. */
-export function saveDrawing(drawing: Drawing, target: DrawingTarget): Promise<void> {
+export function saveDrawing(
+  drawing: Drawing,
+  target: DrawingTarget,
+  { select = true }: { select?: boolean } = {},
+): Promise<void> {
   // Read now, not when the queue reaches this save: the ink matches the paper the person drew on.
   const ink = drawingInk(target, currentPaper(target.pageId).tone)
   const save = async () => {
@@ -219,7 +223,7 @@ export function saveDrawing(drawing: Drawing, target: DrawingTarget): Promise<vo
       // Each completed drawing is its own undo step, even when drawn quickly.
       recordUpdates([{ frameId: frame.id, before: { html: frame.html }, after: { html } }])
       useStore.getState().upsertFrame(saved)
-      if (useStore.getState().activePageId === target.pageId) {
+      if (select && useStore.getState().activePageId === target.pageId) {
         useStore.getState().select(frame.id)
         useStore.getState().pickElement({ frameId: frame.id, selector: `#${el.id}` })
       }
@@ -236,7 +240,7 @@ export function saveDrawing(drawing: Drawing, target: DrawingTarget): Promise<vo
       if (useStore.getState().canvas?.id !== target.canvasId) return
       recordCreate(frame)
       useStore.getState().upsertFrame(frame)
-      if (useStore.getState().activePageId === target.pageId) useStore.getState().select(frame.id)
+      if (select && useStore.getState().activePageId === target.pageId) useStore.getState().select(frame.id)
     }
   }
   return queueDrawingSave(save, 'Couldn’t save the drawing. Please try again.')

@@ -48,7 +48,7 @@ export function useCanvasDrawing(stage: RefObject<HTMLDivElement>) {
     setHover(null)
   }, [setDraft])
   const finish = useCallback(
-    (closed = false) => {
+    (closed = false, { keepView = false }: { keepView?: boolean } = {}) => {
       const current = draftRef.current
       if (!current) return
       let drawing = current.drawing
@@ -57,9 +57,9 @@ export function useCanvasDrawing(stage: RefObject<HTMLDivElement>) {
         drawing = pathDrawing(drawing.points, closed)
       }
       cancel()
-      useStore.getState().setTool('select')
+      if (!keepView) useStore.getState().setTool('select')
       if (drawing.tool === 'text' && !drawing.text?.trim()) return
-      void saveDrawing(drawing, current.target)
+      void saveDrawing(drawing, current.target, { select: !keepView })
     },
     [cancel],
   )
@@ -132,7 +132,11 @@ export function useCanvasDrawing(stage: RefObject<HTMLDivElement>) {
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if ((e.target as Element).closest('[data-comment-ui]')) {
-      cancel()
+      // A press on comment UI saves a text draft (an empty one vanishes) but, unlike Esc or a blur,
+      // leaves the tool and the selection as they were, so the pressed control neither moves nor
+      // loses its open thread or composer; a shape or path mid-gesture is dropped.
+      if (draftRef.current?.typing) finish(false, { keepView: true })
+      else cancel()
       return
     }
     if ((e.target as Element).closest('[data-drawing-input], [data-ruler]')) return
