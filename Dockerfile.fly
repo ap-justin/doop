@@ -24,7 +24,7 @@ RUN bun run build
 RUN bun scripts/bundle-server.mjs --without=@electric-sql/pglite
 
 # ---- runtime ----
-FROM node:22-slim
+FROM node:26.13.1-slim
 WORKDIR /app
 
 # Chromium for get_frame_screenshot (puppeteer-core drives the system browser). The
