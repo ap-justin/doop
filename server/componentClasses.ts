@@ -1,5 +1,6 @@
 import { serializeOuter, type DefaultTreeAdapterTypes as Tree } from 'parse5'
-import { attrOf, insertIntoHead, isElement, parseTemplateRoot, setAttr } from './componentEngine.ts'
+import { attrOf, isElement, parseTemplateRoot, setAttr } from './componentEngine.ts'
+import { insertIntoHead } from '../shared/frameCompose.ts'
 import { MANAGED_STYLE_ATTRS, parseCss, scopeSelector, splitTopLevel, type CssNode } from './componentCss.ts'
 import { COMPONENT_ATTR, INSTANCE_ATTR, MAIN_CSS_ATTR, USE_TAG } from '../shared/components.ts'
 import { PROTO_ATTRS } from '../shared/prototype.ts'

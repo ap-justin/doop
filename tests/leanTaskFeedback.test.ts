@@ -55,13 +55,13 @@ describe('a reply to a task whose agent shares a resident role name', () => {
     stubEnv('DOOP_LEAN', '1')
     const fb = replyToCopywriterTask()
     expect(fb.targetAgent).toBeUndefined()
-    expect(actions.takeFeedbackFor(canvasId, 'Claude Code').map((f) => f.id)).toEqual([fb.id])
+    expect(actions.takeFeedbackFor(canvasId, { name: 'Claude Code' }).map((f) => f.id)).toEqual([fb.id])
   })
 
   it('goes to the resident role when lean is off', () => {
     stubEnv('DOOP_LEAN', '')
     const fb = replyToCopywriterTask()
     expect(fb.targetAgent).toBe('Copywriter')
-    expect(actions.takeFeedbackFor(canvasId, 'Claude Code')).toEqual([])
+    expect(actions.takeFeedbackFor(canvasId, { name: 'Claude Code' })).toEqual([])
   })
 })

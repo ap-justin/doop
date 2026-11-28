@@ -79,12 +79,11 @@ async function versionsOf(frameId: string): Promise<unknown> {
   return (await owner.get(`/api/frames/${frameId}/versions`)).json()
 }
 
-/** canvases whose frame HTML was read into memory: /healthz/store's `loaded` also counts a
- *  canvas with no frames, which has nothing to read, so those are taken off */
+/** canvases with frame HTML read into memory, as /healthz/store reports it: a canvas with no
+ *  frames has no page to read, so it is never counted */
 async function loadedCanvases(): Promise<number> {
   const { loaded } = (await (await fetch(`${server.base}/healthz/store`)).json()) as { loaded: number }
-  const listed = (await (await owner.get('/api/canvases')).json()) as { frameCount: number }[]
-  return loaded - listed.filter((canvas) => !canvas.frameCount).length
+  return loaded
 }
 
 /** the rules inside Doop's own font block */

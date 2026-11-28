@@ -31,9 +31,15 @@ vi.mock('../server/db/persist.ts', () => ({
   saveLibraryComponent: () => {},
   frameWritePending: () => false,
   retryFrameWrite: () => {},
-  loadFrameHtml: async (canvasId: string) => {
-    if (stored.failLoad.has(canvasId)) throw new Error('the read failed')
-    return stored.rows.get(canvasId) ?? []
+  loadFrameHtml: async (frameIds: readonly string[]) => {
+    const html = new Map<string, string>()
+    for (const [canvasId, rows] of stored.rows) {
+      const wanted = rows.filter((row) => frameIds.includes(row.id))
+      if (!wanted.length) continue
+      if (stored.failLoad.has(canvasId)) throw new Error('the read failed')
+      for (const row of wanted) html.set(row.id, row.html)
+    }
+    return html
   },
   canvasesWithFrameText: (ids: readonly string[], texts: readonly string[]) => holding.find(ids, texts),
 }))
@@ -51,7 +57,7 @@ const NEXT: CustomFont = {
   size: 1,
   createdAt: 2,
 }
-vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [NEXT] }))
+vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [NEXT], foreignFontAssetIds: () => new Set<string>() }))
 
 const actions = await import('../server/actions.ts')
 const { store } = await import('../server/store.ts')

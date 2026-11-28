@@ -8,6 +8,7 @@ import {
   INSTANCE_ATTR,
   MAIN_CSS_ATTR,
   SLOT_ATTR,
+  SOURCE_CSS_ATTR,
 } from '../shared/components.ts'
 import { TOKEN_BLOCK_ATTR } from '../shared/designTokens.ts'
 import { FONT_BLOCK_ATTR } from '../shared/fonts.ts'
@@ -51,25 +52,91 @@ export type CssNode =
   | { kind: 'group'; prelude: string; nodes: CssNode[] }
   | { kind: 'atomic'; name: string; text: string; prelude: string; body: string }
 
-/** The end of a block whose `{` sits at `open`, skipping strings. */
+const URL_FUNCTION = /(?:^|[^\w-])url$/i
+
+/** Past an unquoted `url(` whose `(` sits at `open`: its `)`, since a `/*` or a brace in the address
+ *  is part of it. Any other paren, a quoted url or one never closed is left at `open` for the
+ *  usual rules to read. */
+function pastUrl(css: string, open: number): number {
+  if (!URL_FUNCTION.test(css.slice(Math.max(0, open - 4), open))) return open
+  let i = open + 1
+  while (/\s/.test(css[i] ?? '')) i++
+  if (css[i] === '"' || css[i] === "'") return open
+  for (; i < css.length; i++) {
+    if (css[i] === '\\') i++
+    else if (css[i] === ')') return i
+  }
+  return open
+}
+
+/** The end of a block whose `{` sits at `open`, skipping strings, escapes and unquoted urls. An escaped
+ *  quote or brace (Tailwind's `\'` in `[class*='size-']`) is part of a name, not a string.
+ *  -1 when the block never closes. */
 function blockEnd(css: string, open: number): number {
   let depth = 0
   let quote = ''
   for (let i = open; i < css.length; i++) {
     const char = css[i]
-    if (quote) {
-      if (char === '\\') i++
-      else if (char === quote) quote = ''
+    if (char === '\\') i++
+    else if (quote) {
+      if (char === quote) quote = ''
     } else if (char === '"' || char === "'") quote = char
+    else if (char === '(') i = pastUrl(css, i)
     else if (char === '{') depth++
     else if (char === '}' && --depth === 0) return i
   }
-  return css.length
+  return -1
 }
 
-export function parseCss(source: string): CssNode[] {
-  const css = source.replace(/\/\*[\s\S]*?\*\//g, '')
+interface ReadCss {
+  nodes: CssNode[]
+  /** The first place reading went wrong, to the end of the sheet: text outside any rule
+   *  (skipped), or a block or string never closed (everything after it folded into it). */
+  unread: string | null
+}
+
+interface Uncommented {
+  css: string
+  /** a comment never closed, which runs to the end of the sheet as in a browser */
+  unclosed: string | null
+}
+
+/** The sheet without its comments, read like `blockEnd` reads: a `/*` inside a string, after an
+ *  escape or inside an unquoted url() is text, and quotes inside a comment open no string. */
+function withoutComments(css: string): Uncommented {
+  let kept = ''
+  let from = 0
+  let quote = ''
+  for (let i = 0; i < css.length; i++) {
+    const char = css[i]
+    if (char === '\\') i++
+    else if (quote) {
+      if (char === quote) quote = ''
+    } else if (char === '"' || char === "'") quote = char
+    else if (char === '(') i = pastUrl(css, i)
+    else if (char === '/' && css[i + 1] === '*') {
+      kept += css.slice(from, i)
+      const close = css.indexOf('*/', i + 2)
+      if (close === -1) return { css: kept, unclosed: css.slice(i).trim() || null }
+      from = close + 2
+      i = close + 1
+    }
+  }
+  return { css: kept + css.slice(from), unclosed: null }
+}
+
+function readCss(source: string): ReadCss {
+  const { css, unclosed } = withoutComments(source)
+  const read = readNodes(css)
+  /* a comment never closed ends the sheet, so whatever went wrong before it runs into it */
+  return { nodes: read.nodes, unread: [read.unread, unclosed].filter(Boolean).join(' ') || null }
+}
+
+/** The rules of a sheet with no comments left in it. */
+function readNodes(css: string): ReadCss {
   const nodes: CssNode[] = []
+  let unread: string | null = null
+  const note = (from: number) => (unread ??= css.slice(from).trim() || null)
   let at = 0
   while (at < css.length) {
     let open = -1
@@ -77,10 +144,11 @@ export function parseCss(source: string): CssNode[] {
     let quote = ''
     for (let i = at; i < css.length; i++) {
       const char = css[i]
-      if (quote) {
-        if (char === '\\') i++
-        else if (char === quote) quote = ''
+      if (char === '\\') i++
+      else if (quote) {
+        if (char === quote) quote = ''
       } else if (char === '"' || char === "'") quote = char
+      else if (char === '(') i = pastUrl(css, i)
       else if (char === '{') {
         open = i
         break
@@ -93,23 +161,48 @@ export function parseCss(source: string): CssNode[] {
       const text = css.slice(at, semi).trim()
       if (text.startsWith('@'))
         nodes.push({ kind: 'atomic', name: atName(text), text: `${text};`, prelude: '', body: '' })
+      else if (text) note(at)
       at = semi + 1
       continue
     }
-    if (open === -1) break
-    const end = blockEnd(css, open)
+    if (open === -1) {
+      note(at)
+      break
+    }
+    const closed = blockEnd(css, open)
+    /* never closed: like a browser, the block runs to the end, but whatever followed it
+       (the rest of the sheet, behind an unclosed string) is read as part of it */
+    const end = closed === -1 ? css.length : closed
     const prelude = css.slice(at, open).trim()
     const body = css.slice(open + 1, end)
     if (prelude.startsWith('@')) {
       const name = atName(prelude)
-      if (GROUP_AT_RULES.has(name)) nodes.push({ kind: 'group', prelude, nodes: parseCss(body) })
-      else nodes.push({ kind: 'atomic', name, text: `${prelude}{${body}}`, prelude, body })
+      if (GROUP_AT_RULES.has(name)) {
+        const inner = readNodes(body)
+        nodes.push({ kind: 'group', prelude, nodes: inner.nodes })
+        unread ??= inner.unread
+      } else nodes.push({ kind: 'atomic', name, text: `${prelude}{${body}}`, prelude, body })
     } else if (prelude) {
       nodes.push({ kind: 'rule', selector: prelude, body })
     }
+    if (closed === -1) note(at)
     at = end + 1
   }
-  return nodes
+  return { nodes, unread }
+}
+
+export function parseCss(source: string): CssNode[] {
+  return readCss(source).nodes
+}
+
+const UNREAD_EXCERPT = 120
+
+/** Where a stylesheet stops reading as its author meant, as an excerpt, or null when it reads
+ *  cleanly. What follows may be lost, so its author should hear about it. */
+export function unreadCss(sheet: string): string | null {
+  const { unread } = readCss(sheet)
+  if (!unread) return null
+  return unread.length > UNREAD_EXCERPT ? `${unread.slice(0, UNREAD_EXCERPT)}…` : unread
 }
 
 function atName(prelude: string): string {
@@ -237,15 +330,26 @@ function compoundTokens(compound: string): Tokens {
   return tokens
 }
 
+const within = (names: Set<string>, available: Set<string>) => [...names].every((name) => available.has(name))
+
 function compoundMatches(compound: string, tokens: Tokens): boolean {
   const wanted = compoundTokens(compound)
-  const within = (names: Set<string>, available: Set<string>) => [...names].every((name) => available.has(name))
   return (
     within(wanted.tags, tokens.tags) &&
     within(wanted.classes, tokens.classes) &&
     within(wanted.ids, tokens.ids) &&
     within(wanted.attrs, tokens.attrs)
   )
+}
+
+/** A compound naming one of the main's elements in a state it is not in yet (`.faq-row[open]`,
+ *  `details[open]`, `.card.is-on`): its tag and id are there and so is one of its classes (or,
+ *  naming none, its tag or id), and what is missing is a state an element switches into. #517 */
+function compoundInState(compound: string, tokens: Tokens): boolean {
+  const wanted = compoundTokens(compound)
+  if (!within(wanted.tags, tokens.tags) || !within(wanted.ids, tokens.ids)) return false
+  if (wanted.classes.size) return [...wanted.classes].some((name) => tokens.classes.has(name))
+  return wanted.tags.size + wanted.ids.size > 0
 }
 
 /** What a main is made of: its own elements, and apart from them the components nested in it;
@@ -263,6 +367,22 @@ interface Relevant {
   prefix: string
 }
 
+/** A rule's selector as kept: matched on the main (`Relevant`), or written for the component and
+ *  matching nothing in it as it stands, scoped by its subject alone (`subject`). */
+type Kept = Relevant & { subject?: true }
+
+/** A pseudo-element ends a selector and cannot sit inside `:is()`. */
+const TRAILING_PSEUDO_ELEMENT = /(::[\w-]+(?:\([^)]*\))?|:(?:before|after|first-line|first-letter))$/i
+
+/** Scoped by its subject: the element it styles has to be an instance or inside one, while what
+ *  the selector says about that element's ancestors is left as written (`html.dark`, a theme
+ *  attribute, a state on the instance root). Specificity stays the selector's own. */
+export function scopeSubject(selector: string, scope: string): string {
+  const pseudo = TRAILING_PSEUDO_ELEMENT.exec(selector)?.[0] ?? ''
+  const base = selector.slice(0, selector.length - pseudo.length).trim()
+  return `:is(${base || '*'}):where(${scope}, ${scope} *)${pseudo}`
+}
+
 /** The selector as far as it concerns the subtree: compounds naming ancestors outside it are cut off.
  *  Null when its subject is not in the subtree at all. A subject inside a nested component counts
  *  only when the selector reaches it from one of the main's own elements (`.plan .btn`): that is
@@ -271,15 +391,23 @@ function relevantSelector(selector: string, { own, nested, ancestors }: SubtreeT
   const compounds = compoundsOf(selector)
   if (!compounds.length) return null
   const isOwn = (index: number) => compoundMatches(compounds[index]!.compound, own)
+  const inState = (index: number) => compoundInState(compounds[index]!.compound, own)
   const isNested = (index: number) => compoundMatches(compounds[index]!.compound, nested)
   let first = compounds.length - 1
-  if (!isOwn(first)) {
+  if (!isOwn(first) && !inState(first)) {
     if (!isNested(first)) return null
     while (first > 0 && !isOwn(first - 1) && isNested(first - 1)) first--
     if (first === 0 || !isOwn(first - 1)) return null
   }
   while (first > 0 && isOwn(first - 1)) first--
-  const prefix = keptAncestors(compounds, first, ancestors)
+  let prefix = keptAncestors(compounds, first, ancestors)
+  /* what the main sits in is read first; a compound left over that names one of its own
+     elements in another state stays in the selector as its condition */
+  while (prefix === null && first > 0 && inState(first - 1)) {
+    first--
+    while (first > 0 && isOwn(first - 1)) first--
+    prefix = keptAncestors(compounds, first, ancestors)
+  }
   if (prefix === null) return null
   return { selector: joinCompounds(compounds.slice(first)), prefix }
 }
@@ -412,8 +540,33 @@ function ancestorsOf(root: Element): Element[] {
   return chain
 }
 
-/** The selectors in a stylesheet written for one component that name nothing in it, so that
- *  `extractComponentCss` leaves their rules behind: what its author should hear about. */
+/** Whether a selector is about this component: one of its compounds names a class or an id the
+ *  main's own elements have, or the main's root tag in an attribute state (`details[open]`). A
+ *  rule that is not is a page's, a typo, or a nested component's, never kept on trust. */
+function anchored(selector: string, own: Tokens, rootTag: string): boolean {
+  return compoundsOf(selector).some(({ compound }) => {
+    const wanted = compoundTokens(compound)
+    if ([...wanted.classes].some((name) => own.classes.has(name))) return true
+    if ([...wanted.ids].some((id) => own.ids.has(id))) return true
+    return wanted.tags.has(rootTag) && wanted.attrs.size > 0 && wanted.classes.size === 0
+  })
+}
+
+/** Of the selectors `unmatchedSelectors` names for a main, the ones `extractComponentCss` keeps
+ *  anyway when they were written for the component (anchored to it) and the ones it leaves out. */
+export function sortUnmatched(
+  selectors: string[],
+  root: Element,
+  variantAttrs: string[] = [],
+): { kept: string[]; dropped: string[] } {
+  const { own } = mainTokens(root, variantAttrs)
+  const kept = selectors.filter((selector) => anchored(selector, own, root.tagName))
+  return { kept, dropped: selectors.filter((selector) => !kept.includes(selector)) }
+}
+
+/** The selectors in a stylesheet written for one component that name nothing in its main as it
+ *  stands. `extractComponentCss` keeps their rules (scoped by subject); this says which, so the
+ *  author can tell a state or a script-added element from a typo. */
 export function unmatchedSelectors(sheet: string, root: Element, variantAttrs: string[] = []): string[] {
   const tokens = mainTokens(root, variantAttrs)
   const unmatched: string[] = []
@@ -430,6 +583,22 @@ export function unmatchedSelectors(sheet: string, root: Element, variantAttrs: s
   return [...new Set(unmatched)]
 }
 
+/** The CSS written for each component whose main is in this frame: its `data-doop-component-source`
+ *  block, by component id. */
+export function componentSourceCss(html: string): Map<string, string> {
+  const sources = new Map<string, string[]>()
+  /* most frames hold no main made from css: no second parse for them */
+  if (!html.includes(SOURCE_CSS_ATTR)) return new Map()
+  walkElements(parse(html), (el) => {
+    if (el.tagName !== 'style') return
+    const id = el.attrs.find((attr) => attr.name === SOURCE_CSS_ATTR)?.value
+    const text = el.childNodes[0]
+    if (id) sources.set(id, [...(sources.get(id) ?? []), text && 'value' in text ? text.value : ''])
+  })
+  /* the walk runs last-to-first: back in document order, each block on its own lines */
+  return new Map([...sources].map(([id, blocks]) => [id, blocks.reverse().join('\n')]))
+}
+
 const usedFonts = (css: string) =>
   new Set(
     [...css.matchAll(/font(?:-family)?\s*:([^;}]+)/gi)].flatMap((match) =>
@@ -443,12 +612,14 @@ function cssVarsIn(text: string): string[] {
 
 /* blocks the server writes into every frame after the components pass: not a design's own rules,
    and reading them back would freeze a token's value into a component and bump it on the next save */
+/* a component's source block is that component's own CSS (`componentSourceCss`), not the page's */
 export const MANAGED_STYLE_ATTRS = new Set([
   CSS_ATTR,
   DETACHED_CSS_ATTR,
   MAIN_CSS_ATTR,
   TOKEN_BLOCK_ATTR,
   FONT_BLOCK_ATTR,
+  SOURCE_CSS_ATTR,
 ])
 
 /** Everything in a frame's own stylesheets (never another component's copy, nor a managed block). */
@@ -510,17 +681,23 @@ export interface ExtractedCss {
   rawCss: string
 }
 
-/** `variantAttrs` are attributes instances wear and the main need not: an enum or boolean prop's
- *  `data-<name>` on the root. */
+/** `variantAttrs` are attributes instances wear and the main need not: an enum or boolean prop's `data-<name>` on the root.
+ *  `sheet` is the frame's own CSS (`frameStylesheets`, no component's source block in it): its rules are
+ *  taken when their selectors name something in the main. `own` is the CSS written for this component
+ *  (its `data-doop-component-source` block): every rule of it is the component's, whatever it names. */
 export function extractComponentCss(
   sheet: string,
   root: Element,
   componentId: string,
   variantAttrs: string[] = [],
+  own?: string,
 ): ExtractedCss {
   const scope = `[${INSTANCE_ATTR}="${componentId}"]`
   const tokens = mainTokens(root, variantAttrs)
-  const nodes = parseCss(sheet)
+  const pageNodes = parseCss(sheet)
+  const ownNodes = own === undefined ? [] : parseCss(own)
+  /* document rules, @keyframes and @font-face are read from both */
+  const nodes = [...pageNodes, ...ownNodes]
   const customProps = new Map<string, string>()
   const inherited: string[] = []
 
@@ -535,22 +712,37 @@ export function extractComponentCss(
   }
   collectDocumentRules(nodes)
 
-  const keptRules = (list: CssNode[], write: (relevant: Relevant) => string): string[] =>
+  /* a rule written for the component that names nothing in the main as it stands (a state it is
+     not in yet, an element a script adds, one under a theme class on <html>) is kept as written
+     and scoped by its subject, so it reaches nothing outside the instances; but only when it is
+     anchored to the component: a page's rule pasted along (.hero h1), a typo or a rule for a
+     nested component alone (.btn .label) is left out, as before */
+  const keptRules = (list: CssNode[], write: (relevant: Kept) => string, trusted: boolean): string[] =>
     list.flatMap((node) => {
       if (node.kind === 'group') {
-        const inner = keptRules(node.nodes, write)
+        const inner = keptRules(node.nodes, write, trusted)
         return inner.length ? [`${node.prelude} {\n${inner.join('\n')}\n}`] : []
       }
       if (node.kind === 'atomic') return []
       const selectors = splitTopLevel(node.selector, ',').flatMap((selector) => {
         if (isDocumentSelector(selector)) return []
-        const relevant = relevantSelector(selector, tokens)
+        const relevant: Kept | null =
+          relevantSelector(selector, tokens) ??
+          (trusted && anchored(selector, tokens.own, root.tagName)
+            ? { selector: selector.trim(), prefix: '', subject: true }
+            : null)
         return relevant ? [write(relevant)] : []
       })
       return selectors.length ? [`${selectors.join(', ')} {${node.body}}`] : []
     })
-  const rules = keptRules(nodes, ({ selector, prefix }) => scopeSelector(selector, scope, prefix))
-  const rawRules = keptRules(nodes, ({ selector, prefix }) => (prefix ? `${prefix} ${selector}` : selector))
+  const scoped = (kept: Kept) =>
+    kept.subject ? scopeSubject(kept.selector, scope) : scopeSelector(kept.selector, scope, kept.prefix)
+  const raw = ({ selector, prefix }: Kept) => (prefix ? `${prefix} ${selector}` : selector)
+  /* the page's rules first, then the component's own: the order they cascade in on the main's frame.
+     A component made from a page and later given css can hold a rule twice: kept once */
+  const unique = (list: string[]) => [...new Set(list)]
+  const rules = unique([...keptRules(pageNodes, scoped, false), ...keptRules(ownNodes, scoped, true)])
+  const rawRules = unique([...keptRules(pageNodes, raw, false), ...keptRules(ownNodes, raw, true)])
   const ruleText = rules.join('\n')
 
   /* inherited and custom properties land on the instance root, so its text

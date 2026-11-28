@@ -13,13 +13,13 @@ vi.mock('../server/db/persist.ts', () => ({
 }))
 
 import { store } from '../server/store.ts'
+import { renderedHtml } from './rendered.ts'
 import * as actions from '../server/actions.ts'
 import { blankComponent, contextFor } from '../server/components.ts'
 import { compactDocument } from '../server/componentEngine.ts'
 import {
   changeInstances,
   deleteComponent,
-  lookalikesIn,
   restoreComponent,
   restoreComponentVersion,
   updateComponent,
@@ -133,7 +133,7 @@ describe('a placed component and the classes of its frame', () => {
     const frame = store.getFrame(def.mainFrameId!)!
     const withUse = frame.html.replace('</body>', `<doop-use component="${def.id}" label="Again"></doop-use></body>`)
     actions.updateFrame(frame.id, { html: withUse }, actor)
-    const html = store.getFrame(frame.id)!.html
+    const html = renderedHtml(frame.id)
     /* the main keeps the name its own sheet styles; the instance wears the renamed one */
     expect(classesIn(html, /<span class="([^"]*)"/g)).toEqual(['sl', `sl__in-${def.id}`])
     const sheet = new RegExp(`<style ${CSS_ATTR}="${def.id}">\n([\\s\\S]*?)\n</style>`).exec(html)![1]!
@@ -301,17 +301,6 @@ describe('a placed component and the classes of its frame', () => {
     })
   })
 
-  it('reports a hand-drawn copy on natural names as a lookalike of a component stored on renamed ones', () => {
-    const def = makeSelect()
-    expect(def.template).toContain(`select__in-${def.id}`)
-    const copy = '<div class="select"><span class="sl">Size</span><div class="ctl">M</div></div>'
-    const drawn = actions.createFrame(canvasId, { name: 'Drawn', html: '' }, actor)!
-    actions.updateFrame(drawn.id, { html: doc(`<main>${copy}${copy}</main>`) }, actor)
-    expect(lookalikesIn(store.getFrame(drawn.id)!)).toEqual([
-      { component: 'Select', occurrences: 2, usage: expect.any(String) },
-    ])
-  })
-
   it('keeps the main in its own frame on natural root names, with no new revision on a re-save', () => {
     const def = makeSelect()
     /* plain values: the store may update a definition in place, which would make `def` and `again` one object */
@@ -364,7 +353,7 @@ describe('a placed component and the classes of its frame', () => {
       { html: doc(`<doop-use component="${plan.id}"></doop-use>`, '.btn { width: 10px }') },
       actor,
     )
-    const html = store.getFrame(page.id)!.html
+    const html = renderedHtml(page.id)
     const planBlock = new RegExp(`<style data-doop-component-css="${plan.id}">[\\s\\S]*?</style>`).exec(html)![0]
     expect(planBlock).toContain(`:where([data-doop-instance="${plan.id}"]) .${btn}`)
     expect(html).toMatch(
@@ -951,14 +940,14 @@ describe('a placed component and the classes of its frame', () => {
       actions.updateFrame(frame.id, { html: frame.html.replace('</body>', `${instance}</body>`) }, actor)
       const block = (html: string) =>
         new RegExp(`<style data-doop-component-css="${def.id}">[\\s\\S]*?</style>`).exec(html)?.[0] ?? ''
-      const before = block(store.getFrame(frame.id)!.html)
+      const before = block(renderedHtml(frame.id))
       expect(before).toContain(`.sl__in-${def.id}`)
       actions.updateFrame(
         frame.id,
         { html: store.getFrame(frame.id)!.html.replace('class="sl"', `class="sl__in-${def.id}"`) },
         actor,
       )
-      const stored = store.getFrame(frame.id)!.html
+      const stored = renderedHtml(frame.id)
       expect(block(stored)).toBe(before)
       expect(stored).toContain('class="sl"')
     })

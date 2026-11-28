@@ -10,6 +10,7 @@ import { CollapsibleTrigger } from './collapsible'
 import { Tooltip } from './tooltip'
 import { SearchIcon, XIcon } from './icons'
 import { Input } from './input'
+import { ErrorBoundary, ErrorFallback } from './error-boundary'
 
 /* The canvas rails (Activity, Inspector). On a wide screen they float over the
    board; inside a mobile Sheet they fill it. That used to be a `.side-panel`
@@ -43,6 +44,9 @@ export interface PanelResize {
   onResize: (width: number) => void
 }
 
+/** Panels whose edge is being dragged right now (see `data-panel-resizing`). */
+let resizingPanels = 0
+
 function Panel({
   className,
   surface,
@@ -55,6 +59,18 @@ function Panel({
   /* marks the panel while its edge is dragged; styles.css pauses the chrome's
      position transitions then, so neighbours follow the pointer in step */
   const [dragging, setDragging] = React.useState(false)
+  /* mirrored on <body>, which the rule keys on: a `body:has(…) *` rule
+     restyled the whole page on every DOM insertion anywhere (each pan tick) */
+  React.useEffect(() => {
+    if (!dragging) return
+    resizingPanels += 1
+    document.body.toggleAttribute('data-panel-resizing', true)
+    return () => {
+      resizingPanels -= 1
+      /* two edges can be dragged at once (two fingers); the last one clears it */
+      if (resizingPanels === 0) document.body.toggleAttribute('data-panel-resizing', false)
+    }
+  }, [dragging])
   const endDrag = () => {
     drag.current = null
     setDragging(false)
@@ -72,7 +88,7 @@ function Panel({
       style={resizing ? { ...style, width: resizing.width } : style}
       {...props}
     >
-      {children}
+      <PanelBoundary>{children}</PanelBoundary>
       {resizing && (
         <div
           role="separator"
@@ -219,13 +235,23 @@ const PanelIconTab = React.forwardRef<
   )
 })
 
-function PanelTabPanel({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
+function PanelTabPanel({ className, children, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
   return (
     <TabsPrimitive.Content
       data-slot="panel-tab-panel"
       className={cn('flex min-h-0 flex-1 flex-col outline-none', className)}
       {...props}
-    />
+    >
+      <PanelBoundary>{children}</PanelBoundary>
+    </TabsPrimitive.Content>
+  )
+}
+
+/* A render error inside a panel, or inside one of its tabs, stays there: the
+   panel keeps its place, the board and the other panels keep running. */
+function PanelBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary fallback={(retry) => <ErrorFallback retry={retry} className="m-2.5" />}>{children}</ErrorBoundary>
   )
 }
 

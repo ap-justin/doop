@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { COMMUNITY_CATEGORIES, type Canvas, type CommunityCategory } from '../../shared/types'
+import { COMMUNITY_CATEGORIES, type ClientCanvas, type CommunityCategory } from '../../shared/types'
 import { toLinkAccess, type LinkAccess } from '../../shared/canvasRole'
 import { navigate } from '../App'
 import type { WorkspaceSummary } from '../../shared/types'
@@ -24,7 +24,7 @@ import { useT, type PlainMessageKey } from '@/lib/i18n'
 import { useLean } from '@/lib/lean'
 
 type ShareableCanvas = Pick<
-  Canvas,
+  ClientCanvas,
   'id' | 'name' | 'ownerId' | 'linkAccess' | 'memberIds' | 'workspaceId' | 'publishedAt' | 'description' | 'category'
 >
 type SharePatch = Partial<
@@ -74,7 +74,7 @@ export function ShareModal({
   const { data: session } = authClient.useSession()
   const meId = session?.user?.id
   const isOwner = !!canvas.ownerId && canvas.ownerId === meId
-  const linkAccess = toLinkAccess(canvas.linkAccess)
+  const storedLinkAccess = toLinkAccess(canvas.linkAccess)
   const [people, setPeople] = useState<CanvasMember[] | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
   const [upgrade, setUpgrade] = useState<string | null>(null)
@@ -109,6 +109,9 @@ export function ShareModal({
   }, [canvas.id, isOwner])
 
   const workspace = canvas.workspaceId ? workspaces.find((w) => w.id === canvas.workspaceId) : undefined
+  /* the workspace's admins keep its canvases to the team: no link, no gallery */
+  const sharingOff = workspace?.linkSharing === 'off'
+  const linkAccess = sharingOff ? 'none' : storedLinkAccess
 
   async function move(target: string) {
     if (busy) return
@@ -118,7 +121,14 @@ export function ShareModal({
     try {
       await api.moveCanvas(canvas.id, workspaceId)
       posthog.capture('canvas_moved', { into: !!workspaceId })
-      onChange({ workspaceId: workspaceId ?? undefined })
+      /* filed where sharing is off, the server made it private on the way in */
+      const closes = workspaces.find((w) => w.id === workspaceId)?.linkSharing === 'off'
+      onChange({
+        workspaceId: workspaceId ?? undefined,
+        ...(closes
+          ? { linkAccess: undefined, publishedAt: undefined, description: undefined, category: undefined }
+          : {}),
+      })
     } catch (caught) {
       const walled = paywalledWorkspace(caught)
       if (walled) setUpgrade(walled)
@@ -369,7 +379,11 @@ export function ShareModal({
           {isOwner ? (
             <div className="flex items-center gap-2">
               <span className="text-body font-medium text-ink">{t('panels.shareAnyoneCan')}</span>
-              <Select value={linkAccess} disabled={busy} onValueChange={(value) => void setLink(toLinkAccess(value))}>
+              <Select
+                value={linkAccess}
+                disabled={busy || sharingOff}
+                onValueChange={(value) => void setLink(toLinkAccess(value))}
+              >
                 <SelectTrigger
                   size="sm"
                   className="w-[132px]"
@@ -395,7 +409,12 @@ export function ShareModal({
             {t('panels.shareCopyLink')}
           </Button>
         </div>
-        {isOwner && !lean && (
+        {sharingOff && (
+          <p className="mx-[2px] mt-2 text-label text-ink-faint">
+            {t('panels.shareLinkSharingOff', { name: workspace.name })}
+          </p>
+        )}
+        {isOwner && !lean && !sharingOff && (
           <CommunityListing canvas={canvas} busy={busy} setBusy={setBusy} setError={setError} onChange={onChange} />
         )}
         {upgrade && (

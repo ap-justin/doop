@@ -26,6 +26,7 @@
         /* an editor's canvas opens on Comment; these suites exercise Select */
         useStore.getState().setTool('select')
       }
+      window.openPage = (id) => useStore.getState().setActivePage(id)
       window.pickElement = (frameId, selector) => useStore.getState().pickElement({ frameId, selector })
       window.frameHtml = (frameId) => useStore.getState().canvas?.frames.find((f) => f.id === frameId)?.html
       /* the one API call an element link makes: stamp the element's data-doop-id

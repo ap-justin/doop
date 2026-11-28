@@ -1,14 +1,18 @@
+import { scopeTargets } from '../shared/cardScope.ts'
 import { env } from './env.ts'
 import { leanMode } from './lean.ts'
 import { MAX_DECISION_CHARS } from '../shared/designDecisions.ts'
+import { isAgentsTask } from '../shared/agentIdentity.ts'
 import type Anthropic from '@anthropic-ai/sdk'
 import { store } from './store.ts'
+import { wholeDocument } from './frameCompose.ts'
 import { layerExport } from './layerExport.ts'
-import { MAX_EXPORT_SCALE, MIN_EXPORT_SCALE } from '../shared/exportScale.ts'
 import { fontsForCanvas } from './fonts.ts'
+import { skillsForCanvas } from './skills.ts'
+import { skillsBlock } from '../shared/skills.ts'
 import { libraryBrief, MAX_FONT_BYTES } from '../shared/fonts.ts'
 import { addCanvasFont, uploadedFontResult } from './canvasFontUpload.ts'
-import { inlineDataRefusal } from './inlineData.ts'
+import { inlineDataRefusal, storedHtmlOf } from './inlineData.ts'
 import { webFontsBrief } from '../shared/webFonts.ts'
 import {
   TOKEN_TYPES,
@@ -16,15 +20,26 @@ import {
   tokensBrief,
   NO_TOKENS_BRIEF,
   tokensCss,
+  tokensMarkdown,
+  tokensNamed,
   tokensTailwind,
   type TokenResult,
 } from '../shared/designTokens.ts'
-import { ModelAuthError, ModelConfigurationError, ModelUnavailableError, pickModel } from './agentModel.ts'
+import {
+  type AgentTurnRequest,
+  ModelAuthError,
+  ModelConfigurationError,
+  ModelUnavailableError,
+  pickModel,
+} from './agentModel.ts'
 import { RESIDENT_TASK_LIMIT } from './allowance.ts'
 import * as actions from './actions.ts'
 import { captureFeature, captureTokenResults } from './featureEvents.ts'
 import { inspectFrame, renderFrame } from './screenshot.ts'
-import { AGENT_ROLES, DEFAULT_ROLE_ID, roleById, roleByAgentName, roleName, withoutMentions } from '../shared/agents.ts'
+import { FIT_ON, fitNotes, fitWrittenFrame, readFitAxes, updateFrameMetaWithFit } from './frameFit.ts'
+import { AGENT_ROLES, DEFAULT_ROLE_ID, roleById, roleByAgentName, roleName } from '../shared/agents.ts'
+import { resolvePersonMentions, withoutAgentMentions, type Mentionable } from '../shared/personMentions.ts'
+import { commentPeople, threadAuthorIds } from './canvasPeople.ts'
 import type { AgentRole, Roster } from '../shared/agents.ts'
 import { runnerKey } from '../shared/agentRunner.ts'
 import * as imageSearch from './imageSearch.ts'
@@ -47,12 +62,33 @@ import {
   SYSTEM_FIRST,
 } from './guide.ts'
 import { zodToJsonSchema } from 'zod-to-json-schema'
+import { TOOL_SHAPES, type SharedToolName } from './agentToolShapes.ts'
 import { z } from 'zod'
-import { catalog, compactFrameHtml, findComponent, libraryCatalog } from './componentActions.ts'
+import {
+  catalog,
+  compactFrameHtml,
+  findComponent,
+  frameEditProblem,
+  libraryCatalog,
+  unbalancedProblem,
+  usageOf,
+} from './componentActions.ts'
 import { activeComponents } from '../shared/components.ts'
 import { isAutomationCard } from '../shared/automations.ts'
 import { getUserName } from './auth.ts'
 import { settleForRead } from './propagation.ts'
+import {
+  type CheckState,
+  markChecksSeen,
+  noteComponentChange,
+  noteComponentScreenshot,
+  noteFrameChange,
+  noteFrameScreenshot,
+  stillToCheck,
+  unchecked,
+  uncheckedKey,
+  unverifyFrame,
+} from './changeChecks.ts'
 import { runOperation } from './workBudget.ts'
 import { detached, savepoint } from './journal.ts'
 import { existingStyle, existingStyleBrief } from './existingStyle.ts'
@@ -66,8 +102,13 @@ import {
 import { canvasRole } from './access.ts'
 import { roleAllows } from '../shared/canvasRole.ts'
 import { canvasesFor } from './workspaces.ts'
-import { previewFrame } from './componentPreview.ts'
-import { prototypeReport, setPrototypeStart } from './prototypeTools.ts'
+import {
+  PreviewQueryError,
+  previewCombinations,
+  previewDescription,
+  previewFrame,
+  previewProps,
+} from './componentPreview.ts'
 import {
   describeInspiration,
   INSPIRATION_NO_MATCH_NOTE,
@@ -77,8 +118,10 @@ import {
   searchInspiration,
 } from './inspiration.ts'
 import type { Actor, AgentTask, Canvas, ElementComment, Frame } from '../shared/types.ts'
-import { canvasPages, framePageId, MAX_PAGE_NAME, pageFrames, samePages } from '../shared/pages.ts'
-import { addPage, pageList, parsePageList, savePages, updateFrameMeta } from './pageTools.ts'
+import { canvasPages, framePageId, pageFrames } from '../shared/pages.ts'
+import { frameMetaError, pageList } from './pageTools.ts'
+import { sharedToolHandler } from './sharedToolHandlers.ts'
+import { runCanvasWrite } from './canvasWrites.ts'
 import { isCanvasComment, isFrameComment } from '../shared/comments.ts'
 import { websiteAccessErrorMessage } from './websiteAccess.ts'
 import { executeGuardedBatch } from './guardedBatch.ts'
@@ -86,6 +129,7 @@ import { runRepoCards } from './githubRecon.ts'
 import { retryModelTurn } from './modelTurnRetry.ts'
 import { recordAgentFeedback } from './agentFeedback.ts'
 import { AGENT_IDEA_CATEGORIES, AGENT_ISSUE_CATEGORIES, type AgentFeedbackCategory } from '../shared/agentFeedback.ts'
+import { crashReason, failureDetail } from './runFailure.ts'
 
 /**
  * The resident design team: a server-side Claude tool loop, run once per
@@ -106,15 +150,24 @@ import { AGENT_IDEA_CATEGORIES, AGENT_ISSUE_CATEGORIES, type AgentFeedbackCatego
  * did — the work waits for the next agent to connect over MCP.
  */
 
-/* A backstop against a run that loops, not a budget: each turn's output is
-   already capped, and a model that calls one tool per turn (ChatGPT's) spends
-   a dozen turns reading the canvas and searching before it writes anything.
-   At 24, ordinary runs finished at 20-23 and verified work was failed. */
-const MAX_TURNS = 60
+/* A run on the person's own connection has no turn limit: a cap of 60 stopped
+   runs that had written up to 34 frames mid-work. What stops one that never
+   ends is time, the same 30 minutes the desktop relay gives a run
+   (localAgentRuns.ts). */
+const RUN_TIME_LIMIT_MS = 30 * 60_000
+/* A run on Doop's own key keeps a turn backstop, so no runaway is billed to
+   us: a model that calls one tool per turn (ChatGPT's) spends a dozen turns
+   reading the canvas and searching before it writes anything. At 24, ordinary
+   runs finished at 20-23 and verified work was failed. */
+const SERVER_MAX_TURNS = 60
 /* a redesign card delivers an audit doc plus TWO draft frames in one run */
-const MAX_REDESIGN_TURNS = 80
-/* the agent's closing words when the cap stopped a run whose work was done */
-const CAPPED_SUMMARY = 'Done. The step limit came before my write-up, so look at the canvas for what changed.'
+const SERVER_MAX_REDESIGN_TURNS = 80
+/* A harness job still names a turn count: desktop shells before this release
+   pass it to Claude Code (clamped to 80), and the Gemini cloud worker's schema
+   takes at most 200. Current desktop shells pass Claude Code no turn limit. */
+const HARNESS_MAX_TURNS = 200
+/* the agent's closing words when the limit stopped a run whose work was done */
+const CAPPED_SUMMARY = 'Done. The run ended before my write-up, so look at the canvas for what changed.'
 /* a sweep hands a card down its pipeline in place; the cap is a backstop
    against a card that somehow keeps requeueing itself */
 const MAX_SWEEP_RUNS = 24
@@ -206,7 +259,7 @@ Rules:
 ${FRAME_STYLES}
 ${LEAN_FRAMES}
 - Prefer edit_frame_html (exact find/replace) for small changes; use set_frame_html only when the change is structural.
-- After any visual change, call screenshot_frame and LOOK at the result. If it doesn't clearly satisfy the feedback, fix it before finishing. Check reuse too: a part of the canvas's component system drawn inline, a reusable piece (button, input, nav, card, row) that is not a component yet, a block repeated that is not a <doop-use>, or a hex, font or size a token already names.
+- After any visual change, call screenshot_frame and LOOK at the result. If it doesn't clearly satisfy the feedback, fix it before finishing. Every frame you wrote needs a screenshot taken after your last write to it; a component change needs one look, at its main, at any frame using it, or with screenshot_component. Tool results say what is still to check: a run that finishes with anything unchecked is failed. Check reuse too: a part of the canvas's component system drawn inline, a reusable piece (button, input, nav, card, row) that is not a component yet, a block repeated that is not a <doop-use>, or a hex, font or size a token already names.
 - Call set_status when you start ("Fixing: …") and when your focus shifts. One line, under 80 chars, present tense. People watch this live.
 - Never leave a frame worse than you found it.
 - Reference sites: when a request names a site or URL — a redesign of it, or "like acme.com" — call import_webpage with as_reference=true FIRST so an editable HTML snapshot lands on the canvas, then call screenshot_frame on that imported source and design from what is actually there: its real copy, nav labels, product facts, and imagery direction. Leave the imported source unchanged and deliver your work in a separate frame. If importing or editing the snapshot itself is the requested deliverable, use as_reference=false. view_website is read-only; use it only when you need to inspect a live page without adding it to the canvas. A redesign that invents content is wrong even when it looks good. If automated access is blocked and there is no existing source frame or attached screenshot, stop and ask the user to attach screenshots; never approximate the site from guesses.
@@ -256,20 +309,42 @@ interface FeedbackItem {
   about: string
 }
 
-interface RunState {
-  mutatedFrames: Set<string>
+/** What came before a comment in its thread, oldest first: a reply reads against it. */
+function earlierInThread(comment: ElementComment): ElementComment[] {
+  const thread = actions.commentThread(comment)
+  return thread.slice(
+    0,
+    thread.findIndex((x) => x.id === comment.id),
+  )
+}
+
+/** The system block for the skills a run's requests name with `/handle`
+ *  (shared/skills.ts), from the canvas's scope. A follow-up keeps the skill
+ *  its task named and a reply the one named earlier in its thread, so "make it
+ *  bigger" after /brand-check still gets it. Instructions a team wrote for the
+ *  running agent name skills too: a reviewer told to apply /brand-check gets it
+ *  on every run; the shipped briefs are never scanned. */
+export function requestedSkillsPrompt(
+  canvas: { workspaceId?: string | null; ownerId?: string | null },
+  work: { items: FeedbackItem[]; cards: AgentTask[]; comments: ElementComment[] },
+  role?: AgentRole,
+): string | undefined {
+  const text = [
+    role?.custom || role?.briefByTeam ? role.brief : '',
+    ...work.items.flatMap((item) => [item.text, item.about]),
+    ...work.cards.map((card) => card.status),
+    ...work.comments.flatMap((comment) => [comment.text, ...earlierInThread(comment).map((x) => x.text)]),
+  ].join('\n')
+  return skillsBlock(skillsForCanvas(canvas), text)
+}
+
+/** What the run did and what it still owes. What it changed and has to look at
+ *  before finishing is the CheckState (server/changeChecks.ts); with `vision`
+ *  false screenshots are skipped and nothing has to be looked at. */
+interface RunState extends CheckState {
   sourceFrames: Set<string>
-  verificationFrames: Set<string>
-  verifiedFrames: Set<string>
-  /* the verified frames whose screenshots the model has had back in a
-     turn, and that nothing has changed since: a screenshot taken on the
-     last allowed turn was never looked at */
-  seenVerified: Set<string>
   rewriteDrafts: Map<string, string>
   blockedWebsiteAccess?: string
-  /** false = the model cannot see images: screenshots are skipped and the
-   *  visual-verification requirement does not apply to this run */
-  vision: boolean
   /** whose account pays for generated images: the run's payer, else the server key */
   payerId?: string
   /** the person whose work this run claims, whoever pays for the model
@@ -293,9 +368,36 @@ interface RunState {
    *  reordered or deleted, a frame renamed, moved or its approval set): work a
    *  card can ask for on its own, delivered without a design change */
   arrangeWrites: number
+  /** component writes that took (made, changed, restored, imported, pulled or
+   *  deleted): work a card can ask for on its own, often with no frame edited */
+  componentWrites: number
   /** some of the run's work was queued by an automation: such a run never sets approval,
    *  which would sign off its own output and could start the automation again */
   automated?: boolean
+}
+
+/** A run's state before its first turn: nothing written, checked or answered yet. A
+ *  field added to RunState gets its starting value here, which every run and test takes.
+ *  The model is taken to be blind unless `vision` says otherwise, so a state built
+ *  without one (a test) takes no screenshots. Exported for tests. */
+export function newRunState(overrides: Partial<RunState> = {}): RunState {
+  return {
+    mutatedFrames: new Set(),
+    sourceFrames: new Set(),
+    verificationFrames: new Set(),
+    verifiedFrames: new Set(),
+    seenVerified: new Set(),
+    componentChecks: new Map(),
+    componentWrites: 0,
+    rewriteDrafts: new Map(),
+    vision: false,
+    imagesGenerated: 0,
+    repliedThreads: new Set(),
+    awaitingThreads: new Set(),
+    tokenWrites: 0,
+    arrangeWrites: 0,
+    ...overrides,
+  }
 }
 
 export interface FramePlacement {
@@ -334,24 +436,24 @@ export function placeBeside(
   return { x, y }
 }
 
-/** What the create_frame tool asks for, placed: the model's own x/y win,
- *  otherwise the run's placement (the comment's page, and beside its pin). */
+/** What the create_frame tool asks for, placed: the model's own page and x/y win,
+ *  otherwise the run's placement (the comment's page, and beside its pin when the
+ *  frame lands on that page). */
 export function createFrameInput(
-  raw: { name?: string; width?: number; height?: number; html: string; x?: number; y?: number },
+  raw: { name?: string; width?: number; height?: number; html: string; x?: number; y?: number; pageId?: string },
   placement: FramePlacement | undefined,
   canvas: Canvas | undefined,
 ) {
   const size = { width: Number(raw.width) || 800, height: Number(raw.height) || 500 }
+  const pageId = raw.pageId || placement?.pageId
   const chosen = Number.isFinite(raw.x) && Number.isFinite(raw.y) ? { x: Number(raw.x), y: Number(raw.y) } : undefined
-  const beside =
-    !chosen && placement?.near && canvas
-      ? placeBeside(placement.near, size, pageFrames(canvas, placement.pageId))
-      : undefined
+  const near = placement?.pageId === pageId ? placement?.near : undefined
+  const beside = !chosen && near && canvas && pageId ? placeBeside(near, size, pageFrames(canvas, pageId)) : undefined
   return {
     name: String(raw.name || 'Frame'),
     ...size,
     html: raw.html,
-    ...(placement ? { pageId: placement.pageId } : {}),
+    ...(pageId ? { pageId } : {}),
     ...(chosen ?? beside ?? {}),
   }
 }
@@ -364,12 +466,17 @@ function deliverableFrameIds(runState: RunState): string[] {
 }
 
 /** Whether the run has delivered anything a card can ask for: a frame of its
- *  own changed or created, or a token or arrangement write that took.
+ *  own changed or created, or a token, arrangement or component write that took.
  *  Exported for tests. */
 export function deliveredWork(
-  runState: Pick<RunState, 'mutatedFrames' | 'sourceFrames' | 'tokenWrites' | 'arrangeWrites'>,
+  runState: Pick<RunState, 'mutatedFrames' | 'sourceFrames' | 'tokenWrites' | 'arrangeWrites' | 'componentWrites'>,
 ): boolean {
-  return deliverableFrameIds(runState as RunState).length > 0 || runState.tokenWrites > 0 || runState.arrangeWrites > 0
+  return (
+    deliverableFrameIds(runState as RunState).length > 0 ||
+    runState.tokenWrites > 0 ||
+    runState.arrangeWrites > 0 ||
+    runState.componentWrites > 0
+  )
 }
 
 /** How many of a token call's results took. Exported for tests. */
@@ -377,15 +484,20 @@ export function tokenWritesIn(results: readonly TokenResult[]): number {
   return results.filter((r) => r.result !== 'error').length
 }
 
-/** A change to a frame undoes every check of it, seen or not. */
-function unverify(runState: Pick<RunState, 'verifiedFrames' | 'seenVerified'>, frameId: string) {
-  runState.verifiedFrames.delete(frameId)
-  runState.seenVerified.delete(frameId)
+/** What the run has changed on this canvas and not yet looked at (server/changeChecks.ts).
+ *  `seen`: only looks whose results reached the model. Exported for tests. */
+export function uncheckedChanges(runState: CheckState, canvasId: string, options?: { seen?: boolean }) {
+  return unchecked(runState, (frameId) => store.getFrame(frameId)?.canvasId === canvasId, options)
 }
 
-function verificationFrameIds(runState: RunState): string[] {
-  return [...new Set([...runState.mutatedFrames, ...runState.verificationFrames])]
+function stillToCheckOn(runState: CheckState, canvasId: string): string {
+  return stillToCheck(uncheckedChanges(runState, canvasId), (frameId) => store.getFrame(frameId)?.name ?? frameId)
 }
+
+/* an API run that would finish with something unchecked is reminded in a turn of its own,
+   again after a fix-up that changed another frame or the same one, but only a few times:
+   one that cannot or will not look is failed, not looped */
+const MAX_CHECK_REMINDERS = 3
 
 function completeHtml(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -397,10 +509,14 @@ function completeHtml(value: unknown): string | undefined {
 const REDESIGN_RE =
   /\b(redesign|re-?style|same style|match (?:the )?(?:style|design)|copy (?:the )?(?:style|design)|design of)\b/i
 
-function strategyFor(text: string, frames: NonNullable<ReturnType<typeof store.getCanvas>>['frames']): string {
+function strategyFor(
+  text: string,
+  frames: NonNullable<ReturnType<typeof store.getCanvas>>['frames'],
+  unscopedRedesign: boolean,
+): string {
   const isRedesign = REDESIGN_RE.test(text)
-  const redesignNote = isRedesign
-    ? ' For the redesign itself, work audit-first and deliver TWO drafts:' +
+  const redesignNote = unscopedRedesign
+    ? ' For redesign requests without selected targets, work audit-first and deliver TWO drafts:' +
       ' (1) Audit the source — inspect_frame on a source frame for its computed palette, type, spacing, radii and shadows (import_webpage first for a live site), plus a screenshot for layout.' +
       ' (2) Persist the audit with set_guidelines as a doc named "redesign-<source>" (e.g. "redesign-pipefile-com"): a "Source baseline" recording the old system (palette hexes, type, spacing/radii, and the section map — each section\'s purpose and one-line message) as a descriptive record of what you are redesigning away from, NOT rules to follow; then two binding directions. "Direction A — closer to home": the brand stays recognizable — logo, name, core brand colors (re-weighted freely, with new neutrals and tints) — while every detail is redesigned: typography, spacing rhythm, radii, shadows, patterns, background treatments, button and component styling, section layout. "Direction B — further out": same product, same real copy and facts, but freer — reinterpret the palette and push the aesthetic somewhere genuinely different; do not invent it from vibes — retrieve category inspiration with search_inspiration (live exemplars with their style, colour and fonts), pick ONE exemplar and follow it, and name it in the redesign doc.' +
       ' (3) Deliver TWO new frames side by side, named "<source> — A (on-brand)" and "<source> — B (departure)", each executing its direction precisely; screenshot both. Both frames together are this card\'s deliverable. In both: keep the source\'s real copy and product facts, restructure sections when it strengthens the page\'s argument, and give details a genuinely new treatment rather than reordering the old elements.' +
@@ -586,24 +702,23 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
           items.map((i) => `- ${i.from} (about the work "${i.about}"): "${i.text}"`).join('\n'),
       )
     }
-    /* a card asked from a selection is about THAT frame or element: the
-       agent edits it in place instead of delivering something new elsewhere */
     function describeScope(scope: AgentTask['scope']): string {
       if (!scope) return ''
-      const f = store.getFrame(scope.frameId)
-      if (!f) {
-        /* the target is gone: say so rather than letting the request run
-           canvas-wide against something the human never pointed at */
-        return `\n  This request was scoped to frame ${scope.frameId}, which has since been deleted. Do not redesign anything else in its place: call set_status explaining that the frame it was about no longer exists, and finish.`
+      const targets: string[] = []
+      const missing = new Set<string>()
+      for (const { frameId, selector } of scopeTargets(scope)) {
+        const frame = store.getFrame(frameId)
+        if (frame?.canvasId !== canvasId) {
+          missing.add(frameId)
+          continue
+        }
+        const where = `frame ${frameId} ("${frame.name}")`
+        targets.push(selector ? `element \`${selector}\` inside ${where}` : where)
       }
-      const where = `frame ${f.id} ("${f.name}")`
-      if (!scope.selector) {
-        return `\n  Scoped to ${where}: the request is about this frame. Edit it in place (edit_frame_html or set_frame_html); do not create a new frame unless the request explicitly asks for one.`
-      }
-      return (
-        `\n  Scoped to the element \`${scope.selector}\` inside ${where}: the request is about this element. ` +
-        `Call get_frame to read its HTML, change that element (and only what it needs) with edit_frame_html, and keep the rest of the frame as it is.`
-      )
+      if (!targets.length)
+        return '\n  The selected frames have been deleted. Report this with set_status and finish without editing anything else.'
+      const skipped = missing.size ? ` Skip the deleted frames (${[...missing].join(', ')}).` : ''
+      return `\n  Scoped to: ${targets.join('; ')}. Edit every listed target in place with edit_frame_html or set_frame_html. For element targets, read the frame with get_frame and change only those elements and what they need. Do not create a new frame unless explicitly requested.${skipped}`
     }
     if (cards.length > 0) {
       sections.push(
@@ -627,7 +742,9 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
                 attached.length > 0
                   ? `\n  Attached reference images, already on the canvas as frames: ${attached.join(', ')}. ` +
                     `Call screenshot_frame on each BEFORE designing and build from what you see. ` +
-                    `They are source material — leave them as they are and deliver in a separate frame.`
+                    (c.scope
+                      ? 'Leave these references unchanged and apply the request to the selected targets.'
+                      : 'They are source material — leave them as they are and deliver in a separate frame.')
                   : ''
               const scoped = describeScope(c.scope)
               return `- from ${c.queuedBy}: "${c.status}"${route}${scoped}${refs}`
@@ -642,12 +759,7 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
             .map((c) => {
               /* a reply carries the conversation it answers, so "make it
                  bigger" reads against what was said before */
-              const history = actions.commentThread(c)
-              const earlier = history
-                .slice(
-                  0,
-                  history.findIndex((x) => x.id === c.id),
-                )
+              const earlier = earlierInThread(c)
                 .map((x) => `    ${x.from}: "${x.text}"`)
                 .join('\n')
               const thread = earlier ? `\n  earlier in this thread:\n${earlier}` : ''
@@ -661,6 +773,10 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
       ...cards.map((card) => card.status),
       ...comments.map((comment) => comment.text),
     ].join('\n')
+    const unscopedRedesign =
+      items.some((item) => REDESIGN_RE.test(item.text)) ||
+      comments.some((comment) => REDESIGN_RE.test(comment.text)) ||
+      cards.some((card) => !card.scope && REDESIGN_RE.test(card.status))
     const urls = referencedUrls(workText)
     const references = store.getReferences(canvasId)
     const referenceList =
@@ -679,7 +795,7 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
       `\n\nPages, in order (pass this exact list as expectedPages to set_canvas_pages; a link to a page is /c/${canvasId}?page=<id>):\n${JSON.stringify(pages)}` +
       `\n\nFrames currently on the canvas:\n${frameList}` +
       referenceList +
-      `\n\nExecution strategy selected by the harness:\n${strategyFor(workText, visibleFrames)}` +
+      `\n\nExecution strategy selected by the harness:\n${strategyFor(workText, visibleFrames, unscopedRedesign)}` +
       (urls.length > 0
         ? `\n\nThe request references ${urls.join(', ')} — if each page is source material for a separate design, call import_webpage with as_reference=true BEFORE designing so an editable HTML snapshot lands on the canvas for everyone to compare against. Then call screenshot_frame on each imported source, leave those source frames unchanged, and build from their real content and structure. If the imported snapshot itself is the requested deliverable, call it with as_reference=false instead. view_website is read-only and does not add anything to the canvas.`
         : '') +
@@ -695,33 +811,29 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
        originating pass that changed nothing has not delivered its card */
     const requireMutation = cards.length > 0 && !role.reviewer
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: kickoff }]
-    const runState: RunState = {
-      mutatedFrames: new Set(),
-      sourceFrames: new Set(),
-      verificationFrames: new Set(),
-      verifiedFrames: new Set(),
-      seenVerified: new Set(),
-      rewriteDrafts: new Map(),
+    const runState = newRunState({
       vision: model.vision !== false,
       ...(model.userId ? { payerId: model.userId } : {}),
       ...(payer ? { requesterId: payer } : {}),
-      imagesGenerated: 0,
       /* a run about a comment delivers on that comment's page */
       ...(comments[0] ? { placement: placementFor(comments[0], canvas) } : {}),
-      repliedThreads: new Set(),
-      awaitingThreads: new Set(),
-      tokenWrites: 0,
-      arrangeWrites: 0,
       automated: cards.some(isAutomationCard),
-    }
+    })
     let refused = false
     let crashed = false
     let staleAccount = false
     let accountError: string | undefined
+    /* what the connection said when the run crashed: the desktop CLI's result
+       or the provider's error, shown on the card instead of a bare "snag" */
+    let crashDetail: string | undefined
+    const connectionErrors = new WeakSet<object>()
+    /* a harness failure the relay itself worded (the desktop went away, the
+       cloud worker is down): already a sentence for the card */
+    let doopReason: string | undefined
     let unavailableModel = false
     let finished = false
     let mutationNudgeSent = false
-    let verificationNudgeSent = false
+    let checkReminders = 0
     let outputLimitNudgeSent = false
     let turnsUsed = 0
 
@@ -743,6 +855,10 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
       /* the canvas's custom fonts: which families exist, and that naming one
          is enough (the server adds the @font-face) */
       const canvas = store.getCanvas(canvasId)
+      /* read when the run starts, so a skill edited while the work waited
+         runs as edited; cached with its own breakpoint like the guidelines */
+      const skillsPrompt = canvas && requestedSkillsPrompt(canvas, { items, cards, comments }, role)
+      const skillsBlocks = skillsPrompt ? [{ text: skillsPrompt, cache: true }] : []
       const fontsText = [canvas ? libraryBrief(fontsForCanvas(canvas)) : '', webFontsBrief()]
         .filter(Boolean)
         .join('\n\n')
@@ -811,7 +927,21 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
               text: 'Note: your model cannot view images. screenshot_frame returns a text confirmation, not pixels, and image search results describe rather than show. Verify layout by re-reading get_frame_html and checking inspect_frame instead.',
             },
           ]
-      const maxTurns = REDESIGN_RE.test(workText) ? MAX_REDESIGN_TURNS : MAX_TURNS
+      /* no turn limit on the person's own connection; a server-tier run is
+         paid by Doop and keeps the turn backstop. Both stop at the time limit. */
+      const maxTurns = model.userId
+        ? Infinity
+        : REDESIGN_RE.test(workText)
+          ? SERVER_MAX_REDESIGN_TURNS
+          : SERVER_MAX_TURNS
+      const deadline = Date.now() + RUN_TIME_LIMIT_MS
+      /* the model call's own failures, the only errors a card may quote as the
+         connection's words; anything else in the run is ours */
+      const runModel = (request: AgentTurnRequest) =>
+        model.run(request).catch((err: unknown) => {
+          if (err && typeof err === 'object') connectionErrors.add(err)
+          throw err
+        })
       if (model.runHarness) {
         const result = await model.runHarness({
           canvasId,
@@ -819,6 +949,7 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
           system: [
             systemFor(role, roster),
             ...guidelinesBlock.map((b) => b.text),
+            ...skillsBlocks.map((b) => b.text),
             ...fontsBlock.map((b) => b.text),
             ...tokensBlock.map((b) => b.text),
             ...existingStyleBlock.map((b) => b.text),
@@ -828,7 +959,7 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
           // Image generation uses a separate paid model account; the local CLI
           // connection must never imply that the user's subscription covers it.
           tools: TOOLS.filter((tool) => tool.name !== 'generate_image'),
-          maxTurns,
+          maxTurns: HARNESS_MAX_TURNS,
           isCanceled: canceled,
           signal: abort.signal,
           execute: async (block) => {
@@ -846,28 +977,38 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
                 content: 'This task has been stopped.',
                 is_error: true,
               }
+            /* the harness has no turns to count: a screenshot answered before the next call
+               is taken as seen, since Claude Code asks for a call once the earlier results
+               are in front of the model (calls sent together in one message are the
+               exception, and only a run stopped at its limit reads this) */
+            markChecksSeen(runState)
             return execTool(block, canvasId, actor, runState)
           },
         })
         if (canceled()) return 'ran'
         finished = result.success
-        crashed = !result.success
+        /* a run stopped at its turn limit is judged by its work below
+           (cappedDone), as the API loop's is, never called a crash */
+        crashed = !result.success && !result.limitReached
+        if (crashed && result.fromDoop) doopReason = result.text
+        else if (crashed) crashDetail = result.text
         messages.push({ role: 'assistant', content: [{ type: 'text', text: result.text }] })
-        if (!result.success) actions.agentSummary(canvasId, actor, result.text)
+        if (crashed) actions.agentSummary(canvasId, actor, result.text)
       } else
-        for (let turn = 0; turn < maxTurns; turn++) {
+        for (let turn = 0; turn < maxTurns && Date.now() < deadline; turn++) {
           if (canceled()) return 'ran'
           /* the status showing when the connection dropped, so a recovered
              run picks its narration back up instead of staying "reconnecting" */
           let interruptedStatus: string | undefined
-          runState.seenVerified = new Set(runState.verifiedFrames)
+          markChecksSeen(runState)
           const res = await retryModelTurn(
             () =>
-              model.run({
+              runModel({
                 maxTokens: 16000,
                 system: [
                   { text: systemFor(role, roster), cache: true },
                   ...guidelinesBlock,
+                  ...skillsBlocks,
                   ...fontsBlock,
                   ...tokensBlock,
                   ...existingStyleBlock,
@@ -969,7 +1110,15 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
             continue
           }
 
-          if (requireMutation && !deliveredWork(runState) && !mutationNudgeSent) {
+          if (
+            requireMutation &&
+            !deliveredWork(runState) &&
+            !mutationNudgeSent &&
+            cards.some(
+              (card) =>
+                !card.scope || scopeTargets(card.scope).some((t) => store.getFrame(t.frameId)?.canvasId === canvasId),
+            )
+          ) {
             mutationNudgeSent = true
             messages.push({
               role: 'user',
@@ -978,14 +1127,15 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
             })
             continue
           }
-          const unverified = runState.vision
-            ? verificationFrameIds(runState).filter((id) => !runState.verifiedFrames.has(id))
-            : []
-          if (cards.length > 0 && unverified.length > 0 && !verificationNudgeSent) {
-            verificationNudgeSent = true
+          if (
+            cards.length > 0 &&
+            uncheckedChanges(runState, canvasId).length > 0 &&
+            checkReminders < MAX_CHECK_REMINDERS
+          ) {
+            checkReminders += 1
             messages.push({
               role: 'user',
-              content: `You have not visually verified ${unverified.join(', ')}. Call screenshot_frame for each frame, inspect the render, and fix any problems before finishing.`,
+              content: `You have not visually verified everything you changed. ${stillToCheckOn(runState, canvasId)} Inspect each render and fix any problems before finishing.`,
             })
             continue
           }
@@ -1004,10 +1154,13 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
          reconnect, whatever error class its transport leaks */
       accountError = err instanceof ModelConfigurationError && model.userId ? err.message : undefined
       staleAccount = err instanceof ModelAuthError && !!model.userId
-      /* likewise a model the account cannot run yet (Astra mid-rollout): the
+      /* likewise a model the account cannot run yet (Astra not on the plan): the
          fix is a different tier in Settings, and a retry on the same one
          would only fail the same way */
       unavailableModel = err instanceof ModelUnavailableError && !!model.userId
+      /* only the person's own connection: a server-tier error is about our
+         account (its billing, its limits), not one they can act on */
+      if (model.userId && err instanceof Error && connectionErrors.has(err)) crashDetail = err.message
       console.error('[resident] run errored', err)
       actions.setAgentStatus(
         canvasId,
@@ -1038,24 +1191,20 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
       runState.rewriteDrafts.size === 0 &&
       deliveredWork(runState) &&
       !blockedWebsiteAccess &&
-      !(runState.vision && verificationFrameIds(runState).some((id) => !runState.seenVerified.has(id)))
+      uncheckedChanges(runState, canvasId, { seen: true }).length === 0
     if (cappedDone) finished = true
     const exhausted = capped && !cappedDone
-    if (exhausted) actions.setAgentStatus(canvasId, actor, 'Hit its step limit — waiting for a retry')
+    if (exhausted) actions.setAgentStatus(canvasId, actor, 'Hit its limit — waiting for a retry')
     const noMutation = finished && requireMutation && !deliveredWork(runState) && !blockedWebsiteAccess
     const unverifiedMutation =
-      finished &&
-      runState.vision &&
-      !blockedWebsiteAccess &&
-      cards.length > 0 &&
-      verificationFrameIds(runState).some((id) => !runState.verifiedFrames.has(id))
+      finished && !blockedWebsiteAccess && cards.length > 0 && uncheckedChanges(runState, canvasId).length > 0
     if (blockedWebsiteAccess && !staleAccount) {
       actions.setAgentStatus(canvasId, actor, 'Website blocked — needs screenshots')
     }
     if (noMutation) actions.setAgentStatus(canvasId, actor, 'Nothing changed — waiting for a retry')
     if (unverifiedMutation) actions.setAgentStatus(canvasId, actor, 'Change not verified — waiting for a retry')
     console.log(
-      `[resident] run end canvas=${canvasId} agent=${role.name} turns=${turnsUsed} finished=${finished} capped=${capped} refused=${refused} crashed=${crashed} mutations=${runState.mutatedFrames.size} sources=${runState.sourceFrames.size} deliverables=${deliverableFrames.length} tokenWrites=${runState.tokenWrites} arrangeWrites=${runState.arrangeWrites} verified=${runState.verifiedFrames.size}`,
+      `[resident] run end canvas=${canvasId} agent=${role.name} turns=${turnsUsed} finished=${finished} capped=${capped} refused=${refused} crashed=${crashed} mutations=${runState.mutatedFrames.size} sources=${runState.sourceFrames.size} deliverables=${deliverableFrames.length} tokenWrites=${runState.tokenWrites} arrangeWrites=${runState.arrangeWrites} componentWrites=${runState.componentWrites} verified=${runState.verifiedFrames.size}`,
     )
     let summary = ''
     if (finished) {
@@ -1099,9 +1248,13 @@ async function runAgent(canvasId: string, agentName: string, stalled: Set<string
       } else if (refused) {
         reason = `${role.name} could not take this request. Retry when you are ready.`
       } else if (crashed) {
-        reason = `${role.name} hit a snag before finishing. Retry when you are ready.`
+        reason = doopReason ?? crashReason(role.name, model.label, crashDetail)
+        if (crashDetail)
+          console.log(
+            `[resident] crash detail canvas=${canvasId} provider=${model.provider} ${failureDetail(crashDetail)}`,
+          )
       } else if (exhausted) {
-        reason = `${role.name} hit its step limit before the work was done. Anything it made is still on the canvas; retry to have it continue.`
+        reason = `${role.name} hit its limit before the work was done. Anything it made is still on the canvas; retry to have it continue.`
       } else if (noMutation) {
         reason = `${role.name} finished without changing a frame or a token. Retry when you are ready.`
       } else {
@@ -1137,14 +1290,24 @@ export function replyInThread(
   actor: Actor,
   runState: Pick<RunState, 'repliedThreads' | 'awaitingThreads'>,
   awaiting = false,
+  /** the people it may tag (server/canvasPeople.ts commentPeople) */
+  people: readonly Mentionable[] = [],
 ): { ok: true; reply: ElementComment } | { ok: false; error: string } {
-  const clean = withoutMentions(text, actions.canvasRoster(canvasId)).trim()
+  /* agents' @mentions become plain names; people's stay, and are emailed */
+  const clean = withoutAgentMentions(text, actions.canvasRoster(canvasId), people).trim()
   if (!clean) return { ok: false, error: 'empty reply' }
   const found = actions.findComment(commentId)
   if (!found || found.canvasId !== canvasId) return { ok: false, error: 'no such comment on this canvas' }
   const open = actions.openThread(commentId)
   if (!open) return { ok: false, error: 'thread resolved, or its frame is gone' }
-  const reply = actions.replyToComment(commentId, clean, actor.name, undefined, 'agent')
+  const reply = actions.replyToComment(
+    commentId,
+    clean,
+    actor.name,
+    undefined,
+    'agent',
+    resolvePersonMentions(clean, people),
+  )
   if (!reply) return { ok: false, error: 'thread resolved meanwhile' }
   runState.repliedThreads.add(open.root.id)
   if (awaiting) runState.awaitingThreads.add(open.root.id)
@@ -1189,51 +1352,157 @@ export function settleComments(
 
 /** What the agent's panel entry currently says, or '' when nothing is open. */
 function currentStatus(canvasId: string, actor: Actor): string {
-  return actions.getTasks(canvasId).find((t) => t.agentName === actor.name && !t.endedAt && !t.queuedBy)?.status ?? ''
+  return actions.getTasks(canvasId).find((t) => isAgentsTask(t, actor) && !t.endedAt && !t.queuedBy)?.status ?? ''
 }
+
+interface ResidentSchemaOptions<Key extends string> {
+  /** the Doop Agent's own wording, for a parameter its run gives another meaning (a page from its page list) */
+  describe?: Partial<Record<Key, string>>
+  /** parameters optional over MCP that a run must pass */
+  required?: Key[]
+  /** parameters only an MCP agent can use (a file on its own machine) */
+  omit?: Key[]
+  /** parameters only a run has */
+  extend?: z.ZodRawShape
+}
+
+/**
+ * A tool's parameters as the Doop Agent takes them: the one zod shape MCP registers (agentToolShapes.ts,
+ * componentTools.ts), with the run's own options. Its model is shown them (`jsonSchemaOf`) and its calls are
+ * checked against them (`checkedInput`), so the two surfaces cannot drift apart.
+ */
+function residentParameters<Shape extends z.ZodRawShape>(
+  shape: Shape,
+  options: ResidentSchemaOptions<keyof Shape & string> = {},
+): z.AnyZodObject {
+  const { describe = {}, required = [], omit = [], extend = {} } = options
+  const wording: Partial<Record<string, string>> = describe
+  const fields: z.ZodRawShape = {}
+  for (const [key, field] of Object.entries(shape)) {
+    if ((omit as string[]).includes(key)) continue
+    const kept = (required as string[]).includes(key) && field instanceof z.ZodOptional ? field.unwrap() : field
+    const description = wording[key] ?? field.description
+    fields[key] = description ? kept.describe(description) : kept
+  }
+  return z.object({ ...fields, ...extend })
+}
+
+/** Parameters as the model reads them: JSON Schema, converted with the options the MCP SDK converts with. */
+function jsonSchemaOf(parameters: z.AnyZodObject): Anthropic.Tool['input_schema'] {
+  return zodToJsonSchema(parameters, { strictUnions: true, pipeStrategy: 'input' }) as Anthropic.Tool['input_schema']
+}
+
+/** Each shared tool's parameters, with the Doop Agent's own wording where its run reads one differently. A shared
+ *  tool left out, or a name that is not one, fails the type check. */
+const SHARED_PARAMETERS = {
+  set_status: residentParameters(TOOL_SHAPES.set_status),
+  create_frame: residentParameters(TOOL_SHAPES.create_frame, {
+    required: ['width', 'height'],
+    describe: {
+      pageId:
+        'The page to create it on, from the page list (create_canvas_page returns a new one). Optional: left out, the frame lands on the page the request is about, else the first page.',
+      html: 'Complete, self-contained HTML document',
+      width: 'px, e.g. 1200',
+      height: 'px, e.g. 630',
+      x: 'Canvas position in px. Optional: left out, the frame lands beside the pin of a canvas comment on that page, else to the right of the existing frames.',
+      y: 'Canvas position in px. Optional, see x.',
+      /* a run streams a rewrite with begin/append/commit_frame_rewrite, not append_frame_html */
+      fit_to_content: FIT_ON.create,
+    },
+  }),
+  inspect_frame: residentParameters(TOOL_SHAPES.inspect_frame),
+  edit_frame_html: residentParameters(TOOL_SHAPES.edit_frame_html),
+  set_frame_html: residentParameters(TOOL_SHAPES.set_frame_html, {
+    describe: { html: 'Complete, self-contained HTML document' },
+  }),
+  upload_font: residentParameters(TOOL_SHAPES.upload_font, {
+    omit: ['local_file', 'data'],
+    required: ['source_url'],
+  }),
+  search_images: residentParameters(TOOL_SHAPES.search_images),
+  generate_image: residentParameters(TOOL_SHAPES.generate_image),
+  list_backgrounds: residentParameters(TOOL_SHAPES.list_backgrounds),
+  search_icons: residentParameters(TOOL_SHAPES.search_icons),
+  search_logos: residentParameters(TOOL_SHAPES.search_logos),
+  view_website: residentParameters(TOOL_SHAPES.view_website),
+  import_webpage: residentParameters(TOOL_SHAPES.import_webpage, {
+    extend: {
+      as_reference: z
+        .boolean()
+        .describe(
+          'True for source material that must remain unchanged; false when the imported snapshot itself is the deliverable',
+        ),
+    },
+  }),
+  get_reference: residentParameters(TOOL_SHAPES.get_reference, {
+    describe: { reference_id: 'Reference id from the pinned-references list in your request' },
+  }),
+  search_inspiration: residentParameters(TOOL_SHAPES.search_inspiration),
+  save_decision: residentParameters(TOOL_SHAPES.save_decision, {
+    describe: {
+      decision: `The decision and its reason, at most ${MAX_DECISION_CHARS} characters; split longer feedback into separate calls by topic. E.g. "Followed oatside-soft-shelf: its candlelit warmth suits an evening grocery brand better than the bright, clinical set"`,
+    },
+  }),
+  reply_to_comment: residentParameters(TOOL_SHAPES.reply_to_comment, {
+    describe: {
+      comment_id: 'The comment id given in the request (any comment in the thread works)',
+      text: 'The reply, written to the person who asked',
+    },
+    extend: {
+      awaiting_answer: z
+        .boolean()
+        .optional()
+        .describe(
+          'true when you are asking something you need answered before you can do the work: the request is handed back to the person, the thread stays open for their reply, and you should finish without changing a frame.',
+        ),
+    },
+  }),
+  set_frame_approval: residentParameters(TOOL_SHAPES.set_frame_approval),
+  resolve_comment: residentParameters(TOOL_SHAPES.resolve_comment, {
+    describe: { comment_id: 'The comment id given in the request' },
+  }),
+  report_issue: residentParameters(TOOL_SHAPES.report_issue),
+  share_feedback: residentParameters(TOOL_SHAPES.share_feedback),
+  set_guidelines: residentParameters(TOOL_SHAPES.set_guidelines),
+  get_tokens: residentParameters(TOOL_SHAPES.get_tokens),
+  create_tokens: residentParameters(TOOL_SHAPES.create_tokens),
+  set_tokens: residentParameters(TOOL_SHAPES.set_tokens),
+  set_token_themes: residentParameters(TOOL_SHAPES.set_token_themes),
+  update_frame: residentParameters(TOOL_SHAPES.update_frame),
+  update_canvas: residentParameters(TOOL_SHAPES.update_canvas),
+  create_canvas_page: residentParameters(TOOL_SHAPES.create_canvas_page),
+  set_canvas_pages: residentParameters(TOOL_SHAPES.set_canvas_pages, {
+    describe: { expectedPages: 'The ordered pages as you last saw them' },
+  }),
+  get_prototype: residentParameters(TOOL_SHAPES.get_prototype),
+  set_prototype_start: residentParameters(TOOL_SHAPES.set_prototype_start, {
+    describe: { pageId: "The page; defaults to the start frame's page (the first page when clearing)" },
+  }),
+  export_layer: residentParameters(TOOL_SHAPES.export_layer),
+} satisfies Record<SharedToolName, z.AnyZodObject>
+
+/* screenshot_component is the Doop Agent's preview of get_component_preview, which has no shared shape */
+const SCREENSHOT_COMPONENT_PARAMETERS = residentParameters({ component: z.string(), props: previewProps })
 
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'set_status',
     description:
       'Broadcast a one-line "what I am doing right now" to everyone watching the canvas. Call it when you start and whenever your focus shifts.',
-    input_schema: {
-      type: 'object',
-      properties: { status: { type: 'string', description: 'Present tense, under 80 chars' } },
-      required: ['status'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_status),
   },
   {
     name: 'create_frame',
     description:
       'Add a new frame to the canvas — use this when a queued card asks for a new design rather than a change to an existing frame. Streams in live for viewers. ' +
       COMPOSE_CHECK,
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        width: { type: 'number', description: 'px, e.g. 1200' },
-        height: { type: 'number', description: 'px, e.g. 630' },
-        html: { type: 'string', description: 'Complete, self-contained HTML document' },
-        x: {
-          type: 'number',
-          description:
-            'Canvas position in px. Optional: left out, the frame lands on the page the request is about — beside the pin of a canvas comment, else to the right of the existing frames.',
-        },
-        y: { type: 'number', description: 'Canvas position in px. Optional, see x.' },
-      },
-      required: ['name', 'width', 'height', 'html'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.create_frame),
   },
   {
     name: 'inspect_frame',
     description:
-      'Inspect the rendered page without relying on class names. Returns a compact semantic element outline, visible text, geometry, computed colors, typography, radii, shadows, and CSS variables. Use this before working with large frames and for cross-frame visual references.',
-    input_schema: {
-      type: 'object',
-      properties: { frame_id: { type: 'string' } },
-      required: ['frame_id'],
-    },
+      "Inspect the rendered page without relying on class names. Returns a compact semantic element outline, visible text, geometry, computed colors, typography, radii, shadows, and CSS variables, plus `problems`: content past the frame's edge, text cut off by its box, and text or controls overlapping (candidates to check against the screenshot; a deliberate overlap is fine). Pass selectors to report on those elements instead of the automatic outline. Use this before working with large frames, for cross-frame visual references and to pin down layout faults.",
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.inspect_frame),
   },
   {
     name: 'get_frame_html',
@@ -1256,30 +1525,15 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: 'edit_frame_html',
     description:
-      'Exact find/replace in a frame\'s HTML — the change morphs into the live render. Use for small, targeted changes. "find" must occur exactly once.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string' },
-        find: { type: 'string' },
-        replace: { type: 'string' },
-      },
-      required: ['frame_id', 'find', 'replace'],
-    },
+      "Exact find/replace in a frame's HTML — the change morphs into the live render. Use for small, targeted changes. old_str must occur exactly once. new_str must open and close as many <doop-use> and <template> tags as old_str does: an edit that leaves one unclosed is refused, so include the closing tags in the same edit or replace the whole instance.",
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.edit_frame_html),
   },
   {
     name: 'set_frame_html',
     description:
       'Replace a frame with a complete compact HTML document in one call. Use only when the entire html argument is under 12,000 characters; use the staged rewrite tools for larger documents. ' +
       COMPOSE_CHECK,
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string' },
-        html: { type: 'string', description: 'Complete, self-contained HTML document' },
-      },
-      required: ['frame_id', 'html'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_frame_html),
   },
   {
     name: 'begin_frame_rewrite',
@@ -1319,445 +1573,161 @@ const TOOLS: Anthropic.Tool[] = [
     name: 'upload_font',
     description:
       'Add a font file (ttf/otf/woff/woff2, one face per file, max 10 MB) to the font library this canvas designs with, from a public URL of the file itself (not a CSS file). Then name the family in CSS (font-family: "Family", sans-serif) and Doop writes the @font-face. This is how a font that is not in the canvas library or the hosted fonts gets into a design: never inline a font file as a base64 data: URI. Upload each weight and style you use as its own file. The result says which weight and style were stored and whether each came from the file, a name or an override; when the file misreports its face, upload it again with weight and style set.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        source_url: { type: 'string', description: 'Public http(s) URL of the font file' },
-        file_name: { type: 'string', description: 'The file name the library shows, e.g. "Oxanium-Light.ttf"' },
-        weight: {
-          type: 'integer',
-          minimum: 1,
-          maximum: 1000,
-          description: 'CSS font-weight to store instead of the file’s own (a variable font’s range included)',
-        },
-        style: {
-          type: 'string',
-          enum: ['normal', 'italic'],
-          description: 'font-style to store instead of the file’s own',
-        },
-      },
-      required: ['source_url'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.upload_font),
   },
   {
     name: 'search_images',
     description:
       'Search free stock photography and get candidate photos WITH visual thumbnails — look at them and pick the one that fits the frame. Use concrete, scene-level queries ("team collaborating loft office", not "business"). Embed the chosen image_url directly in frame HTML with object-fit: cover and a real alt text.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Scene-level description of the photo you want' },
-        orientation: {
-          type: 'string',
-          enum: ['landscape', 'portrait', 'square'],
-          description: 'Match the slot the photo will fill',
-        },
-        count: { type: 'number', description: 'Candidates to return, 1-8, default 5' },
-      },
-      required: ['query'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.search_images),
   },
   {
     name: 'generate_image',
-    description:
-      "Generate an image from a text prompt with AI and get a permanent URL to embed, plus a preview to judge. For visuals stock search cannot supply: brand-specific illustration, product renders, mascots, abstract hero art in the frame's exact palette. Prefer search_images for ordinary photography. It spends the requester's ChatGPT quota or OpenAI money and takes 20–60 seconds, so write ONE considered prompt (subject, style, composition, palette hexes, lighting, what to leave out) and refine a near miss by prompt.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        prompt: { type: 'string', description: 'What to draw: subject, style, composition, palette, lighting, mood' },
-        aspect: {
-          type: 'string',
-          enum: [...imageGen.IMAGE_ASPECTS],
-          description: 'square 1024×1024 (default), landscape 1536×1024, portrait 1024×1536 — match the slot',
-        },
-        quality: {
-          type: 'string',
-          enum: [...imageGen.IMAGE_QUALITIES],
-          description: 'low is fast and cheap; default medium',
-        },
-      },
-      required: ['prompt'],
-    },
+    description: `Generate an image from a text prompt with AI and get a permanent URL to embed, plus a preview to judge. ${imageGen.IMAGE_PROVIDER_NOTE} For visuals stock search cannot supply: brand-specific illustration, product renders, mascots, abstract hero art in the frame's exact palette. Prefer search_images for ordinary photography. It spends the requester's quota or money and takes 20–60 seconds, so write ONE considered prompt (subject, style, composition, palette hexes, lighting, what to leave out) and refine a near miss by prompt.`,
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.generate_image),
   },
   {
     name: 'list_backgrounds',
     description:
       "Browse a curated library of premium backgrounds for hero sections, section bands and bento tiles (glows, grainy meshes, aurora, neon, painterly scenes) as a page of thumbnails, each with palette hexes and a ready-to-paste CSS line that includes a legibility scrim. Reach for it when a hero or full-bleed section wants atmosphere, depth or a focal glow; a quiet typographic design can stay flat, but a default two-stop gradient is rarely right. Filter by tone (light/dark — match your copy color), slot and style; an optional query only reorders. Then decide like a designer: does one genuinely fit the frame's style and palette? If yes use it and put copy in its text_zone; if not, call again with a different filter or draw the background yourself.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Mood / palette words to put first — reorders, never filters' },
-        tone: {
-          type: 'string',
-          enum: [...backgrounds.BACKGROUND_TONES],
-          description: 'light = dark copy on it, dark = light copy on it',
-        },
-        style: { type: 'string', enum: [...backgrounds.BACKGROUND_STYLES], description: 'Restrict to one look' },
-        slot: {
-          type: 'string',
-          enum: [...backgrounds.BACKGROUND_SLOTS],
-          description: 'hero, section band, or card/bento tile',
-        },
-        count: { type: 'number', description: 'Thumbnails to return, 1-24, default 12' },
-      },
-      required: [],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.list_backgrounds),
   },
   {
     name: 'search_icons',
     description:
       'Search 200,000+ open-source UI icons, returned as hotlinkable SVG URLs. Search the concept ("shopping cart", "arrow right"). Results are semantically named ids — pick by name. For company logos use search_logos instead.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Icon concept, e.g. "shopping cart"' },
-        limit: { type: 'number', description: 'Max results, default 24' },
-      },
-      required: ['query'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.search_icons),
   },
   {
     name: 'search_logos',
     description:
       'Find a company\'s logo by brand name or domain — returns the company\'s real mark as a hotlinkable URL (thumbnail included when possible), plus open-source vector marks for well-known brands. The exact domain ("acme.io") resolves far more reliably than a name. Use for customer-logo walls, integration rows, testimonial cards, press bars. Favicon-sourced logos are small rasters — display at 32px or less, never scale up.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Company name or domain' },
-        count: { type: 'number', description: 'Candidates to return, 1-8, default 5' },
-      },
-      required: ['query'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.search_logos),
   },
   {
     name: 'view_website',
     description:
       'Read-only inspection of a public web page: acquires its current HTML and returns a locally rendered desktop screenshot plus visible text without changing the canvas. Use import_webpage instead when the page needs to land on the canvas as an editable HTML snapshot.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The page URL — a bare domain like "acme.io" is loaded over https' },
-      },
-      required: ['url'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.view_website),
   },
   {
     name: 'import_webpage',
     description:
       'Import one public web page onto the current canvas as an editable HTML snapshot. Scripts and iframes are removed and stylesheets are inlined. Set as_reference=true when it is source material for a separate design; matching reference snapshots are reused across pipeline stages. Set false when importing or editing the snapshot itself is the deliverable; this creates a fresh deliverable copy. Call screenshot_frame on the returned frame.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The page URL — a bare domain like "acme.io" is loaded over https' },
-        as_reference: {
-          type: 'boolean',
-          description:
-            'True for source material that must remain unchanged; false when the imported snapshot itself is the deliverable',
-        },
-      },
-      required: ['url', 'as_reference'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.import_webpage),
   },
   {
     name: 'get_reference',
     description:
       'Read a pinned style reference — a design a human marked "more like this" — as a rendered screenshot plus its HTML. References are listed in your request when the canvas has them. Match the reference\'s palette, typography and spacing in what you design.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        reference_id: { type: 'string', description: 'Reference id from the pinned-references list in your request' },
-      },
-      required: ['reference_id'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.get_reference),
   },
   {
     name: 'search_inspiration',
     description:
       'Search One Page Love\'s hand-curated gallery of real, well-designed live websites and SEE thumbnails of each, with their tags (style, colour, fonts, genre, sections). Call it FIRST when writing a design brief — it is the required inspiration step, especially for landing pages. Query the genre plus the look you want in the words the catalog is tagged with ("saas landing page, dark minimal", "finance, editorial", "portfolio, typographic", "pricing, illustrative"), not the product noun alone. The catalog is landing pages and one-page sites, not app screens: for a dashboard or app UI, query the product\'s register ("saas, minimal") and take the type, colour and density from it. Study the thumbnails, pick the ONE exemplar that fits the brief best and follow it — do not blend several — and name it in the brief. Do not embed these screenshots in a frame.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description:
-            'Genre + look, e.g. "saas landing page, dark minimal", "restaurant, retro", "finance, editorial"',
-        },
-        count: { type: 'number', description: 'Exemplars to return, default 4, max 6' },
-      },
-      required: ['query'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.search_inspiration),
   },
   {
     name: 'save_decision',
     description: `Record a design decision and why it was made, in the canvas Memory, so humans and later agents know what was committed to and the reason: a direction you chose (the exemplar you followed, the mood, the accent) or a change you made at someone's request (colours changed, corners rounded). A decision is the why, not a store for values: the palette, fonts and scale live in tokens (create_tokens, set_tokens). Save one decision and its rationale per call, at most ${MAX_DECISION_CHARS} characters, split by topic. Design taste only, never one-off content edits.`,
-    input_schema: {
-      type: 'object',
-      properties: {
-        decision: {
-          type: 'string',
-          description:
-            'The decision and its reason, e.g. "Followed oatside-soft-shelf: its candlelit warmth suits an evening grocery brand better than the bright, clinical set"',
-        },
-      },
-      required: ['decision'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.save_decision),
   },
   {
     name: 'reply_to_comment',
     description:
-      'Answer inside a comment thread on this canvas — the person who left the comment sees it under their pin. Use it when a request needs a decision only they can make, or deserves a word mid-task; your final message is posted into every thread you worked on automatically, so do not repeat it here. Plain prose, no @mentions. Replying does not resolve the thread.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        comment_id: {
-          type: 'string',
-          description: 'The comment id given in the request (any comment in the thread works)',
-        },
-        text: { type: 'string', description: 'The reply, written to the person who asked' },
-        awaiting_answer: {
-          type: 'boolean',
-          description:
-            'true when you are asking something you need answered before you can do the work: the request is handed back to the person, the thread stays open for their reply, and you should finish without changing a frame.',
-        },
-      },
-      required: ['comment_id', 'text'],
-    },
+      'Answer inside a comment thread on this canvas — the person who left the comment sees it under their pin. Use it when a request needs a decision only they can make, or deserves a word mid-task; your final message is posted into every thread you worked on automatically, so do not repeat it here. Plain prose and no agent @mentions; to bring a person in, write @ and their name as the thread spells it ("@Ana Souza") and they are emailed. Replying does not resolve the thread.',
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.reply_to_comment),
   },
   {
     name: 'set_frame_approval',
     description:
       'Mark a frame ready for dev, or move it back to draft, for the person who asked you. Only when they explicitly ask for that: never approve your own designs unasked. The approval is recorded as theirs, made through you, and starts any approval automations on the canvas like a human sign-off. Editing the HTML or size afterwards moves it to needs_review.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string' },
-        status: { type: 'string', enum: ['ready_for_dev', 'draft'] },
-      },
-      required: ['frame_id', 'status'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_frame_approval),
   },
   {
     name: 'resolve_comment',
     description:
       'Close a comment thread you have fully dealt with, before finishing. Resolving the root closes the whole thread. Threads you were asked to work on are resolved for you when the run finishes, so call this only to close one early, or one you answered without changing a frame.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        comment_id: { type: 'string', description: 'The comment id given in the request' },
-      },
-      required: ['comment_id'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.resolve_comment),
   },
   {
     name: 'report_issue',
     description:
       'Tell the Doop team where Doop itself got in your way: a tool that errored or behaved other than described, an instruction that left you guessing, or a capability you needed and did not have. Call it after a retry fails or when you fall back to a workaround, then carry on with the task. Ideas that did not block you go to share_feedback. It never reaches the humans on the canvas. Be specific: what you tried, what happened, what you expected. Never include secrets.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        category: { type: 'string', enum: [...AGENT_ISSUE_CATEGORIES] },
-        message: { type: 'string', description: 'What you tried, what happened, and what you expected or needed.' },
-        tool: { type: 'string', description: 'The tool involved, if any' },
-      },
-      required: ['category', 'message'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.report_issue),
   },
   {
     name: 'share_feedback',
     description:
       'Tell the Doop team how Doop could work better for you: a tool you wish you had, a clumsy workflow, a result that should carry more, or something that worked especially well. Use it when you notice something worth saying, then carry on with the task. Something that broke or blocked you goes to report_issue. It never reaches the humans on the canvas. Never include secrets.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        category: { type: 'string', enum: [...AGENT_IDEA_CATEGORIES] },
-        message: {
-          type: 'string',
-          description: 'What you were doing and what would have helped, or what worked well.',
-        },
-        tool: { type: 'string', description: 'The tool involved, if any' },
-      },
-      required: ['category', 'message'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.share_feedback),
   },
   {
     name: 'set_guidelines',
     description:
       "Create, replace or delete a named style guide on this canvas (markdown, max 24,000 chars; empty string deletes). Write rules other designers and agents can execute directly: palette hexes, font families, spacing/radius/shadow conventions, layout recipes, do/don't lists. Also how you persist a redesign audit (binding Direction + descriptive source baseline) so every later job inherits it.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Doc slug, e.g. "redesign-pipefile-com" (a-z, 0-9, hyphens)' },
-        markdown: { type: 'string', description: 'Full replacement markdown for this doc; empty string deletes it' },
-        title: {
-          type: 'string',
-          description:
-            'Pretty display name shown to humans, e.g. "Pipefile design system"; omit to keep the current one',
-        },
-      },
-      required: ['name', 'markdown'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_guidelines),
   },
   {
     name: 'get_tokens',
     description:
-      "This canvas's design tokens (CSS custom properties frames use as var(--name)), as JSON, a :root CSS block or a Tailwind v4 @theme block.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        types: { type: 'array', items: { type: 'string', enum: [...TOKEN_TYPES] } },
-        format: { type: 'string', enum: ['json', 'css', 'tailwind'] },
-      },
-    },
+      "This canvas's design tokens (CSS custom properties frames use as var(--name)), as JSON, a :root CSS block, a Tailwind v4 @theme block or markdown tables for a styleguide. Filter by type or a name glob.",
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.get_tokens),
   },
   {
     name: 'create_tokens',
     description:
       'Add design tokens to this canvas: each needs a CSS custom property name (--color-primary), a type and a value (a CSS value, or var(--other) to alias a token that exists or comes earlier in the batch). Names follow Tailwind v4 namespaces (--color-*, --spacing-*, --radius-*, --font-*, --text-*, --leading-*, --tracking-*, --container-*, --breakpoint-*). Reuse existing tokens before creating new ones. Use them in frames as var(--name), never the literal.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        tokens: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              type: { type: 'string', enum: [...TOKEN_TYPES] },
-              value: { type: 'string' },
-              themes: {
-                type: 'object',
-                description:
-                  'The value under a theme where it differs, e.g. { "dark": "#fff" }; a new name declares the theme',
-                additionalProperties: { type: 'string' },
-              },
-              description: { type: 'string' },
-            },
-            required: ['name', 'type', 'value'],
-          },
-        },
-      },
-      required: ['tokens'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.create_tokens),
   },
   {
     name: 'set_tokens',
     description:
       'Change (value, type, description), rename (new_name) or delete (delete: true) design tokens by name. Every frame naming a changed token is restyled at once.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        tokens: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              new_name: { type: 'string' },
-              type: { type: 'string', enum: [...TOKEN_TYPES] },
-              value: { type: 'string' },
-              themes: {
-                type: 'object',
-                description: "Theme values to set, merged in; null removes that theme's value",
-                additionalProperties: { type: ['string', 'null'] },
-              },
-              description: { type: 'string' },
-              delete: { type: 'boolean' },
-            },
-            required: ['name'],
-          },
-        },
-      },
-      required: ['tokens'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_tokens),
   },
   {
     name: 'set_token_themes',
     description:
       'Replace this canvas\'s token themes (light, dark, …) and their order. A frame switches theme with data-doop-theme="<theme>" on its <html> or on a subtree; a theme that leaves takes its values with it.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        themes: { type: 'array', items: { type: 'string' } },
-        renames: {
-          type: 'array',
-          description: 'Themes to rename first; their values follow. List the new name in themes.',
-          items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } },
-        },
-      },
-      required: ['themes'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_token_themes),
   },
   {
     name: 'update_frame',
     description:
-      "Change a frame's metadata in one call, without touching its design: rename it (name), move it on its page (x, y), resize it (width, height), lock or unlock it, or move it to another page (pageId; it keeps its x/y unless you pass new ones and lands in front of that page's frames). Pass only what changes. To reorganize a canvas, move frames with this and reorder pages with set_canvas_pages — never recreate a frame to move it.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string' },
-        pageId: { type: 'string', description: 'The page to move the frame to, from the page list' },
-        name: { type: 'string' },
-        x: { type: 'number', description: 'Canvas position in px' },
-        y: { type: 'number', description: 'Canvas position in px' },
-        width: { type: 'number', description: 'px; the design is not rescaled' },
-        height: { type: 'number', description: 'px; the design is not rescaled' },
-        locked: { type: 'boolean', description: 'true keeps humans from selecting, moving or deleting it' },
-      },
-      required: ['frame_id'],
-    },
+      "Change a frame's metadata in one call, without touching its design: rename it (name), move it on its page (x, y), resize it (width, height), turn it (rotation), lock or unlock it, or move it to another page (pageId; it keeps its x/y unless you pass new ones and lands in front of that page's frames). Pass only what changes. To reorganize a canvas, move frames with this and reorder pages with set_canvas_pages — never recreate a frame to move it.",
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.update_frame),
+  },
+  {
+    name: 'update_canvas',
+    description:
+      'Rename this canvas: the name on its tab and in the dashboard. Everyone viewing it sees the new name at once. Pages are renamed with set_canvas_pages, frames with update_frame.',
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.update_canvas),
   },
   {
     name: 'create_canvas_page',
     description:
       'Add a new, empty page at the end of this canvas and get its id back. Use a page when a body of work deserves its own board (a second product surface, web vs. mobile, a round of explorations) and a frame when it is one screen. Move frames onto it with update_frame, or reorder it with set_canvas_pages.',
-    input_schema: {
-      type: 'object',
-      properties: { name: { type: 'string', description: 'The page name shown in the Pages panel' } },
-      required: ['name'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.create_canvas_page),
   },
   {
     name: 'set_canvas_pages',
     description:
       'Rename, reorder or delete pages by sending the complete ordered page list. expectedPages is the list as you last saw it (the kickoff, or the last page tool result); if a collaborator changed it since, the call is refused with the current list. A page that still holds frames cannot be deleted: move its frames with update_frame first. To add a page, use create_canvas_page.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        expectedPages: {
-          type: 'array',
-          description: 'The ordered pages as you last saw them',
-          items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
-        },
-        pages: {
-          type: 'array',
-          description: 'The new ordered list; keep each page id, change names and order, leave out a page to delete it',
-          items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
-        },
-      },
-      required: ['expectedPages', 'pages'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_canvas_pages),
   },
   {
     name: 'get_prototype',
     description:
       'List the clickable-prototype wiring of this canvas: each page with its flow start frame, and every interaction (data-doop-on / data-doop-action attributes in frame HTML) with its trigger, action and target. Interactions whose target frame does not exist carry a problem; fix them with edit_frame_html. Call it after wiring a flow.',
-    input_schema: { type: 'object', properties: {} },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.get_prototype),
   },
   {
     name: 'set_prototype_start',
     description:
-      "Choose the frame a page's clickable prototype starts on (the player at /c/<canvas>/proto opens there). Pass an empty frame_id to clear it; the flow then starts on the page's top-left frame.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string', description: "The start frame, or an empty string to clear the page's start" },
-        page_id: {
-          type: 'string',
-          description: "The page; defaults to the start frame's page (the first page when clearing)",
-        },
-      },
-      required: ['frame_id'],
-    },
+      "Choose the frame a page's clickable prototype starts on (the player at /c/<canvas>/proto opens there). Pass null as frame_id to clear it; the flow then starts on the page's top-left frame.",
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.set_prototype_start),
   },
   {
     name: 'screenshot_frame',
@@ -1773,18 +1743,7 @@ const TOOLS: Anthropic.Tool[] = [
     name: 'export_layer',
     description:
       "Export ONE element (layer) of a frame as a PNG or JPG: the frame rendered whole, cut to that element's box. Returns public URLs that re-render when the frame changes. Name the element by element_id (its data-doop-id) or, when it has none, by selector (any CSS selector; the first match is used).",
-    input_schema: {
-      type: 'object',
-      properties: {
-        frame_id: { type: 'string' },
-        element_id: { type: 'string', description: "the element's data-doop-id" },
-        selector: { type: 'string', description: 'a CSS selector, for an element without a data-doop-id' },
-        format: { type: 'string', enum: ['png', 'jpg'] },
-        quality: { type: 'number', minimum: 1, maximum: 100 },
-        scale: { type: 'number', minimum: MIN_EXPORT_SCALE, maximum: MAX_EXPORT_SCALE },
-      },
-      required: ['frame_id'],
-    },
+    input_schema: jsonSchemaOf(SHARED_PARAMETERS.export_layer),
   },
 ]
 
@@ -1793,19 +1752,55 @@ for (const tool of COMPONENT_TOOLS) {
   TOOLS.push({
     name: tool.name,
     description: tool.description,
-    input_schema: zodToJsonSchema(z.object(tool.shape)) as Anthropic.Tool['input_schema'],
+    input_schema: jsonSchemaOf(residentParameters(tool.shape)),
   })
 }
 TOOLS.push({
   name: 'screenshot_component',
-  description:
-    'Render a component in every combination of its enum props and see it. Look at it after creating or changing a component.',
-  input_schema: {
-    type: 'object',
-    properties: { component: { type: 'string', description: 'Component name or id' } },
-    required: ['component'],
-  },
+  description: previewDescription,
+  input_schema: jsonSchemaOf(SCREENSHOT_COMPONENT_PARAMETERS),
 })
+
+/** What a call is checked against, by tool, keeping the parameters it does not list (a tool's old spellings, below)
+ *  for its handler. The resident-only tools with a hand-written schema have none. */
+const TOOL_PARAMETERS = new Map<string, z.AnyZodObject>(
+  [
+    ...Object.entries(SHARED_PARAMETERS),
+    ...COMPONENT_TOOLS.map((tool) => [tool.name, residentParameters(tool.shape)] as const),
+    ['screenshot_component', SCREENSHOT_COMPONENT_PARAMETERS] as const,
+  ].map(([name, parameters]) => [name, parameters.passthrough()]),
+)
+
+/** A tool's parameter names before it took MCP's: a model copying an earlier call keeps working. */
+const OLD_SPELLINGS: Partial<Record<string, Record<string, string>>> = {
+  edit_frame_html: { find: 'old_str', replace: 'new_str' },
+  set_prototype_start: { page_id: 'pageId' },
+}
+
+/**
+ * A call's input checked against the parameters its model was shown, as an MCP call is before its handler runs:
+ * refused with what is wrong, or handed on as the check made it (text trimmed, defaults filled in). An optional
+ * parameter given as null counts as not given, as the handlers read it before they were checked.
+ */
+function checkedInput(name: string, input: unknown): { ok: true; input: unknown } | { ok: false; error: string } {
+  const parameters = TOOL_PARAMETERS.get(name)
+  if (!parameters) return { ok: true, input }
+  const given: Record<string, unknown> = { ...(typeof input === 'object' && input !== null ? input : {}) }
+  for (const [old, current] of Object.entries(OLD_SPELLINGS[name] ?? {}))
+    if (old in given && given[current] == null) {
+      given[current] = given[old]
+      delete given[old]
+    }
+  const shape: z.ZodRawShape = parameters.shape
+  for (const [key, value] of Object.entries(given)) {
+    const field = shape[key]
+    if (value === null && field?.isOptional() && !field.isNullable()) delete given[key]
+  }
+  const checked = parameters.safeParse(given)
+  if (checked.success) return { ok: true, input: checked.data }
+  const issues = checked.error.issues.map((issue) => `${issue.path.join('.') || 'input'}: ${issue.message}`)
+  return { ok: false, error: `Invalid arguments for ${name}: ${issues.join('; ')}` }
+}
 
 function canReadCanvas(userId: string, canvasId: string): boolean {
   const other = store.getCanvas(canvasId)
@@ -1881,22 +1876,15 @@ async function frameImageBlocks(
   return blocks
 }
 
-/** A frame's HTML for comparing a write against, or nothing while it is not loaded. */
-function existingHtml(f: { html: string }): string {
-  try {
-    return typeof f.html === 'string' ? f.html : ''
-  } catch {
-    return ''
-  }
-}
-
 /** Runs one tool call of the resident's loop. Exported for tests. */
 export async function execTool(
-  block: Anthropic.ToolUseBlockParam,
+  given: Anthropic.ToolUseBlockParam,
   canvasId: string,
   actor: ReturnType<typeof actions.resolveActor>,
   runState: RunState,
 ): Promise<Anthropic.ToolResultBlockParam> {
+  const checked = checkedInput(given.name, given.input)
+  const block = checked.ok ? { ...given, input: checked.input } : given
   const input = block.input as { frame_id: string } & Record<string, string>
   const fail = (msg: string): Anthropic.ToolResultBlockParam => ({
     type: 'tool_result',
@@ -1910,10 +1898,34 @@ export async function execTool(
     content,
   })
 
+  const toCheckBefore = uncheckedKey(uncheckedChanges(runState, canvasId))
   /* one tool call is one operation, as over MCP: a work budget of its own (server/workBudget.ts) */
-  return runOperation(`resident ${block.name}`, canvasId, () =>
-    runResidentTool(canvasId, block, actor, runState, input, ok, fail),
-  )
+  const answered = !checked.ok
+    ? fail(checked.error)
+    : await runOperation(`resident ${block.name}`, canvasId, () =>
+        runResidentTool(canvasId, block, actor, runState, input, ok, fail),
+      )
+  /* a call that changed what is left to look at says what is left: the desktop harness
+     has no turn of its own to be reminded in */
+  return !answered.is_error && uncheckedKey(uncheckedChanges(runState, canvasId)) !== toCheckBefore
+    ? withNote(answered, stillToCheckOn(runState, canvasId))
+    : answered
+}
+
+/** Whether a frame shows a component now: it holds its main, or an instance of it. */
+function frameShows(canvasId: string, frameId: string, componentId: string): boolean {
+  const canvas = store.getCanvas(canvasId)
+  if (!canvas) return false
+  if ((canvas.components ?? []).find((def) => def.id === componentId)?.mainFrameId === frameId) return true
+  return usageOf(canvas, componentId).frames.some((frame) => frame.id === frameId)
+}
+
+/** A tool result with a line of text after what it answered. */
+function withNote(result: Anthropic.ToolResultBlockParam, note: string): Anthropic.ToolResultBlockParam {
+  const content = result.content
+  if (typeof content === 'string' || content === undefined)
+    return { ...result, content: content ? `${content}\n${note}` : note }
+  return { ...result, content: [...content, { type: 'text', text: note }] }
 }
 
 async function runResidentTool(
@@ -1944,25 +1956,40 @@ async function runResidentTool(
           html?: string
           x?: number
           y?: number
+          pageId?: unknown
+          fit_to_content?: unknown
         }
+        const fitAxes = readFitAxes(raw.fit_to_content)
+        if (!fitAxes.ok) return fail(fitAxes.error)
+        const canvas = store.getCanvas(canvasId)
+        if (!canvas) return fail('canvas not found')
+        const pageId = typeof raw.pageId === 'string' && raw.pageId.trim() ? raw.pageId.trim() : undefined
+        if (pageId && !canvasPages(canvas).some((page) => page.id === pageId))
+          return fail(frameMetaError({ unknownPage: pageId }, canvas))
         const html = completeHtml(raw.html)
         if (!html) return fail('create_frame requires a complete non-empty HTML document ending in </html>')
+        /* the inline-data guidance before the size refusal, as this tool always answered: the
+           check reads nothing of the canvas, and the command makes it again where it writes */
         const inline = inlineDataRefusal(html, '', 'resident')
         if (inline) return fail(inline)
         if (html.length > MAX_REWRITE_CHUNK_CHARS) {
           return fail(`create_frame HTML must be compact (at most ${MAX_REWRITE_CHUNK_CHARS} characters)`)
         }
-        const f = actions.createFrame(
-          canvasId,
-          createFrameInput({ ...raw, html }, runState.placement, store.getCanvas(canvasId)),
+        const created = await runCanvasWrite(canvasId, {
+          type: 'create-frame',
+          input: createFrameInput({ ...raw, html, pageId }, runState.placement, canvas),
           actor,
-        )
-        if (!f) return fail('canvas not found')
-        runState.mutatedFrames.add(f.id)
-        unverify(runState, f.id)
+          inline: 'resident',
+        })
+        if (created && 'inline' in created) return fail(created.inline)
+        if (!created) return fail('canvas not found')
+        const fit = fitAxes.value ? await fitWrittenFrame(created, fitAxes.value, actor) : undefined
+        const f = fit?.frame ?? created
+        noteFrameChange(runState, f.id)
         return ok(
           [
             `created frame ${f.id} ("${f.name}", ${Math.round(f.width)}x${Math.round(f.height)}) — it is revealing to viewers now`,
+            ...fitNotes(fit),
             ...componentWriteNotes(f, { review: true }),
           ].join('\n'),
         )
@@ -1970,7 +1997,9 @@ async function runResidentTool(
       case 'inspect_frame': {
         const f = store.getFrame(input.frame_id)
         if (!f || f.canvasId !== canvasId) return fail('frame not found on this canvas')
-        const inspection = await inspectFrame(f)
+        const asked = (input as Record<string, unknown>).selectors
+        const selectors = Array.isArray(asked) ? asked.filter((x): x is string => typeof x === 'string') : undefined
+        const inspection = await inspectFrame(f, { selectors })
         return ok(
           JSON.stringify({
             ...inspection,
@@ -2021,29 +2050,37 @@ async function runResidentTool(
         const f = store.getFrame(input.frame_id)
         if (!f || f.canvasId !== canvasId) return fail('frame not found on this canvas')
         if (typeof f.html !== 'string') return fail('frame HTML is unavailable; retry after the frame reloads')
-        if (typeof input.find !== 'string' || !input.find) return fail('find must be a non-empty exact HTML string')
-        if (typeof input.replace !== 'string') return fail('replace must be an HTML string')
-        /* in the form get_frame_html showed, or the expanded one if that is what was copied */
-        const compact = compactFrameHtml(f)
-        const source = compact.split(input.find).length - 1 > 0 ? compact : f.html
-        const count = source.split(input.find).length - 1
-        if (count === 0) return fail('"find" text not found — call get_frame_html and copy the exact text')
-        if (count > 1)
-          return fail(`"find" text occurs ${count} times — include more surrounding context to make it unique`)
-        const replace = input.replace
-        const edited = source.replace(input.find, () => replace)
-        /* the edited document, so a URI completed across the replacement's edges is caught too */
-        const inline = inlineDataRefusal(edited, `${f.html}\n${compact}`, 'resident')
-        if (inline) return fail(inline)
-        actions.updateFrame(input.frame_id, { html: edited }, actor)
-        runState.mutatedFrames.add(input.frame_id)
-        unverify(runState, input.frame_id)
+        const find = input.old_str
+        const replace = input.new_str
+        if (typeof find !== 'string' || !find) return fail('old_str must be a non-empty exact HTML string')
+        if (typeof replace !== 'string') return fail('new_str must be an HTML string')
+        /* matched in the form get_frame_html showed, or the stored or composed one if that is
+           what was copied, and checked for inline data the frame did not hold, where the
+           frame's writes are run (server/canvasWrites.ts) */
+        const edited = await runCanvasWrite(canvasId, {
+          type: 'edit-frame-html',
+          frameId: input.frame_id,
+          find,
+          replace,
+          actor,
+          inline: 'resident',
+        })
+        if (!edited.ok) {
+          if ('missing' in edited) return fail('frame not found on this canvas')
+          if ('unbalanced' in edited) return fail(unbalancedProblem(edited.unbalanced, 'old_str', 'new_str'))
+          return fail(
+            'inline' in edited ? edited.inline : frameEditProblem(edited.problem, 'old_str', 'get_frame_html'),
+          )
+        }
+        noteFrameChange(runState, input.frame_id)
         const notes = componentWriteNotes(store.getFrame(input.frame_id)!)
         return ok(notes.length ? `applied\n${notes.join('\n')}` : 'applied')
       }
       case 'set_frame_html': {
         const f = store.getFrame(input.frame_id)
         if (!f || f.canvasId !== canvasId) return fail('frame not found on this canvas')
+        const fitAxes = readFitAxes((block.input as { fit_to_content?: unknown }).fit_to_content)
+        if (!fitAxes.ok) return fail(fitAxes.error)
         const html = completeHtml(input.html)
         if (!html) {
           return fail(
@@ -2055,15 +2092,25 @@ async function runResidentTool(
             `set_frame_html is limited to ${MAX_REWRITE_CHUNK_CHARS} characters. Use begin_frame_rewrite, append_frame_rewrite chunks, and commit_frame_rewrite.`,
           )
         }
-        const inline = inlineDataRefusal(html, existingHtml(f), 'resident')
-        if (inline) return fail(inline)
-        actions.updateFrame(input.frame_id, { html }, actor)
-        runState.mutatedFrames.add(input.frame_id)
-        unverify(runState, input.frame_id)
+        /* refused there if it adds inline data the frame's stored HTML does not hold */
+        /* a whole-document write, as MCP set_frame_html: it may replace a design another agent streams */
+        const written = await runCanvasWrite(canvasId, {
+          type: 'write-frame',
+          frameId: input.frame_id,
+          patch: { html },
+          actor,
+          replace: true,
+          inline: 'resident',
+        })
+        if (written && 'inline' in written) return fail(written.inline)
+        if (!written) return fail('frame not found on this canvas')
+        const fit = fitAxes.value ? await fitWrittenFrame(written, fitAxes.value, actor) : undefined
+        noteFrameChange(runState, input.frame_id)
         return ok(
           [
             'applied — the new design is revealing to viewers now',
-            ...componentWriteNotes(store.getFrame(input.frame_id)!, { review: true }),
+            ...fitNotes(fit),
+            ...componentWriteNotes(fit?.frame ?? written, { review: true }),
           ].join('\n'),
         )
       }
@@ -2087,7 +2134,7 @@ async function runResidentTool(
         const draft = (runState.rewriteDrafts.get(input.frame_id) ?? '') + raw.chunk
         /* refused at the chunk, before the draft grows, on the draft as it would stand (a URI
            split across chunks included); the frame being rewritten may carry its own over */
-        const inline = inlineDataRefusal(draft, existingHtml(f), 'resident')
+        const inline = inlineDataRefusal(draft, () => storedHtmlOf(f), 'resident')
         if (inline) return fail(inline)
         if (draft.length > MAX_REWRITE_CHARS) {
           return fail(`rewrite draft exceeds the ${MAX_REWRITE_CHARS}-character safety limit`)
@@ -2103,13 +2150,19 @@ async function runResidentTool(
         const html = completeHtml(draft)
         if (!html)
           return fail('rewrite draft is not a complete HTML document ending in </html>; append the missing content')
-        /* again at the commit: the frame may have changed since the chunks were checked */
-        const inline = inlineDataRefusal(html, existingHtml(f), 'resident')
-        if (inline) return fail(inline)
-        actions.updateFrame(input.frame_id, { html }, actor)
+        /* again at the commit, where the write runs: the frame may have changed since the
+           chunks were checked */
+        const committed = await runCanvasWrite(canvasId, {
+          type: 'write-frame',
+          frameId: input.frame_id,
+          patch: { html },
+          actor,
+          replace: true,
+          inline: 'resident',
+        })
+        if (committed && 'inline' in committed) return fail(committed.inline)
         runState.rewriteDrafts.delete(input.frame_id)
-        runState.mutatedFrames.add(input.frame_id)
-        unverify(runState, input.frame_id)
+        noteFrameChange(runState, input.frame_id)
         return ok(
           [
             `committed ${html.length} characters — the new design is revealing to viewers now`,
@@ -2341,7 +2394,7 @@ async function runResidentTool(
         if (existing) {
           runState.sourceFrames.add(existing.id)
           runState.verificationFrames.add(existing.id)
-          unverify(runState, existing.id)
+          unverifyFrame(runState, existing.id)
           return ok(
             `Reusing the existing editable source snapshot ${existing.id} ("${existing.name}") for ${requestedUrl}; no duplicate frame was added. Call screenshot_frame with frame_id=${existing.id}. Leave this source frame unchanged and deliver the new design separately.`,
           )
@@ -2352,7 +2405,7 @@ async function runResidentTool(
         runState.mutatedFrames.add(f.id)
         if (raw.as_reference) runState.sourceFrames.add(f.id)
         else runState.sourceFrames.delete(f.id)
-        unverify(runState, f.id)
+        unverifyFrame(runState, f.id)
         return ok(
           `Imported ${requestedUrl} as editable frame ${f.id} ("${f.name}", ${Math.round(f.width)}x${Math.round(f.height)}, ${f.html.length} HTML characters). Call screenshot_frame with frame_id=${f.id}.${
             raw.as_reference
@@ -2372,7 +2425,8 @@ async function runResidentTool(
               : 'no style references pinned on this canvas',
           )
         }
-        const snapshot: Frame = {
+        /* whole as pinned: it keeps the tokens and component styles it had then */
+        const snapshot: Frame = wholeDocument({
           id: `reference-${ref.id}`,
           canvasId,
           name: ref.title,
@@ -2384,7 +2438,7 @@ async function runResidentTool(
           createdAt: ref.pinnedAt,
           updatedAt: ref.pinnedAt,
           updatedBy: ref.pinnedBy,
-        }
+        })
         const blocks = await frameImageBlocks(snapshot)
         const truncated = ref.html.length > MAX_HTML_READ_CHARS
         blocks.push({
@@ -2439,14 +2493,11 @@ async function runResidentTool(
       }
       case 'reply_to_comment': {
         const awaiting = (block.input as { awaiting_answer?: unknown }).awaiting_answer === true
-        const posted = replyInThread(
-          canvasId,
-          String(input.comment_id ?? ''),
-          String(input.text ?? ''),
-          actor,
-          runState,
-          awaiting,
-        )
+        const commentId = String(input.comment_id ?? '')
+        const thread = actions.findComment(commentId)
+        const canvas = store.getCanvas(canvasId)
+        const people = canvas && thread ? await commentPeople(canvas, threadAuthorIds(thread)) : []
+        const posted = replyInThread(canvasId, commentId, String(input.text ?? ''), actor, runState, awaiting, people)
         if (!posted.ok) return fail(posted.error)
         return ok(
           awaiting
@@ -2465,7 +2516,13 @@ async function runResidentTool(
           return fail('approval is set for the person who asked, and nobody who can edit this canvas asked')
         const name = await getUserName(requester)
         if (!name) return fail('the person who asked could not be found')
-        const result = actions.agentSetFrameApproval(input.frame_id, status, { id: requester, name }, actor)
+        const result = await runCanvasWrite(canvasId, {
+          type: 'agent-approval',
+          frameId: input.frame_id,
+          status,
+          user: { id: requester, name },
+          actor,
+        })
         if (!result.ok) return fail(result.error)
         /* "mark this ready for dev" is the whole job: a design edit after it would undo the sign-off */
         runState.arrangeWrites += 1
@@ -2510,24 +2567,28 @@ async function runResidentTool(
         )
       }
       case 'get_tokens': {
-        const raw = block.input as { types?: unknown; format?: unknown }
+        const raw = block.input as { types?: unknown; name_pattern?: unknown; format?: unknown }
         const types = Array.isArray(raw.types) ? raw.types.filter((t): t is string => typeof t === 'string') : []
-        let tokens = store.getTokens(canvasId)
+        const all = store.getTokens(canvasId)
+        let tokens = all
         const themes = store.getTokenThemes(canvasId)
         if (types.length) tokens = tokens.filter((t) => types.includes(t.type))
-        if (!tokens.length) return ok('no design tokens on this canvas yet — add some with create_tokens')
+        if (typeof raw.name_pattern === 'string' && raw.name_pattern) tokens = tokensNamed(tokens, raw.name_pattern)
+        if (!all.length) return ok('no design tokens on this canvas yet — add some with create_tokens')
+        if (!tokens.length) return ok('no design tokens match that filter')
         if (raw.format === 'css') return ok(tokensCss(tokens, themes))
         if (raw.format === 'tailwind') return ok(tokensTailwind(tokens, themes))
+        if (raw.format === 'markdown') return ok(tokensMarkdown(tokens, themes))
         return ok(JSON.stringify({ tokens: describeTokens(tokens), ...(themes.length ? { themes } : {}) }))
       }
       case 'create_tokens': {
         const raw = block.input as { tokens?: unknown }
         if (!Array.isArray(raw.tokens) || !raw.tokens.length) return fail('tokens must be a non-empty array')
-        const results = actions.createTokens(canvasId, raw.tokens, actor)
-        if (!results) return fail('canvas not found')
-        captureTokenResults(runState.requesterId, canvasId, 'resident', results)
-        runState.tokenWrites += tokenWritesIn(results)
-        return ok(JSON.stringify({ results }))
+        const written = await runCanvasWrite(canvasId, { type: 'create-tokens', tokens: raw.tokens, actor })
+        if (!written) return fail('canvas not found')
+        captureTokenResults(runState.requesterId, canvasId, 'resident', written.results)
+        runState.tokenWrites += tokenWritesIn(written.results)
+        return ok(JSON.stringify({ results: written.results }))
       }
       case 'set_tokens': {
         const raw = block.input as { tokens?: unknown }
@@ -2546,25 +2607,32 @@ async function runResidentTool(
             ...(e.delete === true ? { delete: true } : {}),
           }
         })
-        const results = actions.setTokens(canvasId, edits, actor)
-        if (!results) return fail('canvas not found')
-        captureTokenResults(runState.requesterId, canvasId, 'resident', results)
-        runState.tokenWrites += tokenWritesIn(results)
-        return ok(JSON.stringify({ results }))
+        const written = await runCanvasWrite(canvasId, { type: 'set-tokens', edits, actor })
+        if (!written) return fail('canvas not found')
+        captureTokenResults(runState.requesterId, canvasId, 'resident', written.results)
+        runState.tokenWrites += tokenWritesIn(written.results)
+        return ok(JSON.stringify({ results: written.results }))
       }
       case 'set_token_themes': {
         const raw = block.input as { themes?: unknown; renames?: unknown }
         try {
-          const themes = actions.setTokenThemes(canvasId, raw.themes, actor, raw.renames ?? [])
-          if (!themes) return fail('canvas not found')
+          const set = await runCanvasWrite(canvasId, {
+            type: 'set-token-themes',
+            themes: raw.themes,
+            renames: raw.renames,
+            actor,
+          })
+          if (!set) return fail('canvas not found')
           runState.tokenWrites += 1
           captureFeature(runState.requesterId, 'token_themes_set', 'resident', {
             canvas_id: canvasId,
-            theme_count: themes.length,
+            theme_count: set.themes.length,
           })
-          return ok(`token themes are now ${themes.length ? themes.join(', ') : 'none'}`)
+          return ok(`token themes are now ${set.themes.length ? set.themes.join(', ') : 'none'}`)
         } catch (e) {
-          return fail(e instanceof Error ? e.message : 'invalid themes')
+          /* only a refusal of the list; anything else fails the tool call (below), undone */
+          if (e instanceof actions.TokenThemesError) return fail(e.message)
+          throw e
         }
       }
       case 'update_frame': {
@@ -2572,15 +2640,24 @@ async function runResidentTool(
         const canvas = store.getCanvas(canvasId)
         const f = store.getFrame(input.frame_id)
         if (!canvas || !f || f.canvasId !== canvasId) return fail('frame not found on this canvas')
+        const fitAxes = readFitAxes(raw.fit_to_content)
+        if (!fitAxes.ok) return fail(fitAxes.error)
         /* the store updates the frame object in place, so what it was is read first */
         const arrangement = (frame: typeof f) =>
-          [frame.name, framePageId(canvas, frame), frame.x, frame.y, frame.width, frame.height, !!frame.locked].join(
-            '\u0000',
-          )
+          [
+            frame.name,
+            framePageId(canvas, frame),
+            frame.x,
+            frame.y,
+            frame.width,
+            frame.height,
+            !!frame.locked,
+            frame.rotation ?? 0,
+          ].join('\u0000')
         const before = { width: f.width, height: f.height, arrangement: arrangement(f) }
         const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
         const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
-        const updated = updateFrameMeta(
+        const updated = await updateFrameMetaWithFit(
           canvas,
           f.id,
           {
@@ -2591,66 +2668,22 @@ async function runResidentTool(
             width: num(raw.width),
             height: num(raw.height),
             locked: typeof raw.locked === 'boolean' ? raw.locked : undefined,
+            rotation: num(raw.rotation),
           },
+          fitAxes.value,
           actor,
         )
         if (!updated.ok) return fail(updated.error)
-        const frame = updated.value
+        const { frame, note } = updated.value
         /* a new size changes what renders, so it is a design change to verify */
         if (frame.width !== before.width || frame.height !== before.height) {
-          runState.mutatedFrames.add(frame.id)
-          unverify(runState, frame.id)
+          noteFrameChange(runState, frame.id)
         }
         /* a save that changed nothing has not delivered anything */
         if (arrangement(frame) !== before.arrangement) runState.arrangeWrites += 1
         return ok(
-          `frame ${frame.id} is now "${frame.name}" on page ${framePageId(canvas, frame)} at (${Math.round(frame.x)}, ${Math.round(frame.y)}), ${Math.round(frame.width)}x${Math.round(frame.height)}${frame.locked ? ', locked' : ''}`,
+          `frame ${frame.id} is now "${frame.name}" on page ${framePageId(canvas, frame)} at (${Math.round(frame.x)}, ${Math.round(frame.y)}), ${Math.round(frame.width)}x${Math.round(frame.height)}${frame.rotation ? `, turned ${frame.rotation}°` : ''}${frame.locked ? ', locked' : ''}${note ? `\n${note}` : ''}`,
         )
-      }
-      case 'create_canvas_page': {
-        const name = typeof input.name === 'string' ? input.name.trim() : ''
-        if (!name || name.length > MAX_PAGE_NAME) return fail(`name must be 1-${MAX_PAGE_NAME} characters`)
-        const created = addPage(canvasId, name, actor)
-        if (!created.ok) return fail(created.error)
-        runState.arrangeWrites += 1
-        return ok(
-          JSON.stringify({
-            page: created.value.page,
-            pages: created.value.pages.map(({ id, name }) => ({ id, name })),
-          }),
-        )
-      }
-      case 'set_canvas_pages': {
-        const canvas = store.getCanvas(canvasId)
-        if (!canvas) return fail('canvas not found')
-        const raw = block.input as { expectedPages?: unknown; pages?: unknown }
-        const pages = parsePageList(raw.pages)
-        if (typeof pages === 'string') return fail(pages)
-        const previous = pageList(canvas)
-        const saved = savePages(canvas, raw.expectedPages, pages, actor)
-        if (!saved.ok) return fail(saved.error)
-        if (!samePages(previous, saved.value)) runState.arrangeWrites += 1
-        return ok(JSON.stringify({ pages: saved.value.map(({ id, name }) => ({ id, name })) }))
-      }
-      case 'get_prototype': {
-        const canvas = store.getCanvas(canvasId)
-        if (!canvas) return fail('canvas not found')
-        return ok(JSON.stringify(prototypeReport(canvas)))
-      }
-      case 'set_prototype_start': {
-        const raw = block.input as { frame_id?: unknown; page_id?: unknown }
-        if (typeof raw.frame_id !== 'string') return fail('frame_id must be a frame id, or an empty string to clear')
-        const canvas = store.getCanvas(canvasId)
-        if (!canvas) return fail('canvas not found')
-        const pageId = typeof raw.page_id === 'string' && raw.page_id ? raw.page_id : undefined
-        const frameId = raw.frame_id.trim() || null
-        const result = setPrototypeStart(canvas, pageId, frameId, actor)
-        if (!result.ok) return fail(result.error)
-        captureFeature(runState.requesterId, 'prototype_start_set', 'resident', {
-          canvas_id: canvasId,
-          cleared: frameId === null,
-        })
-        return ok(JSON.stringify({ pages: result.pages }))
       }
       case 'export_layer': {
         const raw = block.input as {
@@ -2684,18 +2717,40 @@ async function runResidentTool(
         const blocks = runState.vision
           ? await frameImageBlocks(f)
           : `Screenshot skipped: the selected model cannot view images. Frame "${f.name}" is ${f.width}×${f.height}px. Verify your work with get_frame_html and inspect_frame instead.`
-        if (runState.mutatedFrames.has(input.frame_id) || runState.verificationFrames.has(input.frame_id)) {
-          runState.verifiedFrames.add(input.frame_id)
-        }
+        noteFrameScreenshot(runState, f.id, (componentId) => frameShows(canvasId, f.id, componentId))
         return ok(blocks)
       }
       case 'screenshot_component': {
         const def = findComponent(canvasId, String(input.component ?? ''))
         if (!def) return fail(`no component "${String(input.component)}" on this canvas`)
-        if (!runState.vision) return ok('Preview skipped: the selected model cannot view images.')
-        return ok(await frameImageBlocks(previewFrame(canvasId, def)))
+        const props = previewProps.safeParse(input.props)
+        if (!props.success) return fail(props.error.message)
+        try {
+          const combos = previewCombinations(def, props.data)
+          if (!runState.vision) return ok('Preview skipped: the selected model cannot view images.')
+          const blocks = await frameImageBlocks(previewFrame(canvasId, def, combos))
+          noteComponentScreenshot(runState, def.id)
+          return ok(blocks)
+        } catch (e) {
+          if (e instanceof PreviewQueryError) return fail(e.message)
+          throw e
+        }
       }
       default: {
+        const shared = sharedToolHandler(block.name)
+        if (shared) {
+          const canvas = store.getCanvas(canvasId)
+          if (!canvas) return fail('canvas not found')
+          const outcome = shared.run(block.input as Record<string, unknown>, {
+            canvas,
+            actor,
+            userId: runState.requesterId,
+            surface: 'resident',
+          })
+          if (!outcome.ok) return fail(outcome.error)
+          if (outcome.arranged) runState.arrangeWrites += 1
+          return ok(JSON.stringify(outcome.data))
+        }
         if (!COMPONENT_TOOL_NAMES.includes(block.name)) return fail(`unknown tool ${block.name}`)
         const canvas = store.getCanvas(canvasId)
         if (!canvas) return fail('canvas not found')
@@ -2715,12 +2770,16 @@ async function runResidentTool(
           surface: 'resident',
         })
         if (!outcome.ok) return fail(outcome.error)
-        const { data, note, frames } = outcome.result
+        const { data, note, frames, changed } = outcome.result
+        /* a component-level call says what it changed and which frames show it: one look at
+           any of them checks it. Otherwise its frames are ones it wrote (an instance placed or
+           changed), each to be looked at. */
+        if (changed?.length) runState.componentWrites += 1
+        for (const change of changed ?? []) noteComponentChange(runState, change)
         const libraryEvent = libraryFeatureEvent(block.name, block.input as Record<string, unknown>, data)
         if (libraryEvent) captureFeature(runState.requesterId, libraryEvent, 'resident', { canvas_id: canvasId })
         const notes = (frames ?? []).flatMap((frame) => {
-          runState.mutatedFrames.add(frame.id)
-          unverify(runState, frame.id)
+          if (!changed) noteFrameChange(runState, frame.id)
           return componentWriteNotes(frame)
         })
         return ok([JSON.stringify(data), ...(note ? [note] : []), ...notes].join('\n'))

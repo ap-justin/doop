@@ -10,6 +10,9 @@
  *  destination head, deduplicated by content. External stylesheets are not
  *  carried: nothing can say which of their rules the layer needs. */
 
+import { componentsUsedBy, syncComponentHead } from '../../shared/frameCompose'
+import { useStore } from './store'
+
 export const CARRIED_ATTR = 'data-doop-carried'
 export const SCOPE_ATTR = 'data-doop-carried-scope'
 
@@ -699,7 +702,11 @@ export function renameInCss(css: string, renamed: Record<string, string> | undef
 /** The CSS a subtree of `sourceHtml` relies on, scoped to `scope`; empty
  *  when the frame's own sheets style nothing in it. */
 export function carriedCss(sourceHtml: string, selector: string, scope: string): string {
-  const doc = parse(sourceHtml)
+  /* the store's frame is its source: the stylesheets of the components it uses are the
+     canvas's, composed in here so a part taken out of an instance keeps their rules.
+     Token values are not: the destination resolves them from the canvas, live */
+  const components = useStore.getState().canvas?.components ?? []
+  const doc = parse(syncComponentHead(sourceHtml, componentsUsedBy(sourceHtml, components)))
   let root: Element | null
   try {
     root = doc.querySelector(selector)
@@ -895,6 +902,48 @@ function renameFamilies(text: string, renamed: Map<string, string>, fontVars: Se
  *  the sheet and in the inline styles of the markup under `scopes`, so the
  *  destination's own animations and fonts keep their meaning. One sheet
  *  serves every scope given. */
+/** Carried sheets of subtrees from one document, joined into one with each
+ *  repeated rule kept once. Their scoped rules differ by scope, but the
+ *  `@font-face`, `@keyframes` and other unscoped rules they share come once
+ *  from every subtree. The last copy of a rule is the one kept, which the
+ *  cascade treats the same; a statement such as `@import` or `@layer a;`
+ *  keeps its every place, since where it stands matters. */
+export function joinCarriedSheets(sheets: readonly string[]): string {
+  const rules = sheets.flatMap(topLevelRules)
+  const last = new Map(rules.map((rule, i) => [rule, i]))
+  return rules.filter((rule, i) => rule.endsWith(';') || last.get(rule) === i).join('\n')
+}
+
+/* the sheet's top-level rules and statements, whole, in order */
+function topLevelRules(css: string): string[] {
+  const rules: string[] = []
+  let depth = 0
+  let quote: string | null = null
+  let start = 0
+  const take = (end: number) => {
+    const rule = css.slice(start, end).trim()
+    if (rule) rules.push(rule)
+    start = end
+  }
+  for (let i = 0; i < css.length; i++) {
+    const ch = css[i]!
+    if (quote) {
+      if (ch === '\\') i++
+      else if (ch === quote) quote = null
+    } else if (ch === '"' || ch === "'") quote = ch
+    else if (ch === '/' && css[i + 1] === '*') {
+      const end = css.indexOf('*/', i + 2)
+      i = end < 0 ? css.length : end + 1
+    } else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) take(i + 1)
+    } else if (ch === ';' && depth === 0) take(i + 1)
+  }
+  take(css.length)
+  return rules
+}
+
 export function withCarriedCss(destHtml: string, css: string, scopes?: string | string[]): string {
   if (!css.trim()) return destHtml
   const doc = parse(destHtml)
