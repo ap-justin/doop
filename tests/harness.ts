@@ -111,6 +111,8 @@ async function boot(
         /* always the embedded PGlite in dataDir, never a DATABASE_URL
              exported in the developer's shell */
         DATABASE_URL: '',
+        /* a Fly runner's own app name would make production servers read only fly-client-ip */
+        FLY_APP_NAME: '',
         /* never the live PostHog project: a key in a developer's shell or
              .env would turn every test signup into an account_created event,
              and the lifecycle-email workflows act on those */
