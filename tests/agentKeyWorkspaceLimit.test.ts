@@ -441,6 +441,28 @@ describe('a key limited to one workspace over /mcp', () => {
     30_000,
   )
 
+  /* the read-only tools COMMENT_SCOPE_TOOLS lets a comment key call, named here so shrinking the set fails this */
+  it.each([
+    'inspect_frame',
+    'export_frame',
+    'export_layer',
+    'list_components',
+    'get_component',
+    'get_component_preview',
+  ])(
+    'positive control: a comment key calls %s on a canvas in its workspace',
+    async (tool) => {
+      const own = await withToolInputs(owner, unlimited, await seedCanvas(owner, `Comment control ${tool}`, wsA))
+      const call = toolCalls.find(([name]) => name === tool)![1](own)
+      const inside = await callTool(limitedComment, tool, call)
+      const missing = await callTool(limitedComment, tool, toolCalls.find(([name]) => name === tool)![1](madeUp))
+      expect(inside.text).not.toContain('limited to reading and comments')
+      expect(masked(inside.text, own)).not.toBe(masked(missing.text, madeUp))
+      if (!needsOutsideWorld(tool, call)) expect(inside, inside.text).toMatchObject({ isError: false })
+    },
+    30_000,
+  )
+
   /* a value only STUB_UPSTREAMS produces, so a preload that failed to load (the
      tools then answer from the live web) fails here; list_backgrounds is local
      and carries none */
@@ -774,11 +796,17 @@ describe('extension tools under a workspace limit', () => {
   it('answers a Storybook call on a canvas outside the limit as a made-up canvas', async () => {
     const limited = await mint({ name: 'limited', workspaceIds: [wsA] })
     const outside = await seedCanvas(owner, 'Storybook outside', wsB)
-    const args = { url: 'https://storybook.example.com' }
+    const args = { url: 'https://storybook.example.com', agent_name: 'Limit Bot' }
     const refused = await callTool(limited, 'list_storybook_components', { canvas_id: outside.canvasId, ...args })
     const missing = await callTool(limited, 'list_storybook_components', { canvas_id: 'no-such-canvas', ...args })
     expect(refused.isError).toBe(true)
     expect(refused.text.replace(outside.canvasId, '<id>')).toBe(missing.text.replace('no-such-canvas', '<id>'))
+    /* control: on a canvas inside the limit the same call gets past the access check, so the equality above
+       is the limit's doing and not a failure every call shares */
+    const own = await seedCanvas(owner, 'Storybook inside', wsA)
+    const inside = await callTool(limited, 'list_storybook_components', { canvas_id: own.canvasId, ...args })
+    expect(inside.text).toContain('no Storybook index')
+    expect(refused.text).toContain('no canvas with id')
   })
 
   it('keeps them for an unlimited key', async () => {
