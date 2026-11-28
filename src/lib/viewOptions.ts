@@ -3,7 +3,8 @@
    browser:
    - pixelGrid (⇧'): the hairline grid that fades in from 300%
    - cursors (⌘⌥\ / Ctrl+Alt+\): everyone else's pointer
-   - comments (⇧C): the comment pins; the Comment tool still shows them */
+   - comments (⇧C): the comment pins; a Comment tool the person picked (not the
+     one a canvas opens on) still shows them */
 
 export interface ViewOptions {
   pixelGrid: boolean

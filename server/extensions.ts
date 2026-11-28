@@ -104,7 +104,7 @@ export interface ServerExtension {
   id: string
   /** The tools act on an account outside Doop's canvases (a Linear or Slack workspace), which a
    *  workspace limit cannot bound: a key limited to workspaces is not given them. */
-  reachesOutsideDoop?: boolean
+  reachesOutsideDoop: boolean
   /** Public, signed provider webhooks; mounted before the JSON/session middleware. */
   webhookRouter?(): express.Router
   /** Start durable background work after boot hydration. */
