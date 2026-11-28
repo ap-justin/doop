@@ -100,14 +100,17 @@ describe('component revisions over HTTP and the room', () => {
     expect(init.canvas!.components).toHaveLength(1)
     expect(init.canvas!.components![0]).not.toHaveProperty('history')
 
-    for (const [find, replace] of [
-      ['class="tag"', 'class="tag fresh"'],
-      ['class="tag fresh"', 'class="tag fresh newer"'],
+    /* the doc's stylesheet styles `.tag`, so the definition keeps it as `tag__in-<id>` (class isolation);
+       find text is read in either spelling, and what is stored is the renamed one */
+    const tag = `tag__in-${componentId}`
+    for (const [find, replace, stored] of [
+      ['class="tag"', 'class="tag fresh"', `class="${tag} fresh"`],
+      ['class="tag fresh"', 'class="tag fresh newer"', `class="${tag} fresh newer"`],
     ]) {
       const res = await owner.patch(`/api/canvases/${canvasId}/components/${componentId}`, { find, replace })
       expect(res.status).toBe(200)
       const body = (await res.json()) as { component: Record<string, unknown> }
-      expect(body.component.template).toContain(replace)
+      expect(body.component.template).toContain(stored)
       expect(body.component).not.toHaveProperty('history')
     }
 
@@ -126,8 +129,8 @@ describe('component revisions over HTTP and the room', () => {
     const listed = await revisionsOf(owner, canvasId)
     expect(listed.rev).toBe(3)
     expect(listed.revisions.map((entry) => entry.rev)).toEqual([1, 2])
-    expect(listed.revisions[0]!.template).toContain('class="tag"')
-    expect(listed.revisions[1]!.template).toContain('class="tag fresh"')
+    expect(listed.revisions[0]!.template).toContain(`class="${tag}"`)
+    expect(listed.revisions[1]!.template).toContain(`class="${tag} fresh"`)
   })
 
   it('guards the revisions like the component routes beside them', async () => {
@@ -175,7 +178,7 @@ describe('component revisions over HTTP and the room', () => {
     expect(saved.status).toBe(200)
     const html = await frameHtml(again, pageFrameId)
     expect(html).toContain('<p>added</p>')
-    expect(html).toContain('class="tag fresh newer"')
+    expect(html).toContain(`class="tag__in-${componentId} fresh newer"`)
     expect(html).toContain(`data-doop-instance="${componentId}" data-doop-rev="3"`)
     expect(html).not.toContain('data-doop-overrides')
   }, 60_000)

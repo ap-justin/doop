@@ -69,7 +69,7 @@ vi.mock('../server/canvasFontUpload.ts', () => ({
   addCanvasFont: async (_canvasId: string, _user: unknown, buf: Buffer, fileName: string) => {
     fonts.added.push(`${fileName}:${buf.length}`)
     /* the file says its family is "Brand Sans", the stylesheet named it "Brand Sans Variable" */
-    return { family: 'Brand Sans', weight: '400', style: 'normal' }
+    return { font: { family: 'Brand Sans', weight: '400', style: 'normal' }, weightSource: 'file', styleSource: 'file' }
   },
 }))
 vi.mock('../server/assets.ts', async (importOriginal) => ({
