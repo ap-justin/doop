@@ -83,6 +83,8 @@ const defsOf = (canvasId: string) => store.getComponents(canvasId)
 const atRest = (frameId: string) => restingHtml(html(frameId), defsOf(store.getFrame(frameId)!.canvasId))
 const awake = (canvasId: string, stored: string) => wakingHtml(stored, defsOf(canvasId), 'test')
 const def = (canvasId: string, name: string) => defsOf(canvasId).find((each) => each.name === name)!
+/** a class of the component's own stylesheet, as the definition and its instances carry it (class isolation) */
+const isolated = (canvasId: string, name: string, cls: string) => `${cls}__in-${def(canvasId, name).id}`
 
 /** What the write pipeline holds for this HTML once its instances are reconciled and at
  *  their components' current revision: what a propagation used to write into the frame. */
@@ -286,17 +288,20 @@ describe('a frame at rest', () => {
     expect(html(page.id)).toBe(renderedBefore)
 
     const expected = upToDate(canvas, page.id, renderedBefore)
-    expect(expected).toMatch(/btn(__in-\w+)? big/)
+    expect(expected).toContain(`${isolated(canvas.id, 'Button', 'btn')} big`)
     expect(expected).toContain('>Mine</span>')
     /* stored as references */
     expect(awake(canvas.id, storedBefore)).toBe(expected)
     /* stored written out, as every frame is before its first compact save */
     expect(awake(canvas.id, renderedBefore)).toBe(expected)
     /* and a document holding both forms */
-    const mixed = renderedBefore.replace(/<div class="card(?:__in-\w+)?"[\s\S]*<\/div>(?=\s*<\/body>)/, () => {
-      const cardReference = /<doop-use component="[^"]+" id="[^"]+"><\/doop-use>(?=\s*<\/body>)/.exec(storedBefore)
-      return cardReference![0]
-    })
+    const mixed = renderedBefore.replace(
+      new RegExp(`<div class="${isolated(canvas.id, 'Card', 'card')}"[\\s\\S]*<\\/div>(?=\\s*<\\/body>)`),
+      () => {
+        const cardReference = /<doop-use component="[^"]+" id="[^"]+"><\/doop-use>(?=\s*<\/body>)/.exec(storedBefore)
+        return cardReference![0]
+      },
+    )
     expect(mixed).toContain(INSTANCE_ATTR)
     expect(mixed).toContain('<doop-use')
     expect(awake(canvas.id, mixed)).toBe(expected)
@@ -443,7 +448,9 @@ describe('a definition that is damaged or gone', () => {
        from it keeps rendering as it did, so the Card's instance is still a reference */
     deleteComponent(canvas.id, 'Button', human)
     const afterDelete = restingHtml(rendered, defsOf(canvas.id))
-    const buttonInstance = /<button class="btn(?:__in-\w+)?" data-doop-instance[\s\S]*?<\/button>/.exec(rendered)![0]
+    const buttonInstance = new RegExp(
+      `<button class="${isolated(canvas.id, 'Button', 'btn')}" data-doop-instance[\\s\\S]*?</button>`,
+    ).exec(rendered)![0]
     expect(afterDelete).toContain(buttonInstance)
     expect(afterDelete).toContain(`<doop-use component="${def(canvas.id, 'Card').id}"`)
     expect(awake(canvas.id, afterDelete)).toBe(rendered)
@@ -633,7 +640,7 @@ describe('a main that changes its markup', () => {
     expect(store.isPageLoaded(canvas.id, second.id)).toBe(false)
 
     /* the loaded frame shows it, at the version it had: a save in flight is not refused */
-    expect(html(open.id)).toMatch(/btn(__in-\w+)? fresh/)
+    expect(html(open.id)).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     expect(store.getFrame(open.id)!.updatedAt).toBe(versions.open)
     expect(store.getFrame(open.id)!.rendered).toBeGreaterThan(0)
     expect(store.getFrame(plain.id)!.rendered).toBeUndefined()
@@ -643,7 +650,7 @@ describe('a main that changes its markup', () => {
     )
     expect(shown).toHaveLength(1)
     expect(shown[0]!.rerender).toBe(true)
-    expect(shown[0]!.frame.html).toMatch(/btn(__in-\w+)? fresh/)
+    expect(shown[0]!.frame.html).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     expect(shown[0]!.frame.updatedAt).toBe(versions.open)
     /* what the row holds is still what a read of it gives */
     expect(awake(canvas.id, rows.frames.get(open.id)!)).toBe(html(open.id))
@@ -652,12 +659,12 @@ describe('a main that changes its markup', () => {
     expect(stampCurrent(store.getFrame(open.id)!, stampBefore)).toBe(false)
     expect(stampCurrent(store.getFrame(closed.id)!, closedStamp)).toBe(false)
     const fresh = (await store.renderableFrame(closed.id))!
-    expect(fresh.html).toMatch(/btn(__in-\w+)? fresh/)
+    expect(fresh.html).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     expect(store.isPageLoaded(canvas.id, second.id)).toBe(false)
 
     /* and its page, once opened, has it: at the version it was stored with */
     await store.loadPages(canvas.id, [second.id])
-    expect(html(closed.id)).toMatch(/btn(__in-\w+)? fresh/)
+    expect(html(closed.id)).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     expect(html(closed.id)).toContain('>Closed</span>')
     expect(store.getFrame(closed.id)!.updatedAt).toBe(versions.closed)
     expect(rows.saved.filter((id) => id !== main.id)).toEqual([])
@@ -676,7 +683,7 @@ describe('a main that changes its markup', () => {
     const main = store.getFrame(def(canvas.id, 'Button').mainFrameId!)!
     actions.updateFrame(main.id, { html: main.html.replace('class="btn"', 'class="btn fresh"') }, human)
     await propagation.whenIdle()
-    expect(html(page.id)).toMatch(/btn(__in-\w+)? fresh/)
+    expect(html(page.id)).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     expect(store.getFrame(page.id)!.updatedAt).toBeGreaterThan(before)
     expect(rows.saved).toContain(page.id)
   })
@@ -694,9 +701,9 @@ describe('a main that changes its markup', () => {
     expect(store.getFrame(open.id)!.updatedAt).toBeGreaterThan(before)
     expect(rows.frames.get(open.id)).toContain(INSTANCE_ATTR)
     /* the frame that was not in memory was stored written out, at the old markup: read, it is current */
-    expect(rows.frames.get(closed.id)).not.toMatch(/btn(__in-\w+)? fresh/)
+    expect(rows.frames.get(closed.id)).not.toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     await store.loadPages(canvas.id, [second.id])
-    expect(html(closed.id)).toMatch(/btn(__in-\w+)? fresh/)
+    expect(html(closed.id)).toContain(`${isolated(canvas.id, 'Button', 'btn')} fresh`)
     release()
   })
 

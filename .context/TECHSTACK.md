@@ -1903,10 +1903,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 ## 8. CI/CD and Delivery
 
 - GitHub Actions:
-  - Runners: GitHub-hosted. CI on `ubuntu-24.04`, the iOS and Android builds on `macos-15`, the macOS
-    desktop builds on `macos-latest`, the Linux desktop build on `ubuntu-22.04` (the oldest image, for a
-    low glibc floor), Windows builds on `windows-latest`; `cla.yml`, `release-please.yml` and the
-    desktop `release` job run on `ubuntu-latest`. Caches are `actions/cache` and the setup actions' own.
+  - Runners: GitHub-hosted. CI runs on `ubuntu-24.04`, the macOS desktop build on `macos-latest`, iOS and
+    Android on `macos-15`, the Linux desktop build on `ubuntu-22.04` (the oldest image, for a low glibc
+    floor) and Windows on `windows-latest`. `actions/cache` and the setup actions use GitHub's cache.
   - `.github/workflows/ci.yml` - gates `typecheck`, `lint` + `format:check` + `doc-lint`, `build`
     and `test` (four vitest shards) as parallel jobs on push to `main` and on PRs, cancelling
     superseded PR runs; a separate job lints the PR title with commitlint (PRs land on
