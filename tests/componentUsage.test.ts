@@ -160,6 +160,13 @@ describe('component usage', () => {
     await buildMcpServer('Owner', OWNER).connect(serverSide)
     const client = new Client({ name: 'usage-test', version: '0' })
     await client.connect(clientSide)
+    /* the first stylesheet that names the root class renames it, and that one save reads the frames using the
+       component for their own rules on it (`warnOwnRootRules`): done before the call measured here */
+    await client.callTool({
+      name: 'update_component',
+      arguments: { canvas_id: canvas.id, agent_name: 'Tester', component: 'Button', css: '.btn { color: blue }' },
+    })
+    await propagation.whenIdle()
     const using = frames.filter((frame) => framed(frame.id).includes(`data-doop-instance="${button.def.id}"`))
     expect(using.length).toBeGreaterThan(0)
     /* each frame as it was when the call began: what parsing it would have handed the engine */

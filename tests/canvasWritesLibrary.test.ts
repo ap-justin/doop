@@ -24,7 +24,7 @@ vi.mock('../server/db/persist.ts', () => ({
   saveDecision: () => {},
   saveProposal: () => {},
 }))
-vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [] }))
+vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [], foreignFontAssetIds: () => new Set<string>() }))
 /* the wait for a canvas's frames, which a test may make fail */
 const idle = vi.hoisted(() => ({ fail: undefined as ((canvasId: string) => Error | undefined) | undefined }))
 vi.mock('../server/propagation.ts', async (original) => {

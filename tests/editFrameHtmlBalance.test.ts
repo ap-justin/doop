@@ -19,7 +19,7 @@ vi.mock('../server/db/persist.ts', () => ({
   frameWritePending: () => false,
   saveFrameVersion: (version: { html: string }) => void versions.push(version),
 }))
-vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [] }))
+vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [], foreignFontAssetIds: () => new Set<string>() }))
 const actions = await import('../server/actions.ts')
 const { store } = await import('../server/store.ts')
 const { runComponentTool } = await import('../server/componentTools.ts')
