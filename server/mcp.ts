@@ -143,9 +143,11 @@ You MUST call get_guide({ topic: "doop-instructions" }) before using other Doop 
 - When Doop gets in your way, call report_issue, then carry on.`
 
 /** What this server's integrations add to the main guide: lean mode leaves out
- *  the ones it turns off. */
-function extensionGuideLines(): string[] {
-  return activeExtensions(extensions).flatMap((extension) => extension.mcpGuideLines ?? [])
+ *  the ones it turns off, and a workspace-limited key's guide leaves out the ones whose tools it is not given. */
+function extensionGuideLines(limited: boolean): string[] {
+  return activeExtensions(extensions)
+    .filter((extension) => !(limited && extension.reachesOutsideDoop))
+    .flatMap((extension) => extension.mcpGuideLines ?? [])
 }
 
 function text(data: unknown) {
@@ -598,7 +600,7 @@ export function buildMcpServer(
       },
     },
     async ({ topic }) => {
-      const guide = guideFor(topic, extensionGuideLines())
+      const guide = guideFor(topic, extensionGuideLines(!!workspaceLimit))
       return text(scope === 'comment' && topic === 'doop-instructions' ? COMMENT_SCOPE_GUIDE_NOTE + guide : guide)
     },
   )

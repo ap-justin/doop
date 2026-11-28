@@ -792,6 +792,15 @@ describe('extension tools under a workspace limit', () => {
   }
   const toolNames = async (secret: string) => ((await rpc(secret, 'tools/list')).result?.tools ?? []).map((t) => t.name)
 
+  it('leaves the outside ones out of the guide for a limited key, and keeps Storybook’s', async () => {
+    const guideFor = async (secret: string) =>
+      (await callTool(secret, 'get_guide', { topic: 'doop-instructions' })).text
+    const limited = await guideFor(await mint({ name: 'limited', workspaceIds: [wsA] }))
+    expect(limited).not.toContain('list_linear_issues')
+    expect(limited).toContain('list_storybook_components')
+    expect(await guideFor(await mint({ name: 'all' }))).toContain('list_linear_issues')
+  })
+
   it('leaves the outside ones out of tools/list for a limited key of either scope, and keeps Storybook’s', async () => {
     for (const body of [{ workspaceIds: [wsA] }, { scope: 'comment', workspaceIds: [wsA] }]) {
       const names = await toolNames(await mint({ name: 'limited', ...body }))
