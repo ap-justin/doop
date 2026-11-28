@@ -731,13 +731,10 @@ describe('a limited key whose owner leaves a listed workspace', () => {
 })
 
 describe('extension tools under a workspace limit', () => {
-  const linearTools = [
-    'list_linear_issues',
-    'get_linear_issue',
-    'list_storybook_components',
-    'import_storybook',
-    'sync_storybook',
-  ]
+  /* Linear reaches the account's whole workspace, so a limited key loses it; Storybook's tools act on
+     a canvas and check access to it themselves, so a limited key keeps them */
+  const outsideTools = ['list_linear_issues', 'get_linear_issue']
+  const storybookTools = ['list_storybook_components', 'import_storybook', 'sync_storybook']
 
   const rpc = async (secret: string, method: string, params?: Record<string, unknown>) => {
     const res = await fetch(`${server.base}/mcp`, {
@@ -753,11 +750,12 @@ describe('extension tools under a workspace limit', () => {
   }
   const toolNames = async (secret: string) => ((await rpc(secret, 'tools/list')).result?.tools ?? []).map((t) => t.name)
 
-  it('leaves them out of tools/list for a limited key of either scope', async () => {
+  it('leaves the outside ones out of tools/list for a limited key of either scope, and keeps Storybook’s', async () => {
     for (const body of [{ workspaceIds: [wsA] }, { scope: 'comment', workspaceIds: [wsA] }]) {
       const names = await toolNames(await mint({ name: 'limited', ...body }))
       expect(names).toContain('list_canvases')
-      for (const tool of linearTools) expect(names).not.toContain(tool)
+      for (const tool of outsideTools) expect(names).not.toContain(tool)
+      for (const tool of storybookTools) expect(names).toContain(tool)
     }
   })
 
@@ -766,15 +764,25 @@ describe('extension tools under a workspace limit', () => {
     const missing = await callTool(limited, 'no_such_tool', { id: 'ENG-1' })
     expect(missing.isError).toBe(true)
     expect(missing.text).toContain('not found')
-    for (const tool of linearTools) {
+    for (const tool of outsideTools) {
       const call = await callTool(limited, tool, { id: 'ENG-1' })
       expect(call.isError).toBe(true)
       expect(call.text.replace(tool, '<tool>')).toBe(missing.text.replace('no_such_tool', '<tool>'))
     }
   })
 
+  it('answers a Storybook call on a canvas outside the limit as a made-up canvas', async () => {
+    const limited = await mint({ name: 'limited', workspaceIds: [wsA] })
+    const outside = await seedCanvas(owner, 'Storybook outside', wsB)
+    const args = { url: 'https://storybook.example.com' }
+    const refused = await callTool(limited, 'list_storybook_components', { canvas_id: outside.canvasId, ...args })
+    const missing = await callTool(limited, 'list_storybook_components', { canvas_id: 'no-such-canvas', ...args })
+    expect(refused.isError).toBe(true)
+    expect(refused.text.replace(outside.canvasId, '<id>')).toBe(missing.text.replace('no-such-canvas', '<id>'))
+  })
+
   it('keeps them for an unlimited key', async () => {
     const names = await toolNames(await mint({ name: 'all' }))
-    for (const tool of linearTools) expect(names).toContain(tool)
+    for (const tool of [...outsideTools, ...storybookTools]) expect(names).toContain(tool)
   })
 })

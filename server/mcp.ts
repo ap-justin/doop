@@ -2389,12 +2389,14 @@ export function buildMcpServer(
       return true
     },
   }
-  /* Extension tools reach accounts outside Doop's canvases (Linear is the
-     account's whole workspace), which a workspace limit cannot bound, so a
-     limited key is never given them: unregistered, they are absent from
-     tools/list and a call gets the SDK's unknown-tool error. */
-  if (!workspaceLimit)
-    for (const extension of activeExtensions(extensions)) extension.registerMcpTools?.(server, extensionHelpers)
+  /* Linear's and Slack's tools reach a workspace outside Doop's canvases, which a workspace limit
+     cannot bound, so a limited key is not given them: unregistered, they are absent from tools/list
+     and a call gets the SDK's unknown-tool error. The other extensions' tools (Storybook's) act on a
+     canvas and check access to it themselves, so a limited key keeps them. */
+  for (const extension of activeExtensions(extensions)) {
+    if (workspaceLimit && extension.reachesOutsideDoop) continue
+    extension.registerMcpTools?.(server, extensionHelpers)
+  }
 
   for (const tool of COMPONENT_TOOLS) {
     server.registerTool(

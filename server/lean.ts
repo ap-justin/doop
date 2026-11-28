@@ -4,8 +4,8 @@ import { mentionedRole, type AgentRole, type Roster } from '../shared/agents.ts'
 
 /**
  * Lean mode (DOOP_LEAN=1 or true, any case): Doop as a shared canvas for MCP
- * agents, without the in-app Doop Agent and model accounts, new billing, Slack
- * and Linear, automations, GitHub and Meta import, Community, the desktop
+ * agents, without the in-app Doop Agent and model accounts, new billing, Slack,
+ * Linear and the Storybook import, automations, GitHub and Meta import, Community, the desktop
  * connect relay, iOS live activities, Gemini cloud workers and the PostHog
  * relay. Comment digest emails are never queued or sent, and Settings hides
  * their switch; verification, password reset, invite and canvas-share emails

@@ -3821,7 +3821,7 @@ app.post('/api/canvases/:id/import/discover', async (req, res) => {
 /* Extension-owned canvas routes (the Storybook import and future integrations):
    each extension mounts under /api/canvases/:id/<extension id> with the
    core's own canvas gate and import rate slot. */
-for (const extension of extensions) {
+for (const extension of activeExtensions(extensions)) {
   if (extension.canvasRouter) {
     app.use(
       `/api/canvases/:id/${extension.id}`,

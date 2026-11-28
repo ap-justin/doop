@@ -1854,7 +1854,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   workspace the owner still belongs to, so personal, invited and share-link canvases are outside
   every limit. Over /mcp the gate is `roleOn` in `buildMcpServer`: an out-of-limit canvas has no
   role, so every tool answers it exactly as a made-up id; `list_canvases` lists only in-limit
-  canvases and `create_canvas` defaults to the one workspace a key can still reach. A limited key gets no extension tools (the Linear ones read the whole account, which a workspace cannot bound): `buildMcpServer` does not register them, so they are absent from `tools/list` and a call fails like any unknown tool. A limited hook
+  canvases and `create_canvas` defaults to the one workspace a key can still reach. A limited key gets no tools of an extension that reaches an account outside Doop (`reachesOutsideDoop`: Linear and Slack read the whole account, which a workspace cannot bound): `buildMcpServer` does not register them, so they are absent from `tools/list` and a call fails like any unknown tool. A limited hook
   hears only its workspaces' canvases, retries included. The API lists the limit as
   `workspaces` (id and name of each workspace the owner can still reach, `[]` when none is left,
   null for no limit); both create routes and the webhook PATCH refuse an unknown body field.
@@ -1931,7 +1931,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   Doop as a canvas for MCP agents. `leanGate`, mounted right after `/healthz`, sends the routes of
   the in-app Doop Agent and model accounts (custom agents `/api/agents` and custom providers
   included), the image-model pick (`/api/image-model`), billing (the Stripe webhook,
-  `/api/billing`, workspace checkout / portal / sync), Slack and Linear, automations, GitHub and
+  `/api/billing`, workspace checkout / portal / sync), Slack and Linear, the Storybook import, automations, GitHub and
   Meta import, Community, the desktop connect relay, live activities, the local-agent and Gemini
   cloud MCP endpoints and the PostHog relay out of the router, so they answer Express's own 404.
   The code stays. `resident.onFeedback` returns early, so no resident run starts, and
@@ -1939,7 +1939,8 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `commentNotifications.onCanvasEvent` queues no comment digest email, whatever a person's switch
   says, and Settings → Your account hides the Notifications card (`useLean()`); verification,
   password reset, invite and canvas-share emails are unchanged;
-  `activeExtensions` leaves out extension webhooks, workers, MCP tools (the Linear ones) and guide
+  `activeExtensions` leaves out extension webhooks, workers, canvas routes (so Storybook's
+  `/api/canvases/:id/storybook`), MCP tools (Linear's, Slack's and Storybook's) and guide
   lines. `get_guide` (`doopGuide()` for the main guide, `guideFor` for the comments topic) and
   the `reply_to_comment` description read the same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
   `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'

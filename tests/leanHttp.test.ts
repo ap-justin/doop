@@ -115,6 +115,7 @@ function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledR
     ['GET', '/api/github/app'],
     ['GET', `/api/canvases/${canvasId}/github`],
     ['POST', `/api/canvases/${canvasId}/cards`],
+    ['GET', `/api/canvases/${canvasId}/storybook/sources`],
     ['PUT', `/api/canvases/${canvasId}/publish`],
     ['DELETE', `/api/canvases/${canvasId}/publish`],
     ['POST', '/api/feedback/fb-1/retry'],
