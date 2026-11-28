@@ -166,7 +166,7 @@ server/index.ts` in prod. `erasableSyntaxOnly` and `verbatimModuleSyntax` in tsc
   An answer to a write is sent after its operation has committed. A write answers the frame, `html_changed` (the canvas stored the markup differently), `warnings` (what
   could not be done with components), `notes` (reuse advice) and the human `feedback` it claimed. Errors are
   `{ error: { code, message } }`: 401 `unauthorized`, 403 `forbidden`, 404 `not_found`, 409 `conflict` (with the
-  frame as it is now), 422 `refused` (inline data), 400 `invalid` (a body that is not HTML, a bad `If-Match`),
+  frame as it is now), 422 `refused` (inline data, an unclosed `<doop-use>`, a spent work budget), 400 `invalid` (a body that is not HTML, a bad `If-Match`),
   413 `too_large`. The agent is its account plus the `Doop-Agent` header, the identity an MCP agent of that
   name has. Tested in `tests/agentApi.test.ts`.
 - Doop CLI (`cli/doop.ts`, `cli/doop/`, built to `public/cli/doop.mjs` by `bun run build:cli` and served at
