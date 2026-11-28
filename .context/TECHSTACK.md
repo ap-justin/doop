@@ -1939,7 +1939,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   says, and Settings → Your account hides the Notifications card (`useLean()`); verification,
   password reset, invite and canvas-share emails are unchanged;
   `activeExtensions` leaves out extension webhooks, workers, canvas routes (so Storybook's
-  `/api/canvases/:id/storybook`), MCP tools (Linear's, Slack's and Storybook's) and guide
+  `/api/canvases/:id/storybook`), MCP tools (Linear's and Storybook's) and guide
   lines. `get_guide` (`doopGuide()` for the main guide, `guideFor` for the comments topic) and
   the `reply_to_comment` description read the same way: no in-app agent, board cards or metering, and @Doop comments are the MCP agents'.
   `POST /api/tasks/:id/feedback` stays open, unmetered, to carry human replies to MCP agents'

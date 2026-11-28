@@ -143,10 +143,11 @@ You MUST call get_guide({ topic: "doop-instructions" }) before using other Doop 
 - When Doop gets in your way, call report_issue, then carry on.`
 
 /** What this server's integrations add to the main guide: lean mode leaves out
- *  the ones it turns off, and a workspace-limited key's guide leaves out the ones whose tools it is not given. */
-function extensionGuideLines(limited: boolean): string[] {
+ *  the ones it turns off. A key's guide leaves out the ones whose tools it is not given: a workspace-limited
+ *  key's, those that reach outside Doop; a read-and-comment key's, all of them. */
+function extensionGuideLines(limited: boolean, commentOnly: boolean): string[] {
   return activeExtensions(extensions)
-    .filter((extension) => !(limited && extension.reachesOutsideDoop))
+    .filter((extension) => !commentOnly && !(limited && extension.reachesOutsideDoop))
     .flatMap((extension) => extension.mcpGuideLines ?? [])
 }
 
@@ -600,7 +601,7 @@ export function buildMcpServer(
       },
     },
     async ({ topic }) => {
-      const guide = guideFor(topic, extensionGuideLines(!!workspaceLimit))
+      const guide = guideFor(topic, extensionGuideLines(!!workspaceLimit, scope === 'comment'))
       return text(scope === 'comment' && topic === 'doop-instructions' ? COMMENT_SCOPE_GUIDE_NOTE + guide : guide)
     },
   )
@@ -2397,10 +2398,11 @@ export function buildMcpServer(
       return true
     },
   }
-  /* Linear's and Slack's tools reach a workspace outside Doop's canvases, which a workspace limit
-     cannot bound, so a limited key is not given them: unregistered, they are absent from tools/list
-     and a call gets the SDK's unknown-tool error. The other extensions' tools (Storybook's) act on a
-     canvas and check access to it themselves, so a limited key keeps them. */
+  /* The tools of an extension that reaches a workspace outside Doop's canvases (Linear; Slack too,
+     should it add any) cannot be bounded by a workspace limit, so a limited key is not given them:
+     unregistered, they are absent from tools/list and a call gets the SDK's unknown-tool error.
+     The other extensions' tools (Storybook's) act on a canvas and check access to it themselves,
+     so a limited key keeps them. */
   for (const extension of activeExtensions(extensions)) {
     if (workspaceLimit && extension.reachesOutsideDoop) continue
     extension.registerMcpTools?.(server, extensionHelpers)

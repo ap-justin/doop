@@ -799,6 +799,10 @@ describe('extension tools under a workspace limit', () => {
     expect(limited).not.toContain('list_linear_issues')
     expect(limited).toContain('list_storybook_components')
     expect(await guideFor(await mint({ name: 'all' }))).toContain('list_linear_issues')
+    /* a read-and-comment key cannot call any extension tool, so its guide names none */
+    const commenting = await guideFor(await mint({ name: 'comments', scope: 'comment' }))
+    expect(commenting).not.toContain('list_storybook_components')
+    expect(commenting).not.toContain('list_linear_issues')
   })
 
   it('leaves the outside ones out of tools/list for a limited key of either scope, and keeps Storybook’s', async () => {
