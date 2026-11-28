@@ -719,7 +719,7 @@ describe('a placed component and the classes of its frame', () => {
     const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
     expect(note?.message).toContain('“Home” (.select)')
     expect(note?.message).not.toContain('Away')
-    expect(note?.message).toContain('1 frame on a page not loaded was not checked')
+    expect(note?.message).toContain('Frames on pages not loaded were not checked')
   })
 
   it('still says so when every frame placing the main is on a page not loaded', () => {
@@ -739,7 +739,7 @@ describe('a placed component and the classes of its frame', () => {
     for (const frame of [away, elsewhere]) unloadHtml(store.getFrame(frame.id)!)
     actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
     const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
-    expect(note?.message).toContain('2 frames on pages not loaded were not checked')
+    expect(note?.message).toContain('Frames on pages not loaded were not checked')
     expect(note?.message).toContain('.select')
   })
 

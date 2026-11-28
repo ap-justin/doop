@@ -353,8 +353,8 @@ function prepareMains(
  * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
  * save that renames it, naming the frames and what each rule needs now: moved to a class on the
  * placed instance, or, where the frame's own elements still use it, kept and its styles given to that
- * class too. A frame whose page is not loaded cannot be read here; the note counts those frames as
- * not checked, so it is said whenever any are, even with no loaded frame to name.
+ * class too. A frame whose page is not loaded cannot be read here; the note says those frames were
+ * not checked, so it is given whenever there are any, even with no loaded frame to name.
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
@@ -388,9 +388,9 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
   const lost = names.map((name) => `.${name}`).join(', ')
   const found = hits.length
     ? `these frames' own rules for it no longer reach its instances: ${hits.join(', ')}.`
-    : `a frame's own rule for ${lost} no longer reaches its instances.`
+    : `a frame's own rule for ${lost}, if it has one, no longer reaches its instances.`
   const notChecked = unchecked
-    ? ` ${unchecked === 1 ? '1 frame on a page not loaded was' : `${unchecked} frames on pages not loaded were`} not checked: read any that place “${def.name}” for a rule of their own on ${lost}.`
+    ? ` Frames on pages not loaded were not checked: read any that place “${def.name}” for a rule of their own on ${lost}.`
     : ''
   ctx.issues.push({
     code: 'root_class_renamed',
