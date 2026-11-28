@@ -194,6 +194,19 @@ describe('the agent API', () => {
     await api(`/frames/${frameId}/html`, { method: 'PUT', body: '<main><h1>Third</h1></main>' })
   })
 
+  it('answers a write the engine refuses with its reason, and writes nothing', async () => {
+    const before = await (await api(`/frames/${frameId}/html`)).text()
+    const unclosed = await api(`/frames/${frameId}/html`, {
+      method: 'PUT',
+      body: '<main><doop-use component="Nope"></main>',
+    })
+    expect(unclosed.status).toBe(422)
+    const refusal = (await unclosed.json()) as { error: { code: string; message: string } }
+    expect(refusal.error.code).toBe('refused')
+    expect(refusal.error.message).toContain('doop-use')
+    expect(await (await api(`/frames/${frameId}/html`)).text()).toBe(before)
+  })
+
   it('says what could not be done with components, and serves the rendered form', async () => {
     const written = await api(`/frames/${frameId}/html`, {
       method: 'PUT',

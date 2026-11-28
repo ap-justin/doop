@@ -15,6 +15,8 @@ import { composedHtml } from './frameCompose.ts'
 import { describeFeedback, mcpAgentKey } from './mcp.ts'
 import { store } from './store.ts'
 import { withArgsCanvases } from './toolLoads.ts'
+import { WorkBudgetError } from './workBudget.ts'
+import { WriteRefusedError } from './writeRefusal.ts'
 import { withinWorkspaceLimit, type WorkspaceLimit } from './workspaceLimit.ts'
 
 /**
@@ -320,6 +322,9 @@ export function mountAgentApi(app: express.Express): void {
         frame: summaryOf(frame),
       })
     }
+    /* a write the engine refuses (an unclosed <doop-use>, a spent work budget) says why, as the MCP tools do */
+    if (error instanceof WriteRefusedError || error instanceof WorkBudgetError)
+      return fail(res, 422, 'refused', error.message)
     if ((error as { type?: string }).type === 'entity.too.large')
       return fail(res, 413, 'too_large', 'a frame’s HTML is at most 10 MB; images and fonts go up as assets')
     next(error)
