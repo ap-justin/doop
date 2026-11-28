@@ -13,6 +13,7 @@ vi.mock('../src/lib/api', () => ({
     agentRunners: () => Promise.resolve({ runners: [] }),
     listCustomAgents: () => Promise.resolve([]),
     listBuiltInAgents: () => Promise.resolve([]),
+    listSkills: () => Promise.resolve([]),
     imageDescriptions: () => Promise.resolve({ mode: 'off', describer: { label: null, reason: 'off' }, paidBy: null }),
   },
   ApiError: class ApiError extends Error {},

@@ -25,8 +25,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import { DesktopIcon, ExportIcon, GearIcon, HelpIcon, LogOutIcon, MailIcon, RocketIcon, ShieldIcon } from './ui/icons'
+import {
+  ChevronsUpDownIcon,
+  DesktopIcon,
+  ExportIcon,
+  GearIcon,
+  HelpIcon,
+  LogOutIcon,
+  MailIcon,
+  MegaphoneIcon,
+  RocketIcon,
+  ShieldIcon,
+} from './ui/icons'
 import { openUpgrade } from '../lib/upgrade'
+import { offersFeedback, openFeedback } from '../lib/feedback'
 import { PRIORITY_SUPPORT } from '../../shared/billing'
 import { DOWNLOAD_URL, WEBSITE_URL } from '../lib/siteLinks'
 
@@ -35,11 +47,15 @@ import { DOWNLOAD_URL, WEBSITE_URL } from '../lib/siteLinks'
 
 export function AccountMenu({
   face = false,
+  named = false,
   side,
   align,
 }: {
   /** the round presence face the editor's rail wears, instead of the ink square */
   face?: boolean
+  /** the rail's full-width row: face, name and a chevron, all one trigger, so
+   *  the name reads as the way into the menu rather than a caption */
+  named?: boolean
   side?: React.ComponentProps<typeof DropdownMenuContent>['side']
   align?: React.ComponentProps<typeof DropdownMenuContent>['align']
 } = {}) {
@@ -53,7 +69,27 @@ export function AccountMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {face ? (
+        {named ? (
+          <Pressable
+            /* the visible name is the label, so a voice command that says it
+               finds the row; "Account" stands in only until the session loads */
+            aria-label={name ? undefined : t('shell.account')}
+            focus="ring"
+            className="group flex items-center gap-2.5 rounded-row p-1 transition-colors hover:bg-paper-deep data-[state=open]:bg-paper-deep"
+          >
+            <Avatar
+              name={name}
+              image={image}
+              color={colorFor(session?.user.id ?? name)}
+              size={28}
+              className="shadow-none"
+            />
+            <span className="min-w-0 flex-1 truncate text-body text-ink-soft group-hover:text-ink group-data-[state=open]:text-ink">
+              {name}
+            </span>
+            <ChevronsUpDownIcon size="rail" className="flex-none text-ink-faint" aria-hidden />
+          </Pressable>
+        ) : face ? (
           <IconButton
             aria-label={t('shell.account')}
             title={name}
@@ -135,6 +171,11 @@ export function AccountMenu({
             <HelpIcon size="rail" /> {t('shell.helpDocs')}
           </a>
         </DropdownMenuItem>
+        {offersFeedback(me) && (
+          <DropdownMenuItem onSelect={openFeedback}>
+            <MegaphoneIcon size="rail" /> {t('shell.sendFeedback')}
+          </DropdownMenuItem>
+        )}
         {/* new tabs, which the desktop shell hands to the system browser
             (initDesktopShell); the desktop app has nothing to download */}
         {!isDesktopShell() && (

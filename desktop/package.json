@@ -1,7 +1,7 @@
 {
   "name": "doop-desktop",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.15.0",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
@@ -11,6 +11,6 @@
   },
   "devDependencies": {
     "@electron/universal": "3.0.6",
-    "@tauri-apps/cli": "^2.9.0"
+    "@tauri-apps/cli": "^2.12.6"
   }
 }

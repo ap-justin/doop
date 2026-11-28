@@ -198,8 +198,9 @@ describe('a key limited to one workspace over /mcp', () => {
     const byLink = await seedCanvas(stranger, 'By link')
     await stranger.patch(`/api/canvases/${byLink.canvasId}`, { linkAccess: 'edit' })
     linked = await withToolInputs(owner, unlimited, byLink)
-    /* open human feedback on B, addressed to any agent: a call that reached
-       B would claim it or announce it */
+    /* open human feedback on B, addressed to the agent the search probes call as (feedback on an
+       agent's task is that agent's first, so a probe under another name would never see it): a call
+       that reached B would claim it or announce it */
     await callTool(unlimited, 'set_status', { canvas_id: b.canvasId, status: 'Seeded B', agent_name: 'Seeder' })
     const task = await activeTask(b.canvasId, 'Seeder')
     expect((await owner.post(`/api/tasks/${task?.id}/feedback`, { text: 'warmer accent' })).status).toBe(200)
@@ -232,6 +233,8 @@ describe('a key limited to one workspace over /mcp', () => {
   })
 
   const bot = { agent_name: 'Limit Bot' }
+  /* the agent whose task B's seeded feedback is on: the search probes call as it */
+  const seeder = { agent_name: 'Seeder' }
   /* every tool that takes a canvas, frame or comment id, with arguments that
      succeed on a canvas the key may reach (the positive control below runs
      them there), so a refusal on another workspace's canvas is the gate's */
@@ -308,7 +311,15 @@ describe('a key limited to one workspace over /mcp', () => {
     ['sync_component', (t) => ({ canvas_id: t.canvasId, ...bot })],
     ['publish_library', (t) => ({ canvas_id: t.canvasId, dry_run: true, ...bot })],
     ['update_library_everywhere', (t) => ({ canvas_id: t.canvasId, dry_run: true, ...bot })],
+    ['update_canvas', (t) => ({ canvas_id: t.canvasId, name: 'Renamed canvas', ...bot })],
+    ['inspect_frame', (t) => ({ frame_id: t.frameId, ...bot })],
+    ['take_repo_cards', (t) => ({ canvas_id: t.canvasId, ...bot })],
+    ['read_repo_files', (t) => ({ canvas_id: t.canvasId, card_id: 'card-x', paths: ['README.md'], ...bot })],
+    ['finish_repo_card', (t) => ({ canvas_id: t.canvasId, card_id: 'card-x', failed_reason: 'no', ...bot })],
   ]
+  /* the Storybook tools are an extension's: a limited key is never given them (see the extension
+     describe below), so they have no row to run against another workspace's canvas */
+  const extensionToolsTakingACanvas = ['list_storybook_components', 'import_storybook', 'sync_storybook']
   const madeUp: Target = {
     canvasId: 'zz-no-canvas',
     frameId: 'zz-no-frame',
@@ -374,8 +385,8 @@ describe('a key limited to one workspace over /mcp', () => {
       it.each(optionalCanvasCalls)(
         '%s with a canvas in another workspace answers as with a made-up id',
         async (tool, args) => {
-          const outside = await callTool(key(), tool, { ...args, canvas_id: b.canvasId, ...bot })
-          const missing = await callTool(key(), tool, { ...args, canvas_id: madeUp.canvasId, ...bot })
+          const outside = await callTool(key(), tool, { ...args, canvas_id: b.canvasId, ...seeder })
+          const missing = await callTool(key(), tool, { ...args, canvas_id: madeUp.canvasId, ...seeder })
           expect(outside.isError).toBe(false)
           expect(outside.text).not.toContain('HUMAN FEEDBACK')
           expect(masked(outside.text, b)).toBe(masked(missing.text, madeUp))
@@ -410,6 +421,9 @@ describe('a key limited to one workspace over /mcp', () => {
       'export_layer',
       'upload_font',
       'update_library_everywhere',
+      'inspect_frame',
+      'read_repo_files',
+      'finish_repo_card',
     ].includes(tool) || args.format === 'pdf'
 
   it.each(toolCalls.map(([tool, args], i) => [`${tool} #${i}`, tool, args] as const))(
@@ -441,7 +455,7 @@ describe('a key limited to one workspace over /mcp', () => {
   it.each(optionalCanvasCalls)(
     'announces feedback on a canvas it may reach, so the %s probe can tell',
     async (tool, args) => {
-      const res = await callTool(unlimited, tool, { ...args, canvas_id: b.canvasId, ...bot })
+      const res = await callTool(unlimited, tool, { ...args, canvas_id: b.canvasId, ...seeder })
       expect(res.isError, res.text).toBe(false)
       expect(res.text).toContain('HUMAN FEEDBACK')
       const marker = stubMarkers[tool]
@@ -519,7 +533,7 @@ describe('a key limited to one workspace over /mcp', () => {
     for (const key of [limitedFull, limitedComment]) {
       for (const [tool, args] of toolCalls) await callTool(key, tool, args(b))
       for (const [tool, args] of optionalCanvasCalls) {
-        await callTool(key, tool, { ...args, canvas_id: b.canvasId, ...bot })
+        await callTool(key, tool, { ...args, canvas_id: b.canvasId, ...seeder })
       }
     }
     expect(await framesOfB()).toEqual(seededFrames)
@@ -578,7 +592,10 @@ describe('a key limited to one workspace over /mcp', () => {
       .filter(({ inputSchema }) => ['canvas_id', 'frame_id'].some((id) => id in (inputSchema.properties ?? {})))
       .map((t) => t.name)
       .sort()
-    const covered = new Set([...toolCalls, ...optionalCanvasCalls].map(([tool]) => tool))
+    const covered = new Set([
+      ...[...toolCalls, ...optionalCanvasCalls].map(([tool]) => tool),
+      ...extensionToolsTakingACanvas,
+    ])
     expect(takesId).toEqual([...covered].sort())
   })
 
@@ -714,7 +731,13 @@ describe('a limited key whose owner leaves a listed workspace', () => {
 })
 
 describe('extension tools under a workspace limit', () => {
-  const linearTools = ['list_linear_issues', 'get_linear_issue']
+  const linearTools = [
+    'list_linear_issues',
+    'get_linear_issue',
+    'list_storybook_components',
+    'import_storybook',
+    'sync_storybook',
+  ]
 
   const rpc = async (secret: string, method: string, params?: Record<string, unknown>) => {
     const res = await fetch(`${server.base}/mcp`, {

@@ -399,7 +399,9 @@ describe('lean mode off', () => {
     expect(text).not.toContain("Humans reply to MCP agents' tasks")
     expect(text).not.toContain('## Who answers comments')
     expect(await toolDescription(b, 'reply_to_comment')).toContain('against the account’s meter')
-    expect(await toolDescription(b, 'generate_image')).toContain('connected ChatGPT subscription or OpenAI key')
+    expect(await toolDescription(b, 'generate_image')).toContain(
+      'ChatGPT subscription, OpenAI API key or Gemini API key',
+    )
   })
 
   it('meters a human reply to an agent task, refusing it with no task left', async () => {

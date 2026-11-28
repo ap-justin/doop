@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { db } from './db/index.ts'
 import { agentKeys } from './db/schema.ts'
 import { describeWorkspaceLimit, type LimitWorkspace, type WorkspaceLimit } from './workspaceLimit.ts'
+import { session as authSession } from './db/auth-schema.ts'
 
 /**
  * Agent keys: account-scoped bearer credentials for the /mcp endpoint.
@@ -115,12 +116,23 @@ export async function listAgentKeys(userId: string): Promise<AgentKeyInfo[]> {
   }))
 }
 
-/** Revocation is deletion: the next MCP request with the secret gets a 401. */
+/** The `userAgent` of the browser sessions a key's editor extension opened for its
+ *  canvas views (server/editorConnect.ts): they end with the key. */
+export function embedSessionAgent(keyId: string): string {
+  return `doop-editor-embed:${keyId}`
+}
+
+/** Revocation is deletion: the next MCP request with the secret gets a 401, and
+ *  the canvas views an editor extension signed in with it are signed out. */
 export async function deleteAgentKey(userId: string, id: string): Promise<boolean> {
   const gone = await db
     .delete(agentKeys)
     .where(and(eq(agentKeys.id, id), eq(agentKeys.userId, userId)))
     .returning({ id: agentKeys.id })
+  if (gone.length)
+    await db
+      .delete(authSession)
+      .where(and(eq(authSession.userId, userId), eq(authSession.userAgent, embedSessionAgent(id))))
   return gone.length > 0
 }
 
@@ -133,7 +145,7 @@ const TOUCH_INTERVAL_MS = 60_000
 /** The MCP gate: a valid secret resolves to the account it acts as. */
 export async function verifyAgentKey(
   secret: string,
-): Promise<{ userId: string; scope: AgentKeyScope; workspaceIds: WorkspaceLimit } | null> {
+): Promise<{ userId: string; keyId: string; scope: AgentKeyScope; workspaceIds: WorkspaceLimit } | null> {
   if (!/^dpk_[\w-]{20,}$/.test(secret)) return null
   const [key] = await db
     .select({
@@ -153,5 +165,5 @@ export async function verifyAgentKey(
       .where(eq(agentKeys.id, key.id))
       .catch((err: unknown) => console.error('[agent-keys] lastUsedAt write failed', err))
   }
-  return { userId: key.userId, scope: asScope(key.scope), workspaceIds: key.workspaceIds }
+  return { userId: key.userId, keyId: key.id, scope: asScope(key.scope), workspaceIds: key.workspaceIds }
 }

@@ -3,7 +3,7 @@
 Frames become a clickable flow: an element says what happens when it is clicked (or hovered,
 pressed, keyed, or after a delay), the player runs those interactions full screen, and the editor
 wires them up visually. Code: `shared/prototype.ts` (model, parser, canonical writer, HTML
-scanner), `src/lib/frameProtoRuntime.ts` (triggers inside the frame), `src/components/
+scanner), `src/frame-runtime/proto.ts` (triggers inside the frame), `src/components/
 PrototypePlayer.tsx` (player), `src/components/InteractionsPanel.tsx` and `PrototypeOverlay.tsx`
 (editor), `server/mcp.ts` (`get_prototype`, `set_prototype_start`).
 
@@ -49,8 +49,8 @@ canvas a click therefore still selects. The attributes have no effect on PNG/JPG
 
 ## Player
 
-`PrototypePlayer` evolves `PresentMode`: the frame fills the viewport letterboxed and scaled to
-fit, and stays live (each screen re-posts its frame's HTML when the store updates it).
+`PrototypePlayer` evolves `PresentMode`: by default the frame is letterboxed in the viewport,
+shrunk to fit but never enlarged past its design size, and stays live (each screen re-posts its frame's HTML when the store updates it).
 
 - Each screen boots the frame runtime, renders the HTML, then turns prototype mode on. Triggers
   post `doop:proto-action` with the parsed interaction; the player re-parses it
@@ -111,10 +111,11 @@ have room for Comment only in the strip; Prototype mode toggles from the Canvas 
 section and part of the resident agents' system prompt. `get_prototype` lists each page's start
 and every interaction, flagging targets that are not on the canvas; `set_prototype_start` sets or
 clears a page's start and rejects unknown frames and frames on another page. Both are implemented
-once in `server/prototypeTools.ts` and exposed over MCP and to the resident agents (which pass an
-empty `frame_id` to clear). `tests/agentToolParity.test.ts` holds the resident tool set to the
-MCP server's: every MCP tool is a resident tool, an equivalent, covered by the run's context, or
-a listed gap.
+once in `server/prototypeTools.ts` and exposed over MCP and to the resident agents, both of which
+pass a null `frame_id` to clear (the resident still takes the empty string it used to).
+`tests/agentToolParity.test.ts` holds the resident tool set to the MCP server's: every MCP tool is
+a resident tool, an equivalent, covered by the run's context, or a listed gap, and a tool on both
+takes the same parameters, defined once (`server/agentToolShapes.ts`), unless the test lists why not.
 
 ## Tests
 

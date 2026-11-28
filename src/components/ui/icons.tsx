@@ -40,6 +40,7 @@ import {
   Bell,
   Blocks,
   Component as LucideComponent,
+  Diamond,
   Calendar,
   BookOpen,
   Brain,
@@ -49,7 +50,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
+  ChevronsUpDown,
   Circle,
+  CircleAlert,
   CircleHelp,
   CirclePlus,
   Clipboard,
@@ -141,6 +144,8 @@ import {
   ZoomIn,
   Rocket,
   Mail,
+  Star,
+  Megaphone,
 } from 'lucide-react'
 
 type SvgProps = Omit<SVGProps<SVGSVGElement>, 'ref'>
@@ -189,6 +194,7 @@ export const BulletListIcon = icon(List)
 export const OrderedListIcon = icon(ListOrdered)
 
 export const XIcon = icon(X)
+export const StarIcon = icon(Star)
 export const ArrowDownIcon = icon(ArrowDown)
 export const HorizontalPaddingIcon = icon(AlignHorizontalSpaceAround)
 export const VerticalPaddingIcon = icon(AlignVerticalSpaceAround)
@@ -206,6 +212,7 @@ export const TrashIcon = icon(Trash2)
 export const CheckIcon = icon(Check)
 export const ChevronRightIcon = icon(ChevronRight)
 export const ChevronDownIcon = icon(ChevronDown)
+export const ChevronsUpDownIcon = icon(ChevronsUpDown)
 export const AlignStartVerticalIcon = icon(AlignStartVertical)
 export const AlignCenterVerticalIcon = icon(AlignCenterVertical)
 export const AlignEndVerticalIcon = icon(AlignEndVertical)
@@ -353,6 +360,8 @@ export const EditIcon = icon(Pencil)
 export const EyeIcon = icon(Eye)
 export const EyeClosedIcon = icon(EyeOff)
 export const CircleIcon = icon(Circle)
+/** a part of the page failed to draw (ErrorFallback) */
+export const AlertIcon = icon(CircleAlert)
 /** a web page — the import-a-site tool, and the community gallery */
 export const WebIcon = icon(Globe)
 /** a live app broadcasting its screens — the design-sync import */
@@ -370,8 +379,11 @@ export const WorkflowIcon = icon(Workflow)
 export const ServerIcon = icon(Server)
 /** integrations: building blocks */
 export const BlocksIcon = icon(Blocks)
-/* a component's main and its instances, the one glyph that marks them */
+/** a component's main, and components in general (the Components tab, the toolbar): four diamonds */
 export const ComponentIcon = icon(LucideComponent)
+export const MegaphoneIcon = icon(Megaphone)
+/** an instance of a component: one hollow diamond, as Figma marks it, so it never reads as the main */
+export const InstanceIcon = icon(Diamond)
 /** connect an agent: a plus in a ring */
 export const CirclePlusIcon = icon(CirclePlus)
 /** import: the arrow entering from above */

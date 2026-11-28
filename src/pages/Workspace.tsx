@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { LibraryPublishPolicy, WorkspaceDetail, WorkspaceRole, WorkspaceSummary } from '../../shared/types'
+import type {
+  LibraryPublishPolicy,
+  LinkSharingPolicy,
+  WorkspaceDetail,
+  WorkspaceRole,
+  WorkspaceSummary,
+} from '../../shared/types'
 import { billedSeats, formatUsd, TEAM_SEAT_PRICE, type WorkspaceStatus } from '../../shared/billing'
 import { navigate } from '../App'
 import { api, errorMessage, paywalledWorkspace } from '../lib/api'
@@ -28,6 +34,7 @@ import { ChevronRightIcon } from '../components/ui/icons'
 import { FontLibrary } from '../components/FontLibrary'
 import { InviteLinkNotice } from '../components/InviteLinkNotice'
 import { CustomAgents } from '../components/CustomAgents'
+import { Skills } from '../components/Skills'
 import { WorkspaceLibraries } from '../components/WorkspaceLibraries'
 import { DashContent, DashHeader, DashLayout, DashMain, DashSubtitle, DashTitle } from '../components/ui/dash'
 import { timeAgo } from '../lib/time'
@@ -269,7 +276,10 @@ export function Workspace({ workspaceId }: { workspaceId: string }) {
           ) : pane === 'fonts' ? (
             <FontLibrary workspaceId={ws.id} />
           ) : pane === 'agents' ? (
-            <CustomAgents workspaceId={ws.id} />
+            <>
+              <CustomAgents workspaceId={ws.id} />
+              <Skills workspaceId={ws.id} />
+            </>
           ) : pane === 'libraries' ? (
             <WorkspaceLibraries workspaceId={ws.id} onToast={showToast} />
           ) : pane === 'billing' ? (
@@ -707,6 +717,7 @@ function GeneralPane({
   }
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmLinkSharingOff, setConfirmLinkSharingOff] = useState(false)
 
   async function rename() {
     const clean = name.trim()
@@ -732,6 +743,21 @@ function GeneralPane({
       onToast(t('workspace.libraryPublishSaved'))
     } catch (caught) {
       onToast(errorMessage(caught, t('workspace.libraryPublishFailed')))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setLinkSharing(policy: LinkSharingPolicy) {
+    if (policy === ws.linkSharing || busy) return
+    setBusy(true)
+    try {
+      await api.setLinkSharing(ws.id, policy)
+      posthog.capture('workspace_link_sharing_changed', { policy })
+      onChange()
+      onToast(t('workspace.linkSharingSaved'))
+    } catch (caught) {
+      onToast(errorMessage(caught, t('workspace.linkSharingFailed')))
     } finally {
       setBusy(false)
     }
@@ -800,6 +826,32 @@ function GeneralPane({
             }
           />
         )}
+        {admin && (
+          <CardRow
+            label={t('workspace.linkSharing')}
+            control={
+              <Select
+                value={ws.linkSharing}
+                disabled={busy}
+                onValueChange={(value) =>
+                  value === 'off' ? setConfirmLinkSharingOff(true) : void setLinkSharing(value as LinkSharingPolicy)
+                }
+              >
+                <SelectTrigger className="w-full" aria-label={t('workspace.linkSharingAria')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="allowed">{t('workspace.linkSharingAllowed')}</SelectItem>
+                  <SelectItem value="off">{t('workspace.linkSharingOff')}</SelectItem>
+                </SelectContent>
+              </Select>
+            }
+          >
+            <span className="text-label text-ink-faint">
+              {ws.linkSharing === 'off' ? t('workspace.linkSharingOffHint') : t('workspace.linkSharingAllowedHint')}
+            </span>
+          </CardRow>
+        )}
       </SettingsCard>
       {isOwner && (
         <SettingsCard tone="flat" className="border-accent-ink/30">
@@ -817,6 +869,18 @@ function GeneralPane({
           </CardBody>
         </SettingsCard>
       )}
+      <ConfirmDialog
+        open={confirmLinkSharingOff}
+        onOpenChange={setConfirmLinkSharingOff}
+        title={t('workspace.linkSharingOffTitle')}
+        description={t('workspace.linkSharingOffDescription')}
+        confirmLabel={t('workspace.linkSharingOffConfirm')}
+        destructive
+        onConfirm={() => {
+          setConfirmLinkSharingOff(false)
+          void setLinkSharing('off')
+        }}
+      />
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
