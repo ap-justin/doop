@@ -50,7 +50,7 @@ permissions:
 
 jobs:
   dmg-macos:
-    runs-on: blacksmith-12vcpu-macos-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/setup-desktop
@@ -193,7 +193,7 @@ jobs:
 
   linux:
     # the oldest supported runner, so the AppImage's glibc floor stays low
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:

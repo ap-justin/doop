@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   archive:
-    runs-on: blacksmith-12vcpu-macos-15
+    runs-on: macos-15
     # PR runs archive unsigned and need no secrets, so they stay outside the environment.
     environment: ${{ github.event_name != 'pull_request' && 'ios-release' || '' }}
     env:

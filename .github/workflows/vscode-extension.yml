@@ -36,8 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      # The repo's one Node and Bun, as the rest of CI sets them up: the test
+      # run below needs the Node in .node-version.
+      - uses: ./.github/actions/setup
       - name: Tag matches the extension's version
         if: startsWith(github.ref, 'refs/tags/vscode-v')
         run: |

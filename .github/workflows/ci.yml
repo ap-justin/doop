@@ -16,7 +16,7 @@ jobs:
   # commit-msg hook can't see it, so this is the only place it gets checked.
   commit-message:
     if: github.event_name == 'pull_request'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -31,14 +31,14 @@ jobs:
   # sum. Install is ~5s per job (setup-bun restores ~/.bun/install/cache keyed
   # on bun.lock), so the duplication is cheap.
   typecheck:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: bun run typecheck
 
   lint:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -47,7 +47,7 @@ jobs:
       - run: bun run doc-lint
 
   build:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -57,7 +57,7 @@ jobs:
   # The suite boots a real server per integration file, which is CPU-bound on
   # the 4-vCPU Blacksmith runner; sharding across runners is what brings the step down.
   test:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +93,6 @@ jobs:
   tests:
     needs: test
     if: always()
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     steps:
       - run: test "${{ needs.test.result }}" = success
