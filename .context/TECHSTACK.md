@@ -595,8 +595,8 @@ data-doop-carried>` blocks a moved or pasted layer brings (`rewriteCarriedCss`; 
   library's file for that face (`withLibraryFaceRules` in `prepareMains`; hosted fonts and files on
   another host are left alone), so its next write files no revision. `actions.createFrame` /
   `updateFrame` / every append chunk run `withFontFaces` on every write (`withCanvasFaces` in
-  `server/canvasFaces.ts`; mid-stream once a complete `<head>` or `<body>` tag has arrived, so the
-  first section's screenshot already has its fonts and tokens), and `FrameView`'s save path runs
+  `server/canvasFaces.ts`; mid-stream a fragment from its first chunk, a document once a complete `<head>` or `<body>` tag has
+  arrived (`streamTopSettled`), so the first section's screenshot already has its fonts and tokens), and `FrameView`'s save path runs
   it too, so a family picked from the Design panel's "Custom fonts" group renders at once. Every
   renderer that reads frame HTML (screenshots, PDF export, iOS) gets the font that way.
   Agents see the library as `fonts` plus a note in
@@ -1091,7 +1091,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   menu opens on a field for a typed level (`150`, `150%`; `parseZoomPercent`) and switches the
   pixel grid (⇧'), other people's cursors (⌘⌥\ / Ctrl+Alt+\) and the comment pins (⇧C), each read
   by `code` (registry actions `pixel-grid`, `comments`, `cursors`). Hidden pins still show under
-  the Comment tool and for a thread that is open. Tests: `viewOptions.test.ts`, `zoomMenu.test.tsx`.
+  a Comment tool the person picked (not the one a canvas opens on) and for a thread that is open. Tests: `viewOptions.test.ts`, `zoomMenu.test.tsx`.
 - Canvas panel layout (Settings → Appearance → Canvas panels, `src/lib/panelLayout.ts`, per
   browser under `doop:panel-layout`): `floating` (the default) keeps the islands over a
   full-window stage; `docked` makes Layers, the tool rail, the icon islands, the Inspector /
@@ -1650,8 +1650,7 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   it belongs now (a class on `<doop-use class>`); a frame whose rule still styles its own elements
   with the class is told so, and to keep the rule and style the instance's class too; nothing is
   migrated. `update_component`'s find/replace reads the template with natural names when the stored
-  text has no match, the lookalike check always reads natural names, and `replace_matching` links hand-drawn elements to the
-  renamed classes (`keyLike`) instead of recording them as overrides. Classes a nested
+  text has no match. Classes a nested
   `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own
   component's) stay. The renamed names live in the definition and its instances only: a main in its
@@ -2077,7 +2076,7 @@ Migrations 0040 (agent feedback) and 0041 (custom fonts) retain their shared tim
 snapshots omit the deferred Figma `integrations.refresh_token` column, as does the credential
 encryption backfill. Migrations 0049 to 0051 (agent key scope, workspace limits, invite links) are this repository's own and were already applied
 in production; upstream's v0.15.0 migrations 0049 to 0059 are numbered 0052 to 0062 here, in the same order and with later `when`
-values, because drizzle's migrator skips a journal entry dated at or before the newest one a database has run. A later
+values, because drizzle's migrator skips a journal entry dated at or before the newest one a database has run. Upstream's v0.16.0 migrations 0060 to 0065 are 0063 to 0068. A later
 upstream migration takes the next free number the same way. The local Chromium is closed after 120 s without a page
 (`CHROME_IDLE_CLOSE_MS`, `0` keeps it; read each time the browser goes idle) through the renderer's `idleCloseMs` tuning in
 `server/screenshot.ts`. Desktop downloads use the platform-neutral `https://doop.design/download` page.

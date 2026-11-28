@@ -673,7 +673,7 @@ describe('an agent working with components', () => {
     })
     expect(made.isError).toBe(false)
     const plan = () => findComponent(canvas.id, 'Plan')!
-    /* the Plan's own root class is renamed; the Button's `.btn` is another component's and stays */
+    /* the Plan's own root class is renamed; the nested Button's root keeps the Button's own renamed class, which the Plan's rule is read as naming */
     const planClass = () => `.plan__in-${plan().id}`
     /* the nested Button's root wears its renamed class, and the Plan's rule names that */
     const btn = () => `.btn__in-${findComponent(canvas.id, 'Button')!.id}`

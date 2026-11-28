@@ -458,8 +458,9 @@ function assertSignupDomainAllowed(email: string): void {
 }
 
 /* Which request header holds the client IP, for Better Auth's per-client rate limits.
-   Unset, it reads only a single-hop X-Forwarded-For; behind a proxy that adds hops
-   (Fly, Cloudflare, Railway) it finds no IP and every visitor shares one bucket.
+   Unset, it reads Fly-Client-IP on Fly (FLY_APP_NAME set) and elsewhere only a single-hop
+   X-Forwarded-For; behind another proxy that adds hops (Cloudflare, Railway) it finds no IP and every
+   visitor shares one bucket.
    Lowercased: getIp also takes a plain headers object, whose lookup is case-sensitive. */
 export function loadIpAddressConfig() {
   /* Fly's proxy appends to whatever the client sent, so X-Forwarded-For never holds a single address

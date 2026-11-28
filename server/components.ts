@@ -387,8 +387,10 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
 /**
  * Re-derive these definitions from their mains in this frame, as a write of the frame would,
  * and nothing else: no other main is looked at and no instance is rendered again. `html` is
- * the frame as the pass would leave it; it differs only where a main needed part keys or wore
- * the component's renamed class names (put back to natural ones, in its own stylesheets too).
+ * the frame as the pass would leave it; it differs only where a main needed part keys, wore
+ * the component's renamed class names (put back to natural ones, in its own stylesheets too), gained the
+ * `data-<name>` marks of its booleans that default to on, or had its block of nested-root rules
+ * (`data-doop-main-css`) change.
  */
 export function rederiveFromMains(
   canvas: Canvas,

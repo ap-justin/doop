@@ -966,9 +966,9 @@ describe('a placed component and the classes of its frame', () => {
         { html: store.getFrame(frame.id)!.html.replace('class="sl"', `class="sl__in-${def.id}"`) },
         actor,
       )
-      const stored = renderedHtml(frame.id)
-      expect(block(stored)).toBe(before)
-      expect(stored).toContain('class="sl"')
+      const rendered = renderedHtml(frame.id)
+      expect(block(rendered)).toBe(before)
+      expect(rendered).toContain('class="sl"')
     })
 
     it('leaves another component’s renamed names alone when a main is written back', () => {
