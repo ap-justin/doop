@@ -9,6 +9,7 @@ describe('loadIpAddressConfig', () => {
   it('leaves Better Auth on its default when nothing is set', () => {
     stubEnv('AUTH_IP_HEADERS', undefined)
     stubEnv('AUTH_TRUSTED_PROXIES', undefined)
+    stubEnv('FLY_APP_NAME', undefined)
     expect(loadIpAddressConfig()).toBeNull()
   })
 
