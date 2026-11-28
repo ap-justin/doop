@@ -15,7 +15,7 @@
  *   doop screenshot designs/hero.html
  *
  * Built to public/cli/doop.mjs by scripts/build-doop-cli.mjs and served by Doop, so a server
- * always hands out the CLI that matches its tools. Behaviour: .context/reference/agents.md.
+ * always hands out the CLI that matches its tools. Behaviour: the "Doop CLI" bullet in .context/TECHSTACK.md.
  */
 import { parseCommandLine } from './doop/args.ts'
 import { asset } from './doop/assets.ts'

@@ -5,7 +5,7 @@ import { canvasPages } from '../shared/pages.ts'
 import type { Actor, Frame } from '../shared/types.ts'
 import { canvasRole } from './access.ts'
 import * as actions from './actions.ts'
-import { isAgentKeySecret, verifyAgentKey } from './agentKeys.ts'
+import { isAgentKeySecret, verifyAgentKey, type AgentKeyScope } from './agentKeys.ts'
 import { captureThrottled } from './analytics.ts'
 import { getUserName, isBanned } from './auth.ts'
 import { FrameVersionConflict, runCanvasWrite } from './canvasWrites.ts'
@@ -15,6 +15,9 @@ import { composedHtml } from './frameCompose.ts'
 import { describeFeedback, mcpAgentKey } from './mcp.ts'
 import { store } from './store.ts'
 import { withArgsCanvases } from './toolLoads.ts'
+import { WorkBudgetError } from './workBudget.ts'
+import { WriteRefusedError } from './writeRefusal.ts'
+import { withinWorkspaceLimit, type WorkspaceLimit } from './workspaceLimit.ts'
 
 /**
  * The agent API (`/api/v1`): frames as files over plain HTTP, for a process that holds an agent
@@ -30,7 +33,7 @@ import { withArgsCanvases } from './toolLoads.ts'
  *
  * An agent is its account and the name in `Doop-Agent`, the identity an MCP agent of that name
  * has, so its presence, tasks and the feedback people leave it are one across both.
- * Everything else an agent does stays on `/mcp`. Behaviour: .context/reference/agents.md.
+ * Everything else an agent does stays on `/mcp`. Behaviour: the "Agent API" bullet in .context/TECHSTACK.md.
  */
 
 /** the largest frame `/mcp` accepts as a tool argument, kept for the raw body */
@@ -53,6 +56,8 @@ function fail(
 
 interface Agent {
   userId: string
+  scope: AgentKeyScope
+  workspaceIds: WorkspaceLimit
   actor: Actor
 }
 
@@ -97,11 +102,17 @@ function expectedVersion(req: express.Request): number | undefined | 'invalid' {
 
 const NOT_HTML = 'send the frame’s HTML as the request body, with Content-Type: text/html'
 
+/** No body at all, or an empty one. A chunked body has no Content-Length and is still a body
+ *  (type-is's `hasBody` rule, which the body parsers go by). */
+function bodyIsEmpty(req: express.Request): boolean {
+  return req.get('transfer-encoding') === undefined && Number(req.get('content-length') ?? 0) === 0
+}
+
 /** The HTML a request carries. A JSON body was parsed before this router saw it and is not a
  *  frame: writing it would blank the frame. An empty file is an empty frame. */
 function bodyOf(req: express.Request): string | undefined {
   if (typeof req.body === 'string') return req.body
-  return Number(req.get('content-length') ?? 0) === 0 ? '' : undefined
+  return bodyIsEmpty(req) ? '' : undefined
 }
 
 const COMPONENT_ISSUE = 'COMPONENT: '
@@ -158,10 +169,12 @@ export function mountAgentApi(app: express.Express): void {
         owner: await getUserName(key.userId),
         brand: resolveAgentBrand(CLIENT_NAME, name),
       })
-      res.locals.agent = { userId: key.userId, actor: { ...actor, agentKey: mcpAgentKey(key.userId, actor.name) } }
-      captureThrottled(key.userId, 'custom_agent_used', {
-        first_tool: `api ${req.method} ${req.route?.path ?? req.path}`,
-      })
+      res.locals.agent = {
+        userId: key.userId,
+        scope: key.scope,
+        workspaceIds: key.workspaceIds,
+        actor: { ...actor, agentKey: mcpAgentKey(key.userId, actor.name) },
+      }
       next()
     } catch (error) {
       next(error)
@@ -169,10 +182,17 @@ export function mountAgentApi(app: express.Express): void {
   })
 
   const agentOf = (res: express.Response) => res.locals.agent as Agent
-  /* a canvas the account can read but not change says so, rather than claiming it is not there */
+  /* a canvas the account can read but not change says so, rather than claiming it is not there; a
+     canvas outside the key's workspace limit is not there at all, and a comment-scoped key only reads */
   const allowed = (res: express.Response, canvasId: string | undefined, need: CanvasRole, what: string): boolean => {
     const canvas = canvasId ? store.getCanvas(canvasId) : undefined
-    const role = canvas ? canvasRole(agentOf(res).userId, canvas) : null
+    const agent = agentOf(res)
+    const role =
+      canvas && withinWorkspaceLimit(agent.workspaceIds, agent.userId, canvas) ? canvasRole(agent.userId, canvas) : null
+    if (role && need !== 'view' && agent.scope === 'comment') {
+      fail(res, 403, 'forbidden', 'this agent key is limited to reading and comments')
+      return false
+    }
     if (roleAllows(role, need)) return true
     if (role) fail(res, 403, 'forbidden', `this account can only ${role} on that canvas`)
     else fail(res, 404, 'not_found', `no ${what} with that id accessible to this account`)
@@ -191,6 +211,8 @@ export function mountAgentApi(app: express.Express): void {
       handler: (req: IdRequest, res: express.Response) => unknown,
     ): express.RequestHandler<{ id: string }> =>
     (req, res, next) => {
+      /* the route's name, never its path: the path carries frame and canvas ids */
+      captureThrottled(agentOf(res).userId, 'custom_agent_used', { first_tool: name })
       withArgsCanvases(target(req), () => handler(req, res), name)
         .then((reply) => {
           if (typeof reply === 'function') (reply as Reply)()
@@ -300,6 +322,9 @@ export function mountAgentApi(app: express.Express): void {
         frame: summaryOf(frame),
       })
     }
+    /* a write the engine refuses (an unclosed <doop-use>, a spent work budget) says why, as the MCP tools do */
+    if (error instanceof WriteRefusedError || error instanceof WorkBudgetError)
+      return fail(res, 422, 'refused', error.message)
     if ((error as { type?: string }).type === 'entity.too.large')
       return fail(res, 413, 'too_large', 'a frame’s HTML is at most 10 MB; images and fonts go up as assets')
     next(error)

@@ -8,6 +8,7 @@ import { postAutomationMessage } from './automation.ts'
 
 export const slackExtension: ServerExtension = {
   id: 'slack',
+  reachesOutsideDoop: true,
   runAutomationAction: (step, ctx) => {
     if (step.type !== 'slack') throw new Error('Expected a Slack step')
     return postAutomationMessage(step, ctx.ownerId, ctx.context)

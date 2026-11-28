@@ -6,6 +6,7 @@ import { registerStorybookMcpTools } from './mcpTool.ts'
  *  `server/extensions.ts` mounts all of it. Spec: .context/specs/storybook-import.md. */
 export const storybookExtension: ServerExtension = {
   id: 'storybook',
+  reachesOutsideDoop: false,
   canvasRouter: storybookCanvasRouter,
   registerMcpTools: registerStorybookMcpTools,
   mcpGuideLines: [

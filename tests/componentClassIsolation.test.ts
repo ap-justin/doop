@@ -13,6 +13,7 @@ vi.mock('../server/db/persist.ts', () => ({
 }))
 
 import { store } from '../server/store.ts'
+import { unloadHtml } from '../server/frameHtml.ts'
 import { renderedHtml } from './rendered.ts'
 import * as actions from '../server/actions.ts'
 import { blankComponent, contextFor } from '../server/components.ts'
@@ -698,6 +699,50 @@ describe('a placed component and the classes of its frame', () => {
     expect(note?.message).toContain('class="your-class"')
   })
 
+  it('saves a main whose root class is renamed while the frames on another page are not loaded', () => {
+    const plan = makeSelect()
+    const away = actions.createFrame(canvasId, { name: 'Away', html: '' }, actor)!
+    const home = actions.createFrame(canvasId, { name: 'Home', html: '' }, actor)!
+    for (const frame of [away, home]) {
+      actions.updateFrame(
+        frame.id,
+        { html: doc(`<doop-use component="${plan.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+        actor,
+      )
+    }
+    store.saveComponent(canvasId, { ...plan, template: plan.template.replace(`select__in-${plan.id}`, 'select') })
+    const main = store.getFrame(plan.mainFrameId!)!
+    actions.takeComponentIssues(main.id)
+    /* its page is idle and dropped from memory: reading its html throws */
+    unloadHtml(store.getFrame(away.id)!)
+    expect(() => actions.updateFrame(main.id, { html: `${main.html} ` }, actor)).not.toThrow()
+    const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+    expect(note?.message).toContain('“Home” (.select)')
+    expect(note?.message).not.toContain('Away')
+    expect(note?.message).toContain('Frames on pages not loaded were not checked')
+  })
+
+  it('still says so when every frame placing the main is on a page not loaded', () => {
+    const plan = makeSelect()
+    const away = actions.createFrame(canvasId, { name: 'Away', html: '' }, actor)!
+    const elsewhere = actions.createFrame(canvasId, { name: 'Elsewhere', html: '' }, actor)!
+    for (const frame of [away, elsewhere]) {
+      actions.updateFrame(
+        frame.id,
+        { html: doc(`<doop-use component="${plan.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+        actor,
+      )
+    }
+    store.saveComponent(canvasId, { ...plan, template: plan.template.replace(`select__in-${plan.id}`, 'select') })
+    const main = store.getFrame(plan.mainFrameId!)!
+    actions.takeComponentIssues(main.id)
+    for (const frame of [away, elsewhere]) unloadHtml(store.getFrame(frame.id)!)
+    actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+    const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+    expect(note?.message).toContain('Frames on pages not loaded were not checked')
+    expect(note?.message).toContain('.select')
+  })
+
   describe('the note for a renamed root class', () => {
     /** A Select whose stored definition predates the rename, and frames around it; the note is read after saving its main. */
     function staleSelect({ rootBefore = 'select', mixed = false, old = '' } = {}) {
@@ -947,9 +992,9 @@ describe('a placed component and the classes of its frame', () => {
         { html: store.getFrame(frame.id)!.html.replace('class="sl"', `class="sl__in-${def.id}"`) },
         actor,
       )
-      const stored = renderedHtml(frame.id)
-      expect(block(stored)).toBe(before)
-      expect(stored).toContain('class="sl"')
+      const rendered = renderedHtml(frame.id)
+      expect(block(rendered)).toBe(before)
+      expect(rendered).toContain('class="sl"')
     })
 
     it('leaves another component’s renamed names alone when a main is written back', () => {

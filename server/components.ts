@@ -60,6 +60,7 @@ import {
 import { adoptFromLibrary, findInLibraries, LibraryAdoptError } from './componentLibrary.ts'
 import { withHostedIcons } from './iconProxy.ts'
 import { env } from './env.ts'
+import { htmlLoaded } from './frameHtml.ts'
 import { store } from './store.ts'
 import { noteCanvas } from './workBudget.ts'
 import { WriteRefusedError } from './writeRefusal.ts'
@@ -352,13 +353,20 @@ function prepareMains(
  * where the guide once said to put it) no longer reaches the component's instances. Said once, at the
  * save that renames it, naming the frames and what each rule needs now: moved to a class on the
  * placed instance, or, where the frame's own elements still use it, kept and its styles given to that
- * class too.
+ * class too. A frame whose page is not loaded cannot be read here; the note says those frames were
+ * not checked, so it is given whenever there are any, even with no loaded frame to name.
  */
 function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef, names: string[], ctx: EngineContext) {
   const hits: string[] = []
   let alsoOwn = false
+  let unchecked = 0
   for (const frame of canvas.frames) {
-    if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
+    if (frame.id === mainFrameId) continue
+    if (!htmlLoaded(frame)) {
+      unchecked++
+      continue
+    }
+    if (!frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
     const named = classesNamedIn(frameStylesheets(frame.html))
     const used = names.filter((name) => named.has(name))
     if (!used.length) continue
@@ -371,23 +379,32 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
     })
     hits.push(`“${frame.name}” (${listed.join('; ')})`)
   }
-  if (!hits.length) return
+  if (!hits.length && !unchecked) return
   const use = `<doop-use component="${def.name}" class="your-class">`
   /* moving a rule the frame's own elements also match would unstyle them */
   const advice = alsoOwn
     ? `Give the placed instance a class (${use}) and style that class. Keep a rule the frame's own elements still use and give the instance's class the same styles; move any other such rule to the instance's class.`
     : `Move each such rule to a class on the placed instance (${use}) and style that class.`
+  const lost = names.map((name) => `.${name}`).join(', ')
+  const found = hits.length
+    ? `these frames' own rules for it no longer reach its instances: ${hits.join(', ')}.`
+    : `a frame's own rule for ${lost}, if it has one, no longer reaches its instances.`
+  const notChecked = unchecked
+    ? ` Frames on pages not loaded were not checked: read any that place “${def.name}” for a rule of their own on ${lost}.`
+    : ''
   ctx.issues.push({
     code: 'root_class_renamed',
-    message: `“${def.name}”'s root class is now renamed per component, so these frames' own rules for it no longer reach its instances: ${hits.join(', ')}. ${advice}`,
+    message: `“${def.name}”'s root class is now renamed per component, so ${found}${notChecked} ${advice}`,
   })
 }
 
 /**
  * Re-derive these definitions from their mains in this frame, as a write of the frame would,
  * and nothing else: no other main is looked at and no instance is rendered again. `html` is
- * the frame as the pass would leave it; it differs only where a main needed part keys or wore
- * the component's renamed class names (put back to natural ones, in its own stylesheets too).
+ * the frame as the pass would leave it; it differs only where a main needed part keys, wore
+ * the component's renamed class names (put back to natural ones, in its own stylesheets too), gained the
+ * `data-<name>` marks of its booleans that default to on, or had its block of nested-root rules
+ * (`data-doop-main-css`) change.
  */
 export function rederiveFromMains(
   canvas: Canvas,

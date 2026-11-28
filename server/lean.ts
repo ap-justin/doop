@@ -4,8 +4,8 @@ import { mentionedRole, type AgentRole, type Roster } from '../shared/agents.ts'
 
 /**
  * Lean mode (DOOP_LEAN=1 or true, any case): Doop as a shared canvas for MCP
- * agents, without the in-app Doop Agent and model accounts, new billing, Slack
- * and Linear, automations, GitHub and Meta import, Community, the desktop
+ * agents, without the in-app Doop Agent and model accounts, new billing, Slack,
+ * Linear and the Storybook import, automations, GitHub and Meta import, Community, the desktop
  * connect relay, iOS live activities, Gemini cloud workers and the PostHog
  * relay. Comment digest emails are never queued or sent, and Settings hides
  * their switch; verification, password reset, invite and canvas-share emails
@@ -44,7 +44,9 @@ const LEAN_DISABLED_PATHS: readonly RegExp[] = [
   /^\/(local-agent|gemini-cloud)\/mcp\//i,
   /^\/api\/(live-activities|community|automations|integrations|local-agent|agent-allowance|image-model|billing)(\/|$)/i,
   /^\/api\/(model-account|custom-providers|agent-runners|agents|github)(\/|$)/i,
-  /^\/api\/canvases\/[^/]+\/(github|cards)(\/|$)/i,
+  /* storybook: an extension's canvas router, left unmounted by `activeExtensions`, which in production
+     would fall through to the SPA's index.html instead of a 404 */
+  /^\/api\/canvases\/[^/]+\/(github|cards|storybook)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/publish\/?$/i,
   /^\/api\/(feedback|comments)\/[^/]+\/retry\/?$/i,
   /^\/api\/workspaces\/[^/]+\/billing\//i,

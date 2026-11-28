@@ -426,6 +426,27 @@ describe('a key limited to one workspace over /mcp', () => {
       'finish_repo_card',
     ].includes(tool) || args.format === 'pdf'
 
+  /* what each of those answers when it gets past the access check but cannot finish here; any other
+     failure (a scope refusal, a missing canvas, a bad argument) is a control gone red for the wrong reason */
+  const reachedButUnfinished: Record<string, RegExp> = {
+    generate_image: /image generation is not available/,
+    import_webpage: /No Chrome\/Chromium found|fetch failed/,
+    get_frame_screenshot: /No Chrome\/Chromium found/,
+    get_component_preview: /No Chrome\/Chromium found/,
+    inspect_frame: /No Chrome\/Chromium found/,
+    export_frame: /PDF export is unavailable/,
+    export_layer: /no element in frame \S+ carries data-doop-id/,
+    upload_font: /fetch failed/,
+    update_library_everywhere: /has not published a library/,
+    read_repo_files: /you hold no open repo import card/,
+    finish_repo_card: /you hold no open repo import card/,
+  }
+  const expectReached = (tool: string, call: Record<string, unknown>, inside: { isError: boolean; text: string }) => {
+    expect(inside.text, tool).not.toContain('limited to reading and comments')
+    if (!needsOutsideWorld(tool, call)) return expect(inside, inside.text).toMatchObject({ isError: false })
+    if (inside.isError) expect(inside.text, tool).toMatch(reachedButUnfinished[tool]!)
+  }
+
   it.each(toolCalls.map(([tool, args], i) => [`${tool} #${i}`, tool, args] as const))(
     'positive control: %s with valid arguments works on a canvas in its workspace',
     async (_label, tool, args) => {
@@ -435,9 +456,30 @@ describe('a key limited to one workspace over /mcp', () => {
       const inside = await callTool(limitedFull, tool, call)
       const missing = await callTool(limitedFull, tool, args(madeUp))
       expect(masked(inside.text, own)).not.toBe(masked(missing.text, madeUp))
-      if (!needsOutsideWorld(tool, call)) expect(inside, inside.text).toMatchObject({ isError: false })
+      expectReached(tool, call, inside)
     },
     /* seeds a canvas (about ten requests) and some rows drive Chromium or the network */
+    30_000,
+  )
+
+  /* the read-only tools COMMENT_SCOPE_TOOLS lets a comment key call, named here so shrinking the set fails this */
+  it.each([
+    'inspect_frame',
+    'export_frame',
+    'export_layer',
+    'list_components',
+    'get_component',
+    'get_component_preview',
+  ])(
+    'positive control: a comment key calls %s on a canvas in its workspace',
+    async (tool) => {
+      const own = await withToolInputs(owner, unlimited, await seedCanvas(owner, `Comment control ${tool}`, wsA))
+      const call = toolCalls.find(([name]) => name === tool)![1](own)
+      const inside = await callTool(limitedComment, tool, call)
+      const missing = await callTool(limitedComment, tool, toolCalls.find(([name]) => name === tool)![1](madeUp))
+      expect(masked(inside.text, own)).not.toBe(masked(missing.text, madeUp))
+      expectReached(tool, call, inside)
+    },
     30_000,
   )
 
@@ -731,13 +773,10 @@ describe('a limited key whose owner leaves a listed workspace', () => {
 })
 
 describe('extension tools under a workspace limit', () => {
-  const linearTools = [
-    'list_linear_issues',
-    'get_linear_issue',
-    'list_storybook_components',
-    'import_storybook',
-    'sync_storybook',
-  ]
+  /* Linear reaches the account's whole workspace, so a limited key loses it; Storybook's tools act on
+     a canvas and check access to it themselves, so a limited key keeps them */
+  const outsideTools = ['list_linear_issues', 'get_linear_issue']
+  const storybookTools = ['list_storybook_components', 'import_storybook', 'sync_storybook']
 
   const rpc = async (secret: string, method: string, params?: Record<string, unknown>) => {
     const res = await fetch(`${server.base}/mcp`, {
@@ -753,11 +792,25 @@ describe('extension tools under a workspace limit', () => {
   }
   const toolNames = async (secret: string) => ((await rpc(secret, 'tools/list')).result?.tools ?? []).map((t) => t.name)
 
-  it('leaves them out of tools/list for a limited key of either scope', async () => {
+  it('leaves the outside ones out of the guide for a limited key, and keeps Storybook’s', async () => {
+    const guideFor = async (secret: string) =>
+      (await callTool(secret, 'get_guide', { topic: 'doop-instructions' })).text
+    const limited = await guideFor(await mint({ name: 'limited', workspaceIds: [wsA] }))
+    expect(limited).not.toContain('list_linear_issues')
+    expect(limited).toContain('list_storybook_components')
+    expect(await guideFor(await mint({ name: 'all' }))).toContain('list_linear_issues')
+    /* a read-and-comment key cannot call any extension tool, so its guide names none */
+    const commenting = await guideFor(await mint({ name: 'comments', scope: 'comment' }))
+    expect(commenting).not.toContain('list_storybook_components')
+    expect(commenting).not.toContain('list_linear_issues')
+  })
+
+  it('leaves the outside ones out of tools/list for a limited key of either scope, and keeps Storybook’s', async () => {
     for (const body of [{ workspaceIds: [wsA] }, { scope: 'comment', workspaceIds: [wsA] }]) {
       const names = await toolNames(await mint({ name: 'limited', ...body }))
       expect(names).toContain('list_canvases')
-      for (const tool of linearTools) expect(names).not.toContain(tool)
+      for (const tool of outsideTools) expect(names).not.toContain(tool)
+      for (const tool of storybookTools) expect(names).toContain(tool)
     }
   })
 
@@ -766,15 +819,73 @@ describe('extension tools under a workspace limit', () => {
     const missing = await callTool(limited, 'no_such_tool', { id: 'ENG-1' })
     expect(missing.isError).toBe(true)
     expect(missing.text).toContain('not found')
-    for (const tool of linearTools) {
+    for (const tool of outsideTools) {
       const call = await callTool(limited, tool, { id: 'ENG-1' })
       expect(call.isError).toBe(true)
       expect(call.text.replace(tool, '<tool>')).toBe(missing.text.replace('no_such_tool', '<tool>'))
     }
   })
 
+  /* a host the server's address check refuses before any lookup, so "no Storybook index" never rests on the network
+     (the importer reads through undici with pinned DNS, which the preloaded fetch stub cannot reach) */
+  const UNREACHABLE_STORYBOOK = 'https://storybook.internal'
+
+  it('answers a Storybook call on a canvas outside the limit as a made-up canvas', async () => {
+    const limited = await mint({ name: 'limited', workspaceIds: [wsA] })
+    const outside = await seedCanvas(owner, 'Storybook outside', wsB)
+    const calls: [string, Record<string, unknown>][] = [
+      ['list_storybook_components', { url: UNREACHABLE_STORYBOOK }],
+      ['import_storybook', { url: UNREACHABLE_STORYBOOK, components: ['Components/Button'] }],
+      ['sync_storybook', {}],
+    ]
+    for (const [tool, args] of calls) {
+      const refused = await callTool(limited, tool, { canvas_id: outside.canvasId, agent_name: 'Limit Bot', ...args })
+      const missing = await callTool(limited, tool, { canvas_id: 'no-such-canvas', agent_name: 'Limit Bot', ...args })
+      expect(refused.isError, tool).toBe(true)
+      expect(refused.text, tool).toContain('no canvas with id')
+      expect(refused.text.replace(outside.canvasId, '<id>'), tool).toBe(missing.text.replace('no-such-canvas', '<id>'))
+    }
+    /* control: on a canvas inside the limit the same call gets past the access check, so the equality above
+       is the limit's doing and not a failure every call shares */
+    const own = await seedCanvas(owner, 'Storybook inside', wsA)
+    const listed = await callTool(limited, 'list_storybook_components', {
+      canvas_id: own.canvasId,
+      url: UNREACHABLE_STORYBOOK,
+      agent_name: 'Limit Bot',
+    })
+    expect(listed.isError).toBe(true)
+    expect(listed.text).toContain('no Storybook index')
+    const imported = await callTool(limited, 'import_storybook', {
+      canvas_id: own.canvasId,
+      url: UNREACHABLE_STORYBOOK,
+      components: ['Components/Button'],
+      agent_name: 'Limit Bot',
+    })
+    expect(imported.text).toContain('no Storybook index')
+    const bare = await seedCanvas(owner, 'Storybook sync inside', wsA)
+    const synced = await callTool(limited, 'sync_storybook', { canvas_id: bare.canvasId, agent_name: 'Limit Bot' })
+    expect(synced.text).toContain('imports from no Storybook yet')
+  })
+
+  it('refuses a comment-scoped limited key every Storybook tool as outside its scope, inside its workspace too', async () => {
+    const limitedComment = await mint({ name: 'limited-comment', scope: 'comment', workspaceIds: [wsA] })
+    const own = await seedCanvas(owner, 'Storybook comment scope', wsA)
+    for (const tool of storybookTools) {
+      const res = await callTool(limitedComment, tool, {
+        canvas_id: own.canvasId,
+        url: UNREACHABLE_STORYBOOK,
+        components: ['Components/Button'],
+        agent_name: 'Limit Bot',
+      })
+      expect(res.isError, tool).toBe(true)
+      expect(res.text, tool).toContain('limited to reading and comments')
+    }
+    const sources = await owner.get(`/api/canvases/${own.canvasId}/storybook/sources`)
+    expect(((await sources.json()) as { sources: unknown[] }).sources).toEqual([])
+  })
+
   it('keeps them for an unlimited key', async () => {
     const names = await toolNames(await mint({ name: 'all' }))
-    for (const tool of linearTools) expect(names).toContain(tool)
+    for (const tool of [...outsideTools, ...storybookTools]) expect(names).toContain(tool)
   })
 })

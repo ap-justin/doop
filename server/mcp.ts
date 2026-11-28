@@ -143,9 +143,12 @@ You MUST call get_guide({ topic: "doop-instructions" }) before using other Doop 
 - When Doop gets in your way, call report_issue, then carry on.`
 
 /** What this server's integrations add to the main guide: lean mode leaves out
- *  the ones it turns off. */
-function extensionGuideLines(): string[] {
-  return activeExtensions(extensions).flatMap((extension) => extension.mcpGuideLines ?? [])
+ *  the ones it turns off. A key's guide leaves out the ones whose tools it is not given: a workspace-limited
+ *  key's, those that reach outside Doop; a read-and-comment key's, all of them. */
+function extensionGuideLines(limited: boolean, commentOnly: boolean): string[] {
+  return activeExtensions(extensions)
+    .filter((extension) => !commentOnly && !(limited && extension.reachesOutsideDoop))
+    .flatMap((extension) => extension.mcpGuideLines ?? [])
 }
 
 function text(data: unknown) {
@@ -219,8 +222,8 @@ function err(message: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true }
 }
 
-/** The only tools a `comment`-scoped agent key may call: read a canvas, the
- *  style guides, tokens and references a review is judged against, and take
+/** The only tools a `comment`-scoped agent key may call: read a canvas, its
+ *  components, renders and exports, the style guides, tokens and references a review is judged against, and take
  *  part in its comment threads. Everything else is refused before it runs. */
 export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'list_canvases',
@@ -228,6 +231,12 @@ export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'get_comments',
   'get_frame',
   'get_frame_screenshot',
+  'inspect_frame',
+  'export_frame',
+  'export_layer',
+  'list_components',
+  'get_component',
+  'get_component_preview',
   'list_frame_versions',
   'get_prototype',
   'list_guidelines',
@@ -242,7 +251,7 @@ export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
 
 /** Leads get_guide for a `comment` key, whose guide otherwise describes a
  *  design workflow it cannot carry out. */
-const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, screenshots, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
+const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, components, screenshots, inspections, exports, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
 
 `
 
@@ -592,7 +601,7 @@ export function buildMcpServer(
       },
     },
     async ({ topic }) => {
-      const guide = guideFor(topic, extensionGuideLines())
+      const guide = guideFor(topic, extensionGuideLines(!!workspaceLimit, scope === 'comment'))
       return text(scope === 'comment' && topic === 'doop-instructions' ? COMMENT_SCOPE_GUIDE_NOTE + guide : guide)
     },
   )
@@ -2389,12 +2398,14 @@ export function buildMcpServer(
       return true
     },
   }
-  /* Extension tools reach accounts outside Doop's canvases (Linear is the
-     account's whole workspace), which a workspace limit cannot bound, so a
-     limited key is never given them: unregistered, they are absent from
-     tools/list and a call gets the SDK's unknown-tool error. */
-  if (!workspaceLimit)
-    for (const extension of activeExtensions(extensions)) extension.registerMcpTools?.(server, extensionHelpers)
+  /* The tools of an extension that reaches a workspace outside Doop's canvases
+     (`reachesOutsideDoop`) cannot be bounded by a workspace limit, so a limited key is not given them: unregistered, they
+     are absent from tools/list and a call gets the SDK's unknown-tool error. The other extensions'
+     tools (Storybook's) act on a canvas and check access to it themselves, so a limited key keeps them. */
+  for (const extension of activeExtensions(extensions)) {
+    if (workspaceLimit && extension.reachesOutsideDoop) continue
+    extension.registerMcpTools?.(server, extensionHelpers)
+  }
 
   for (const tool of COMPONENT_TOOLS) {
     server.registerTool(

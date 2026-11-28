@@ -722,7 +722,7 @@ function reportUnmatchedCss(def: ComponentDef, css: string) {
   if (dropped.length) {
     actions.addComponentIssue(frame.id, {
       code: 'css_not_kept',
-      message: `these CSS rules name nothing in “${def.name}” and were not kept: ${listed(dropped)}. A component keeps the rules for its own elements, and the ones starting at one of them for a state it is not in yet or an element a script adds. To restyle a component nested in it, start the selector at one of its own elements (.card .btn), which applies inside this component only; to restyle that component everywhere, update_component it instead.`,
+      message: `these CSS rules name nothing in “${def.name}” and were not kept: ${listed(dropped)}. A component keeps the rules for its own elements, and the ones starting at one of them for a state it is not in yet or an element a script adds. A rule here reaches a component nested in it at that component's outer element only: start the selector at one of this component's own elements and end it at a class the nested root wears (.card .btn), which applies inside this component only. What is inside the nested component is its own: change it through its props or CSS custom properties, or update_component it.`,
     })
   }
   if (kept.length) {

@@ -11,6 +11,7 @@ import { AutomationPullError } from '../extensions.ts'
 
 export const linearExtension: ServerExtension = {
   id: 'linear',
+  reachesOutsideDoop: true,
   runAutomationAction: (step, ctx) => {
     if (step.type !== 'linear') throw new Error('Expected a Linear step')
     return createAutomationIssue(step, ctx.ownerId, ctx.context)
