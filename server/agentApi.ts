@@ -100,11 +100,17 @@ function expectedVersion(req: express.Request): number | undefined | 'invalid' {
 
 const NOT_HTML = 'send the frame’s HTML as the request body, with Content-Type: text/html'
 
+/** No body at all, or an empty one. A chunked body has no Content-Length and is still a body
+ *  (type-is's `hasBody` rule, which the body parsers go by). */
+function bodyIsEmpty(req: express.Request): boolean {
+  return req.get('transfer-encoding') === undefined && Number(req.get('content-length') ?? 0) === 0
+}
+
 /** The HTML a request carries. A JSON body was parsed before this router saw it and is not a
  *  frame: writing it would blank the frame. An empty file is an empty frame. */
 function bodyOf(req: express.Request): string | undefined {
   if (typeof req.body === 'string') return req.body
-  return Number(req.get('content-length') ?? 0) === 0 ? '' : undefined
+  return bodyIsEmpty(req) ? '' : undefined
 }
 
 const COMPONENT_ISSUE = 'COMPONENT: '
@@ -167,9 +173,6 @@ export function mountAgentApi(app: express.Express): void {
         workspaceIds: key.workspaceIds,
         actor: { ...actor, agentKey: mcpAgentKey(key.userId, actor.name) },
       }
-      captureThrottled(key.userId, 'custom_agent_used', {
-        first_tool: `api ${req.method} ${req.route?.path ?? req.path}`,
-      })
       next()
     } catch (error) {
       next(error)
@@ -206,6 +209,8 @@ export function mountAgentApi(app: express.Express): void {
       handler: (req: IdRequest, res: express.Response) => unknown,
     ): express.RequestHandler<{ id: string }> =>
     (req, res, next) => {
+      /* the route's name, never its path: the path carries frame and canvas ids */
+      captureThrottled(agentOf(res).userId, 'custom_agent_used', { first_tool: name })
       withArgsCanvases(target(req), () => handler(req, res), name)
         .then((reply) => {
           if (typeof reply === 'function') (reply as Reply)()

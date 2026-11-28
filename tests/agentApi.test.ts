@@ -153,6 +153,16 @@ describe('the agent API', () => {
     })
     expect(json.status).toBe(400)
     expect(await (await api(`/frames/${frameId}/html`)).text()).toContain('Third')
+
+    /* a streamed body has no Content-Length, and is still a body */
+    const chunked = await api(`/frames/${frameId}/html`, {
+      method: 'PUT',
+      body: new Blob([JSON.stringify({ html: '<p>x</p>' })]).stream(),
+      headers: { 'Content-Type': 'application/json' },
+      duplex: 'half',
+    } as RequestInit)
+    expect(chunked.status).toBe(400)
+    expect(await (await api(`/frames/${frameId}/html`)).text()).toContain('Third')
   })
 
   it('says what could not be done with components, and serves the rendered form', async () => {
