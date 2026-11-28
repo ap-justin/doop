@@ -60,6 +60,7 @@ import {
 import { adoptFromLibrary, findInLibraries, LibraryAdoptError } from './componentLibrary.ts'
 import { withHostedIcons } from './iconProxy.ts'
 import { env } from './env.ts'
+import { htmlLoaded } from './frameHtml.ts'
 import { store } from './store.ts'
 import { noteCanvas } from './workBudget.ts'
 import { WriteRefusedError } from './writeRefusal.ts'
@@ -358,7 +359,7 @@ function warnOwnRootRules(canvas: Canvas, mainFrameId: string, def: ComponentDef
   const hits: string[] = []
   let alsoOwn = false
   for (const frame of canvas.frames) {
-    if (frame.id === mainFrameId || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
+    if (frame.id === mainFrameId || !htmlLoaded(frame) || !frame.html.includes(`${INSTANCE_ATTR}="${def.id}"`)) continue
     const named = classesNamedIn(frameStylesheets(frame.html))
     const used = names.filter((name) => named.has(name))
     if (!used.length) continue
