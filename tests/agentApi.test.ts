@@ -1,4 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createServer, type Server as HttpServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Client, startServer, type Server } from './harness.ts'
 
 /*
@@ -165,6 +167,33 @@ describe('the agent API', () => {
     expect(await (await api(`/frames/${frameId}/html`)).text()).toContain('Third')
   })
 
+  it('writes a streamed HTML body, and a streamed empty body is an empty file like a bodiless one', async () => {
+    const streamed = await api(`/frames/${frameId}/html`, {
+      method: 'PUT',
+      body: new Blob(['<main><h1>Streamed</h1></main>']).stream(),
+      headers: { 'Content-Type': 'text/html' },
+      duplex: 'half',
+    } as RequestInit)
+    expect(streamed.status).toBe(200)
+    expect(await (await api(`/frames/${frameId}/html`)).text()).toBe('<main><h1>Streamed</h1></main>')
+
+    /* the documented rule is that an empty file is an empty frame; chunking must not change which side of it a body lands on */
+    const hollow = await api(`/frames/${frameId}/html`, {
+      method: 'PUT',
+      body: new Blob([]).stream(),
+      headers: { 'Content-Type': 'text/html' },
+      duplex: 'half',
+    } as RequestInit)
+    expect(hollow.status).toBe(200)
+    expect(await (await api(`/frames/${frameId}/html`)).text()).toBe('')
+
+    await api(`/frames/${frameId}/html`, { method: 'PUT', body: '<main><h1>Again</h1></main>' })
+    const bodiless = await api(`/frames/${frameId}/html`, { method: 'PUT', headers: { 'Content-Type': 'text/html' } })
+    expect(bodiless.status).toBe(200)
+    expect(await (await api(`/frames/${frameId}/html`)).text()).toBe('')
+    await api(`/frames/${frameId}/html`, { method: 'PUT', body: '<main><h1>Third</h1></main>' })
+  })
+
   it('says what could not be done with components, and serves the rendered form', async () => {
     const written = await api(`/frames/${frameId}/html`, {
       method: 'PUT',
@@ -188,6 +217,7 @@ describe('the agent API', () => {
 describe('a key held to its scope and workspace limit', () => {
   let commentKey = ''
   let limitedKey = ''
+  let limitedCommentKey = ''
   let ids: { inside: string; other: string; personal: string; shared: string }
   let frames: Record<keyof typeof ids, string>
 
@@ -214,7 +244,10 @@ describe('a key held to its scope and workspace limit', () => {
     frames = { inside: inside.frame, other: other.frame, personal: personal.frame, shared: shared.frame }
     commentKey = await mint({ scope: 'comment' })
     limitedKey = await mint({ workspaceIds: [wsInside] })
+    limitedCommentKey = await mint({ scope: 'comment', workspaceIds: [wsInside] })
   })
+
+  const htmlOf = async (frame: string) => (await api(`/frames/${frame}/html`)).text()
 
   it('lets a comment key read and refuses it every write', async () => {
     expect((await api(`/frames/${frames.personal}/html`, { as: commentKey })).status).toBe(200)
@@ -230,8 +263,11 @@ describe('a key held to its scope and workspace limit', () => {
     expect(await (await api(`/frames/${frames.personal}/html`)).text()).not.toContain('<p>x</p>')
   })
 
-  it('answers a canvas outside the key’s workspace as a made-up id', async () => {
+  it('answers a canvas outside the key’s workspace as a made-up id, leaving its frame as it was', async () => {
     for (const where of ['other', 'personal', 'shared'] as const) {
+      /* the same account reaches it without the limit, so the 404 is the limit's and not a missing membership */
+      expect((await api(`/frames/${frames[where]}/html`)).status).toBe(200)
+      const before = await htmlOf(frames[where])
       expect((await api(`/frames/${frames[where]}/html`, { as: limitedKey })).status).toBe(404)
       const put = await api(`/frames/${frames[where]}/html`, { method: 'PUT', body: '<p>x</p>', as: limitedKey })
       expect(put.status).toBe(404)
@@ -241,8 +277,32 @@ describe('a key held to its scope and workspace limit', () => {
         as: limitedKey,
       })
       expect(post.status).toBe(404)
+      expect(await htmlOf(frames[where])).toBe(before)
     }
-    expect((await api(`/frames/${frames.other}/html`)).status).toBe(200)
+  })
+
+  it('answers a comment key outside its workspace limit as a made-up id, not as a refused write', async () => {
+    for (const where of ['other', 'personal', 'shared'] as const) {
+      const before = await htmlOf(frames[where])
+      expect((await api(`/frames/${frames[where]}/html`, { as: limitedCommentKey })).status).toBe(404)
+      const put = await api(`/frames/${frames[where]}/html`, { method: 'PUT', body: '<p>x</p>', as: limitedCommentKey })
+      expect(put.status).toBe(404)
+      const post = await api(`/canvases/${ids[where]}/frames?name=New`, {
+        method: 'POST',
+        body: '<p>x</p>',
+        as: limitedCommentKey,
+      })
+      expect(post.status).toBe(404)
+      expect(await htmlOf(frames[where])).toBe(before)
+    }
+    /* inside the limit the same key reads and is refused a write with a 403, so the 404s above are the limit's */
+    expect((await api(`/frames/${frames.inside}/html`, { as: limitedCommentKey })).status).toBe(200)
+    const inside = await api(`/frames/${frames.inside}/html`, {
+      method: 'PUT',
+      body: '<p>x</p>',
+      as: limitedCommentKey,
+    })
+    expect(inside.status).toBe(403)
   })
 
   it('serves a limited key inside its workspace', async () => {
@@ -253,5 +313,59 @@ describe('a key held to its scope and workspace limit', () => {
       as: limitedKey,
     })
     expect(post.status).toBe(201)
+  })
+})
+
+describe('the agent API in analytics', () => {
+  /* The server is a child process, so PostHog is a local sink it is pointed at. */
+  let sink: HttpServer
+  const posted: { event?: string; distinct_id?: string; properties?: Record<string, unknown> }[] = []
+  let analytics: Server
+
+  beforeAll(async () => {
+    sink = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', () => {
+        try {
+          posted.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+        } catch {
+          /* not a capture */
+        }
+        res.statusCode = 202
+        res.end()
+      })
+    })
+    await new Promise((resolve) => sink.listen(0, '127.0.0.1', () => resolve(undefined)))
+    const origin = `http://127.0.0.1:${(sink.address() as AddressInfo).port}`
+    analytics = await startServer({ POSTHOG_KEY: 'phc_test', POSTHOG_INGEST_HOST: origin })
+  }, 70_000)
+
+  afterAll(async () => {
+    analytics?.stop()
+    sink?.close()
+  })
+
+  it('reports the route a key used, never the frame or canvas it named', async () => {
+    const person = await new Client(analytics).signUp('agent-api-analytics@test.dev', 'Analyst')
+    const secret = ((await (await person.post('/api/agent-keys', { name: 'api' })).json()) as { secret: string }).secret
+    const canvas = (await (await person.post('/api/canvases', { name: 'Tracked' })).json()) as { id: string }
+    const frame = (await (await person.post(`/api/canvases/${canvas.id}/frames`, { name: 'Tracked' })).json()) as {
+      id: string
+    }
+
+    const res = await fetch(`${analytics.base}/api/v1/frames/${frame.id}/html`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'text/html', 'Doop-Agent': 'Tester' },
+      body: '<p>x</p>',
+    })
+    expect(res.status).toBe(200)
+
+    await vi.waitFor(() => expect(posted.some((event) => event.event === 'custom_agent_used')).toBe(true))
+    const used = posted.filter((event) => event.event === 'custom_agent_used')
+    expect(used).toHaveLength(1)
+    expect(used[0]?.properties).toMatchObject({ first_tool: 'api frame.write' })
+    expect(JSON.stringify(used[0])).not.toContain(frame.id)
+    expect(JSON.stringify(used[0])).not.toContain(canvas.id)
   })
 })

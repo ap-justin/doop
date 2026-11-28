@@ -22,8 +22,9 @@ import { session as authSession } from './db/auth-schema.ts'
 
 const PREFIX = 'dpk_'
 
-/** What a key may do over /mcp: `full` is every tool, `comment` only reads
- *  canvases and takes part in comment threads (see COMMENT_SCOPE_TOOLS). */
+/** What a key may do over /mcp and /api/v1: `full` is every tool and route, `comment`
+ *  only reads canvases and takes part in comment threads (see COMMENT_SCOPE_TOOLS;
+ *  on /api/v1 anything but a read is a 403). */
 export const AGENT_KEY_SCOPES = ['full', 'comment'] as const
 export type AgentKeyScope = (typeof AGENT_KEY_SCOPES)[number]
 

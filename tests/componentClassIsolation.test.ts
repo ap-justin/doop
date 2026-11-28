@@ -719,6 +719,28 @@ describe('a placed component and the classes of its frame', () => {
     const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
     expect(note?.message).toContain('“Home” (.select)')
     expect(note?.message).not.toContain('Away')
+    expect(note?.message).toContain('1 frame on a page not loaded was not checked')
+  })
+
+  it('still says so when every frame placing the main is on a page not loaded', () => {
+    const plan = makeSelect()
+    const away = actions.createFrame(canvasId, { name: 'Away', html: '' }, actor)!
+    const elsewhere = actions.createFrame(canvasId, { name: 'Elsewhere', html: '' }, actor)!
+    for (const frame of [away, elsewhere]) {
+      actions.updateFrame(
+        frame.id,
+        { html: doc(`<doop-use component="${plan.id}" label="Pick"></doop-use>`, '.select { grid-column: span 2 }') },
+        actor,
+      )
+    }
+    store.saveComponent(canvasId, { ...plan, template: plan.template.replace(`select__in-${plan.id}`, 'select') })
+    const main = store.getFrame(plan.mainFrameId!)!
+    actions.takeComponentIssues(main.id)
+    for (const frame of [away, elsewhere]) unloadHtml(store.getFrame(frame.id)!)
+    actions.updateFrame(main.id, { html: `${main.html} ` }, actor)
+    const note = actions.takeComponentIssues(main.id).find((issue) => issue.code === 'root_class_renamed')
+    expect(note?.message).toContain('2 frames on pages not loaded were not checked')
+    expect(note?.message).toContain('.select')
   })
 
   describe('the note for a renamed root class', () => {

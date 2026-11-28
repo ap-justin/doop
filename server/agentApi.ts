@@ -31,7 +31,7 @@ import { withinWorkspaceLimit, type WorkspaceLimit } from './workspaceLimit.ts'
  *
  * An agent is its account and the name in `Doop-Agent`, the identity an MCP agent of that name
  * has, so its presence, tasks and the feedback people leave it are one across both.
- * Everything else an agent does stays on `/mcp`. Behaviour: .context/reference/agents.md.
+ * Everything else an agent does stays on `/mcp`. Behaviour: the "Agent API" bullet in .context/TECHSTACK.md.
  */
 
 /** the largest frame `/mcp` accepts as a tool argument, kept for the raw body */

@@ -97,6 +97,10 @@ describe('isLeanDisabledPath', () => {
     '/api/canvases/c1/cards',
     '/api/canvases/c1/cards/t1/retry',
     '/api/canvases/c1/publish',
+    '/api/canvases/c1/storybook',
+    '/api/canvases/c1/storybook/sources',
+    '/api/canvases/c1/storybook/sources/s1/sync',
+    '/api/canvases/c1/storybook/jobs/j1',
     '/api/feedback/f1/retry',
     '/api/comments/x1/retry',
     '/api/workspaces/w1/billing/checkout',
@@ -133,6 +137,7 @@ describe('isLeanDisabledPath', () => {
     '/i/abc.png',
     '/c/abc',
     '/api/canvases/c1/githubish',
+    '/api/canvases/c1/storybooks',
     '/api/communityx',
     '/relayed',
   ]

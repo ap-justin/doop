@@ -116,6 +116,9 @@ function disabledRoutes({ canvasId, workspaceId, commentId }: Booted): DisabledR
     ['GET', `/api/canvases/${canvasId}/github`],
     ['POST', `/api/canvases/${canvasId}/cards`],
     ['GET', `/api/canvases/${canvasId}/storybook/sources`],
+    ['POST', `/api/canvases/${canvasId}/storybook/discover`],
+    ['POST', `/api/canvases/${canvasId}/storybook/sources/source-1/sync`],
+    ['DELETE', `/api/canvases/${canvasId}/storybook/sources/source-1`],
     ['PUT', `/api/canvases/${canvasId}/publish`],
     ['DELETE', `/api/canvases/${canvasId}/publish`],
     ['POST', '/api/feedback/fb-1/retry'],
@@ -363,6 +366,19 @@ describe('lean mode off', () => {
       const res = await send(b, route)
       expect(await res.text(), `${method} ${path}`).not.toContain(`Cannot ${method} ${path}`)
     }
+  })
+
+  it('answers the Storybook source routes from their own handlers: an empty list, and no such source', async () => {
+    const base = `/api/canvases/${b.canvasId}/storybook/sources`
+    const listed = await b.owner.get(base)
+    expect(listed.status).toBe(200)
+    expect(await listed.json()).toEqual({ sources: [] })
+    const synced = await b.owner.post(`${base}/source-1/sync`, {})
+    expect(synced.status).toBe(404)
+    expect(await synced.json()).toEqual({ error: 'not found' })
+    const removed = await b.owner.req(`${base}/source-1`, { method: 'DELETE' })
+    expect(removed.status).toBe(404)
+    expect(await removed.json()).toEqual({ error: 'not found' })
   })
 
   it('forwards the analytics relay to PostHog, ingestion and assets alike', async () => {

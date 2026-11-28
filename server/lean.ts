@@ -44,7 +44,9 @@ const LEAN_DISABLED_PATHS: readonly RegExp[] = [
   /^\/(local-agent|gemini-cloud)\/mcp\//i,
   /^\/api\/(live-activities|community|automations|integrations|local-agent|agent-allowance|image-model|billing)(\/|$)/i,
   /^\/api\/(model-account|custom-providers|agent-runners|agents|github)(\/|$)/i,
-  /^\/api\/canvases\/[^/]+\/(github|cards)(\/|$)/i,
+  /* storybook: an extension's canvas router, left unmounted by `activeExtensions`, which in production
+     would fall through to the SPA's index.html instead of a 404 */
+  /^\/api\/canvases\/[^/]+\/(github|cards|storybook)(\/|$)/i,
   /^\/api\/canvases\/[^/]+\/publish\/?$/i,
   /^\/api\/(feedback|comments)\/[^/]+\/retry\/?$/i,
   /^\/api\/workspaces\/[^/]+\/billing\//i,

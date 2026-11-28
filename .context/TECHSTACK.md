@@ -1648,8 +1648,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   `root_class_renamed` note naming the frames whose own rule for a class the root already wore
   (old-guide placement, `.card { grid-column: span 2 }`) no longer reaches its instances, and where
   it belongs now (a class on `<doop-use class>`); a frame whose rule still styles its own elements
-  with the class is told so, and to keep the rule and style the instance's class too; nothing is
-  migrated. `update_component`'s find/replace reads the template with natural names when the stored
+  with the class is told so, and to keep the rule and style the instance's class too; frames on
+  pages not loaded cannot be read then, so the note counts them as not checked (and is given even
+  when no loaded frame is named); nothing is migrated. `update_component`'s find/replace reads the template with natural names when the stored
   text has no match. Classes a nested
   `<doop-use>` or instance root wears, classes the stylesheet never names (utilities), classes a script, style, inline `on*`
   handler or prototype attribute inside the template reads, and nested instances (their own
@@ -1852,7 +1853,9 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
   limit, `[]` is refused by a CHECK). A canvas is inside a limit only when it lives in a listed
   workspace the owner still belongs to, so personal, invited and share-link canvases are outside
   every limit. Over /mcp the gate is `roleOn` in `buildMcpServer`: an out-of-limit canvas has no
-  role, so every tool answers it exactly as a made-up id; `list_canvases` lists only in-limit
+  role, so every tool answers it exactly as a made-up id; over /api/v1 (`allowed` in
+  `server/agentApi.ts`) such a canvas or its frame is a 404 `not_found`, and a read-and-comment key
+  gets 403 `forbidden` on anything but a read; `list_canvases` lists only in-limit
   canvases and `create_canvas` defaults to the one workspace a key can still reach. A limited key gets no tools of an extension that reaches an account outside Doop (`reachesOutsideDoop`: Linear and Slack read the whole account, which a workspace cannot bound): `buildMcpServer` does not register them, so they are absent from `tools/list` and a call fails like any unknown tool. A limited hook
   hears only its workspaces' canvases, retries included. The API lists the limit as
   `workspaces` (id and name of each workspace the owner can still reach, `[]` when none is left,
@@ -1900,12 +1903,10 @@ data-doop-webfonts>` for the roster families the frame names and does not load i
 ## 8. CI/CD and Delivery
 
 - GitHub Actions:
-  - Runners: Blacksmith (`doop-design` org, app at app.blacksmith.sh). CI on
-    `blacksmith-4vcpu-ubuntu-2404` (the trivial gates on 2 vCPU), the macOS desktop, iOS and Android
-    builds on `blacksmith-12vcpu-macos-*`, the Linux desktop build on `blacksmith-4vcpu-ubuntu-2204`.
-    Windows builds, `cla.yml`, `release-please.yml` and the desktop `release` job stay on GitHub's
-    runners (Blacksmith Windows is in beta; the rest are seconds long). `actions/cache` and the
-    setup actions' caches go to Blacksmith's cache transparently; no `useblacksmith/*` actions.
+  - Runners: GitHub-hosted. CI on `ubuntu-24.04`, the iOS and Android builds on `macos-15`, the macOS
+    desktop builds on `macos-latest`, the Linux desktop build on `ubuntu-22.04` (the oldest image, for a
+    low glibc floor), Windows builds on `windows-latest`; `cla.yml`, `release-please.yml` and the
+    desktop `release` job run on `ubuntu-latest`. Caches are `actions/cache` and the setup actions' own.
   - `.github/workflows/ci.yml` - gates `typecheck`, `lint` + `format:check` + `doc-lint`, `build`
     and `test` (four vitest shards) as parallel jobs on push to `main` and on PRs, cancelling
     superseded PR runs; a separate job lints the PR title with commitlint (PRs land on
