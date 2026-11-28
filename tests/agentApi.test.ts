@@ -174,3 +174,74 @@ describe('the agent API', () => {
     expect(await (await api(`/frames/${frameId}/html?form=rendered`)).text()).toContain('#0177d3')
   })
 })
+
+describe('a key held to its scope and workspace limit', () => {
+  let commentKey = ''
+  let limitedKey = ''
+  let ids: { inside: string; other: string; personal: string; shared: string }
+  let frames: Record<keyof typeof ids, string>
+
+  const mint = async (body: Record<string, unknown>) =>
+    ((await (await owner.post('/api/agent-keys', { name: 'scoped', ...body })).json()) as { secret: string }).secret
+
+  beforeAll(async () => {
+    const wsInside = ((await (await owner.post('/api/workspaces', { name: 'Inside' })).json()) as { id: string }).id
+    const wsOther = ((await (await owner.post('/api/workspaces', { name: 'Other' })).json()) as { id: string }).id
+    const host = await new Client(server).signUp('agent-api-host@test.dev', 'Host')
+    const make = async (who: Client, name: string, workspaceId?: string) => {
+      const canvas = (await (await who.post('/api/canvases', { name, workspaceId })).json()) as { id: string }
+      const frame = (await (await who.post(`/api/canvases/${canvas.id}/frames`, { name })).json()) as { id: string }
+      return { canvas: canvas.id, frame: frame.id }
+    }
+    const inside = await make(owner, 'Inside', wsInside)
+    const other = await make(owner, 'Other', wsOther)
+    const personal = await make(owner, 'Personal')
+    const shared = await make(host, 'Shared')
+    expect((await host.post(`/api/canvases/${shared.canvas}/members`, { email: 'agent-api@test.dev' })).status).toBe(
+      200,
+    )
+    ids = { inside: inside.canvas, other: other.canvas, personal: personal.canvas, shared: shared.canvas }
+    frames = { inside: inside.frame, other: other.frame, personal: personal.frame, shared: shared.frame }
+    commentKey = await mint({ scope: 'comment' })
+    limitedKey = await mint({ workspaceIds: [wsInside] })
+  })
+
+  it('lets a comment key read and refuses it every write', async () => {
+    expect((await api(`/frames/${frames.personal}/html`, { as: commentKey })).status).toBe(200)
+    const put = await api(`/frames/${frames.personal}/html`, { method: 'PUT', body: '<p>x</p>', as: commentKey })
+    expect(put.status).toBe(403)
+    expect(((await put.json()) as { error: { code: string } }).error.code).toBe('forbidden')
+    const post = await api(`/canvases/${ids.personal}/frames?name=New`, {
+      method: 'POST',
+      body: '<p>x</p>',
+      as: commentKey,
+    })
+    expect(post.status).toBe(403)
+    expect(await (await api(`/frames/${frames.personal}/html`)).text()).not.toContain('<p>x</p>')
+  })
+
+  it('answers a canvas outside the key’s workspace as a made-up id', async () => {
+    for (const where of ['other', 'personal', 'shared'] as const) {
+      expect((await api(`/frames/${frames[where]}/html`, { as: limitedKey })).status).toBe(404)
+      const put = await api(`/frames/${frames[where]}/html`, { method: 'PUT', body: '<p>x</p>', as: limitedKey })
+      expect(put.status).toBe(404)
+      const post = await api(`/canvases/${ids[where]}/frames?name=New`, {
+        method: 'POST',
+        body: '<p>x</p>',
+        as: limitedKey,
+      })
+      expect(post.status).toBe(404)
+    }
+    expect((await api(`/frames/${frames.other}/html`)).status).toBe(200)
+  })
+
+  it('serves a limited key inside its workspace', async () => {
+    expect((await api(`/frames/${frames.inside}/html`, { as: limitedKey })).status).toBe(200)
+    const post = await api(`/canvases/${ids.inside}/frames?name=New`, {
+      method: 'POST',
+      body: '<p>x</p>',
+      as: limitedKey,
+    })
+    expect(post.status).toBe(201)
+  })
+})

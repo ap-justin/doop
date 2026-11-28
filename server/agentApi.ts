@@ -5,7 +5,7 @@ import { canvasPages } from '../shared/pages.ts'
 import type { Actor, Frame } from '../shared/types.ts'
 import { canvasRole } from './access.ts'
 import * as actions from './actions.ts'
-import { isAgentKeySecret, verifyAgentKey } from './agentKeys.ts'
+import { isAgentKeySecret, verifyAgentKey, type AgentKeyScope } from './agentKeys.ts'
 import { captureThrottled } from './analytics.ts'
 import { getUserName, isBanned } from './auth.ts'
 import { FrameVersionConflict, runCanvasWrite } from './canvasWrites.ts'
@@ -15,6 +15,7 @@ import { composedHtml } from './frameCompose.ts'
 import { describeFeedback, mcpAgentKey } from './mcp.ts'
 import { store } from './store.ts'
 import { withArgsCanvases } from './toolLoads.ts'
+import { withinWorkspaceLimit, type WorkspaceLimit } from './workspaceLimit.ts'
 
 /**
  * The agent API (`/api/v1`): frames as files over plain HTTP, for a process that holds an agent
@@ -53,6 +54,8 @@ function fail(
 
 interface Agent {
   userId: string
+  scope: AgentKeyScope
+  workspaceIds: WorkspaceLimit
   actor: Actor
 }
 
@@ -158,7 +161,12 @@ export function mountAgentApi(app: express.Express): void {
         owner: await getUserName(key.userId),
         brand: resolveAgentBrand(CLIENT_NAME, name),
       })
-      res.locals.agent = { userId: key.userId, actor: { ...actor, agentKey: mcpAgentKey(key.userId, actor.name) } }
+      res.locals.agent = {
+        userId: key.userId,
+        scope: key.scope,
+        workspaceIds: key.workspaceIds,
+        actor: { ...actor, agentKey: mcpAgentKey(key.userId, actor.name) },
+      }
       captureThrottled(key.userId, 'custom_agent_used', {
         first_tool: `api ${req.method} ${req.route?.path ?? req.path}`,
       })
@@ -169,10 +177,17 @@ export function mountAgentApi(app: express.Express): void {
   })
 
   const agentOf = (res: express.Response) => res.locals.agent as Agent
-  /* a canvas the account can read but not change says so, rather than claiming it is not there */
+  /* a canvas the account can read but not change says so, rather than claiming it is not there; a
+     canvas outside the key's workspace limit is not there at all, and a comment-scoped key only reads */
   const allowed = (res: express.Response, canvasId: string | undefined, need: CanvasRole, what: string): boolean => {
     const canvas = canvasId ? store.getCanvas(canvasId) : undefined
-    const role = canvas ? canvasRole(agentOf(res).userId, canvas) : null
+    const agent = agentOf(res)
+    const role =
+      canvas && withinWorkspaceLimit(agent.workspaceIds, agent.userId, canvas) ? canvasRole(agent.userId, canvas) : null
+    if (role && need !== 'view' && agent.scope === 'comment') {
+      fail(res, 403, 'forbidden', 'this agent key is limited to reading and comments')
+      return false
+    }
     if (roleAllows(role, need)) return true
     if (role) fail(res, 403, 'forbidden', `this account can only ${role} on that canvas`)
     else fail(res, 404, 'not_found', `no ${what} with that id accessible to this account`)
