@@ -23,7 +23,7 @@ vi.mock('../server/db/persist.ts', () => ({
   saveFrameVersion: () => {},
   frameWritePending: () => false,
 }))
-vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [] }))
+vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [], foreignFontAssetIds: () => new Set<string>() }))
 
 const actions = await import('../server/actions.ts')
 const { store } = await import('../server/store.ts')

@@ -19,7 +19,7 @@ vi.mock('../server/db/persist.ts', () => ({
   saveComponent: () => {},
   deleteComponent: () => {},
 }))
-vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [] }))
+vi.mock('../server/fonts.ts', () => ({ fontsForCanvas: () => [], foreignFontAssetIds: () => new Set<string>() }))
 /* the bucket, in memory: nothing is ever stored, so every warm reaches Iconify */
 vi.mock('../server/storage.ts', () => ({
   getObject: async () => null,

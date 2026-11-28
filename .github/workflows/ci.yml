@@ -55,7 +55,7 @@ jobs:
       - run: bun run --bun build
 
   # The suite boots a real server per integration file, which is CPU-bound on
-  # the 4-vCPU Blacksmith runner; sharding across runners is what brings the step down.
+  # a GitHub-hosted runner's CPUs; sharding across runners is what brings the step down.
   test:
     runs-on: ubuntu-24.04
     strategy:
@@ -79,8 +79,9 @@ jobs:
           "$path" --version
           echo "CHROME_PATH=$path" >> "$GITHUB_ENV"
           # Ubuntu 24.04 lets only the browsers it has an AppArmor profile for
-          # make the user namespaces Chrome's sandbox needs. Blacksmith's kernel
-          # has no such switch (nothing to lift), so only where it exists.
+          # make the user namespaces Chrome's sandbox needs. The GitHub-hosted
+          # runner has that switch, and a kernel without it has nothing to lift,
+          # so only where it exists.
           userns=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
           if [ -e "$userns" ]; then echo 0 | sudo tee "$userns" >/dev/null; fi
       # `bun run test`, not `bun test`: the suite is vitest, and `bun test`
