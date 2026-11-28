@@ -219,8 +219,8 @@ function err(message: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true }
 }
 
-/** The only tools a `comment`-scoped agent key may call: read a canvas, the
- *  style guides, tokens and references a review is judged against, and take
+/** The only tools a `comment`-scoped agent key may call: read a canvas, its
+ *  components, renders and exports, the style guides, tokens and references a review is judged against, and take
  *  part in its comment threads. Everything else is refused before it runs. */
 export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'list_canvases',
@@ -228,6 +228,12 @@ export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
   'get_comments',
   'get_frame',
   'get_frame_screenshot',
+  'inspect_frame',
+  'export_frame',
+  'export_layer',
+  'list_components',
+  'get_component',
+  'get_component_preview',
   'list_frame_versions',
   'get_prototype',
   'list_guidelines',
@@ -242,7 +248,7 @@ export const COMMENT_SCOPE_TOOLS: ReadonlySet<string> = new Set([
 
 /** Leads get_guide for a `comment` key, whose guide otherwise describes a
  *  design workflow it cannot carry out. */
-const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, screenshots, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
+const COMMENT_SCOPE_GUIDE_NOTE = `This connection uses a read-and-comment agent key. You can read canvases, frames, components, screenshots, inspections, exports, style guides, tokens and references, and reply to or resolve comment threads. Every tool that creates or changes anything else returns an error, so leave design changes to the people on the canvas and say what you would change in a comment reply instead.
 
 `
 
